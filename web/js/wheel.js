@@ -5,6 +5,7 @@
 // закриття вікна з результатом колесо малювалось заново з нуля, і стрілка
 // показувала зовсім інший сектор, ніж той, що випав.
 import { el, svg } from './dom.js';
+import { textFix } from './theme.js';
 
 const C = 100, R = 97;
 const XLINK = 'http://www.w3.org/1999/xlink';
@@ -33,6 +34,7 @@ export function createWheel(segments, key) {
   const imgSize = Math.max(18, Math.min(28, Math.floor(2 * Math.PI * 58 * (step / 360)) - 4));
   const kids = [svg('circle', { cx: C, cy: C, r: R + 2, style: 'fill: var(--section)' })];
   const images = [];
+  const fx = textFix();       // телефон зі збільшеним шрифтом — підписи лишаються в секторі
   segments.forEach((s, i) => {
     const a0 = i * step, mid = a0 + step / 2;
     const pal = PAL[s.kind] || PAL.stars;
@@ -53,10 +55,10 @@ export function createWheel(segments, key) {
       const light = s.kind === 'stars' && i % 2 === 0;
       const label = s.kind === 'tickets' ? '🎫' : '⭐';
       inner.appendChild(svg('text', {
-        x: C, y: 30, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': 15, 'font-weight': 800,
+        x: C, y: 30, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': 15 * fx, 'font-weight': 800,
         style: 'fill: ' + (light ? 'var(--btn-text)' : 'var(--text)') + '; font-family: inherit',
       }, String(s.amount)));
-      inner.appendChild(svg('text', { x: C, y: 46, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': 11 }, label));
+      inner.appendChild(svg('text', { x: C, y: 46, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': 11 * fx }, label));
     }
     kids.push(g);
   });

@@ -48,6 +48,9 @@
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+/* Телефон не має сам «роздувати» текст окремих блоків (Android font boosting,
+   iOS у горизонтальному положенні) — від цього текст налазив на картинки. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   font: 15px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -105,7 +108,8 @@ button.row, a.row { cursor: pointer; color: inherit; }
 button.row:active, a.row:active { background: var(--tint); }
 .row + .row::before { content: ''; position: absolute; top: 0; left: 58px; right: 0; border-top: 1px solid var(--sep); }
 .row.noicon + .row.noicon::before, .row.noicon + .row::before { left: 14px; }
-.ico { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; font-size: 18px; flex: none; background: var(--tint); }
+/* --fx < 1, коли телефон збільшив увесь текст: емодзі в кружечку лишається свого розміру. */
+.ico { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; font-size: 18px; font-size: calc(18px * var(--fx, 1)); flex: none; background: var(--tint); overflow: hidden; line-height: 1; }
 .ico img { width: 26px; height: 26px; object-fit: contain; }
 .ico.c-gold { background: var(--gold-t); }
 .ico.c-green { background: var(--ok-t); }
@@ -136,7 +140,7 @@ button.row:active, a.row:active { background: var(--tint); }
 .btn.plain { background: transparent; color: var(--link); min-height: 40px; }
 .btn.danger { background: var(--danger-t); color: var(--danger); }
 .btn.ok { background: var(--ok); color: #fff; }
-.btn.small { min-height: 34px; padding: 6px 12px; font-size: 14px; width: auto; border-radius: 10px; }
+.btn.small { min-height: 34px; padding: 6px 12px; font-size: 14px; width: auto; border-radius: 10px; white-space: nowrap; }
 .btn .sub { font-weight: 500; opacity: .75; font-size: 13px; }
 .btns { display: flex; gap: 8px; }
 .btns > * { flex: 1; min-width: 0; }
@@ -158,7 +162,7 @@ button.row:active, a.row:active { background: var(--tint); }
 /* Перемикач сегментів */
 .seg { display: flex; margin: 6px 16px 12px; padding: 2px; border-radius: 10px; background: var(--hint-t); overflow-x: auto; scrollbar-width: none; }
 .seg::-webkit-scrollbar { display: none; }
-.seg button { flex: 1 1 auto; min-width: 0; border: 0; background: none; padding: 7px 8px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; color: var(--text); white-space: nowrap; }
+.seg button { flex: 1 1 auto; min-width: 0; border: 0; background: none; padding: 7px 8px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .seg button.on { background: var(--section); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
 
 /* Перемикач on/off */
@@ -176,18 +180,20 @@ button.row:active, a.row:active { background: var(--tint); }
   background: var(--bar);
   border-top: 1px solid var(--sep);
 }
-.tab { flex: 1; border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 0 3px; color: var(--hint); font-size: 10.5px; font-weight: 500; cursor: pointer; position: relative; }
-.tab .ti { font-size: 22px; line-height: 26px; filter: grayscale(1); opacity: .75; transition: transform .15s; }
+.tab { flex: 1; min-width: 0; border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 0 3px; color: var(--hint); font-size: 10.5px; font-size: calc(10.5px * var(--fx, 1)); font-weight: 500; cursor: pointer; position: relative; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab .ti { font-size: 22px; font-size: calc(22px * var(--fx, 1)); line-height: 26px; filter: grayscale(1); opacity: .75; transition: transform .15s; }
 .tab.on { color: var(--btn); }
 .tab.on .ti { filter: none; opacity: 1; transform: translateY(-1px); }
-.tab .dot { position: absolute; top: 3px; left: calc(50% + 8px); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--danger); color: #fff; font-size: 10px; line-height: 16px; font-weight: 700; }
+.tab .dot { position: absolute; top: 2px; left: calc(50% + 9px); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--danger); color: #fff; font-size: 10px; font-size: calc(10px * var(--fx, 1)); line-height: 16px; font-weight: 700; box-shadow: 0 0 0 2px var(--section); }
 
 /* ── Колесо ──────────────────────────────────────────────── */
-.wheel-wrap { position: relative; width: min(82vw, 320px); height: min(82vw, 320px); margin: 10px auto 4px; }
+/* Спершу простий розмір для старих WebView, які не знають min(): без нього
+   колесо там сплющувалось, і все під ним налазило одне на одне. */
+.wheel-wrap { position: relative; width: 82vw; height: 82vw; max-width: 320px; max-height: 320px; width: min(82vw, 320px); height: min(82vw, 320px); margin: 10px auto 4px; }
 .wheel-wrap svg { width: 100%; height: 100%; display: block; }
 .wheel-rot { transform-origin: 50% 50%; transform-box: fill-box; will-change: transform; }
 .wheel-pointer { position: absolute; top: -4px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 13px solid transparent; border-right: 13px solid transparent; border-top: 24px solid var(--text); filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .25)); z-index: 2; }
-.wheel-hub { position: absolute; top: 0; right: 0; bottom: 0; left: 0; margin: auto; width: 22%; height: 22%; border-radius: 50%; background: var(--section); box-shadow: 0 2px 10px rgba(0, 0, 0, .18); display: grid; place-items: center; font-size: 26px; z-index: 1; }
+.wheel-hub { position: absolute; top: 0; right: 0; bottom: 0; left: 0; margin: auto; width: 22%; height: 22%; border-radius: 50%; background: var(--section); box-shadow: 0 2px 10px rgba(0, 0, 0, .18); display: grid; place-items: center; font-size: 26px; font-size: calc(26px * var(--fx, 1)); line-height: 1; z-index: 1; overflow: hidden; }
 /* Усі вкладки коліс видно одразу: 4 в ряд, на вузьких екранах — 2×2. */
 .wheel-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0 16px 6px; }
 @media (max-width: 379px) { .wheel-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -213,7 +219,7 @@ button.row:active, a.row:active { background: var(--tint); }
 .bank-live { font-size: 13px; font-weight: 600; color: var(--danger); background: var(--danger-t); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 .bank-live.done { color: var(--ok); background: var(--ok-t); }
 .bank-pot { text-align: center; font-size: 34px; font-weight: 800; margin-top: 8px; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
-.bank-hub { font-size: 24px; }
+.bank-hub { font-size: 24px; font-size: calc(24px * var(--fx, 1)); }
 .bank-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 12px; margin: 8px 0 2px; font-size: 13px; }
 .bank-legend .bl { display: inline-flex; align-items: center; gap: 5px; color: var(--sub); max-width: 100%; overflow-wrap: anywhere; }
 .bank-legend .bl.me { color: var(--text); font-weight: 600; }
@@ -222,7 +228,7 @@ button.row:active, a.row:active { background: var(--tint); }
 /* Ігри на зірки: видно в застосунку, грати — у боті */
 .game-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 16px; }
 .gtile { position: relative; min-width: 0; border: 0; border-radius: var(--radius); background: var(--section); padding: 12px 4px 10px; cursor: pointer; text-align: center; color: var(--text); }
-.gtile .gt-e { font-size: 30px; line-height: 1.1; }
+.gtile .gt-e { font-size: 30px; font-size: calc(30px * var(--fx, 1)); line-height: 1.1; }
 .gtile .gt-t { margin-top: 6px; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gtile .gt-x { font-size: 12px; color: var(--hint); }
 .gtile .gt-lock { margin: 6px auto 0; display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: var(--tint); color: var(--link); white-space: nowrap; }
@@ -279,7 +285,7 @@ button.row:active, a.row:active { background: var(--tint); }
 .track { margin: 0 16px; background: var(--section); border-radius: var(--radius); overflow: hidden; }
 .track-row { display: grid; grid-template-columns: 44px 1fr 1fr; align-items: stretch; border-top: 1px solid var(--sep); }
 .track-row:first-child { border-top: 0; }
-.track-lv { display: grid; place-items: center; font-weight: 700; color: var(--hint); font-variant-numeric: tabular-nums; }
+.track-lv { display: grid; place-items: center; min-width: 0; overflow: hidden; font-weight: 700; font-size: calc(15px * var(--fx, 1)); color: var(--hint); font-variant-numeric: tabular-nums; }
 .track-row.open .track-lv { color: var(--btn); }
 .track-cell { padding: 8px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; min-height: 48px; min-width: 0; border-left: 1px solid var(--sep); }
 .track-cell .rw { flex: 1 1 70px; overflow-wrap: anywhere; }
@@ -322,6 +328,7 @@ button.row:active, a.row:active { background: var(--tint); }
 .gate .btn { max-width: 320px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }
 .muted { color: var(--hint); }
+.ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ok-text { color: var(--ok); }
 .bad-text { color: var(--danger); }
 .num { font-variant-numeric: tabular-nums; }

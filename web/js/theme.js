@@ -48,7 +48,29 @@ export function applyTheme() {
   set('--w-prize-b', mix(gold, section, 0.18));
 }
 
+// Деякі телефони (Android із великим шрифтом у системі) збільшують УВЕСЬ текст
+// у WebView. Звичайні тексти від цього просто переносяться, а от емодзі в
+// кружечках, підписи на колесах і нижнє меню мають фіксований розмір — і там
+// збільшений текст налазив на картинки й сусідні написи. Міряємо, у скільки
+// разів телефон збільшив текст, і для таких місць повертаємо задуманий розмір.
+let fx = 1;
+export const textFix = () => fx;
+export function measureTextScale() {
+  try {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;font-size:100px;line-height:1;white-space:nowrap;margin:0;padding:0;border:0';
+    d.textContent = 'M';
+    document.body.appendChild(d);
+    const k = d.getBoundingClientRect().height / 100;
+    d.remove();
+    fx = k > 1.04 && k < 4 ? Math.max(0.4, 1 / k) : 1;
+  } catch (e) { fx = 1; }
+  document.documentElement.style.setProperty('--fx', String(fx));
+  return fx;
+}
+
 export function watchTheme(tg) {
+  measureTextScale();
   applyTheme();
   try { if (tg && tg.onEvent) tg.onEvent('themeChanged', () => setTimeout(applyTheme, 0)); } catch (e) {}
   try {

@@ -1,6 +1,7 @@
 // Колесо спільного банку: кожен гравець — сектор завбільшки з його частку.
 // Під час розіграшу колесо прокручується до сектора переможця.
 import { el, svg } from './dom.js';
+import { textFix } from './theme.js';
 
 const C = 100, R = 97;
 export const BANK_COLORS = ['#3E88F7', '#FF9F0A', '#34C759', '#AF52DE', '#FF375F', '#5AC8FA', '#FFCC00', '#FF6B35', '#30B0C7', '#BF5AF2', '#8E8E93', '#A2845E'];
@@ -43,7 +44,7 @@ export function createBankWheel(sectors, bankId, youLabel) {
         const g = svg('g', { transform: `rotate(${rot} ${C} ${C})` });
         g.appendChild(svg('text', {
           x: flip ? C - (R - 10) : C + (R - 10), y: C, 'text-anchor': flip ? 'start' : 'end', 'dominant-baseline': 'middle',
-          'font-size': fs, 'font-weight': 700,
+          'font-size': fs * textFix(), 'font-weight': 700,
           style: 'fill: #fff; font-family: inherit; paint-order: stroke; stroke: rgba(0,0,0,.25); stroke-width: 2px',
         }, s.me ? youLabel : short(s.name, maxChars)));
         kids.push(g);

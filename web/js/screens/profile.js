@@ -17,8 +17,8 @@ export function render(nav) {
     el('div', { class: 'card pad center', style: { marginTop: '8px' } },
       el('div', { class: 'avatar', style: { width: '72px', height: '72px', margin: '0 auto', fontSize: '28px' } },
         me.user.photo ? el('img', { src: me.user.photo, alt: '', referrerpolicy: 'no-referrer' }) : (me.user.name || '?').charAt(0).toUpperCase()),
-      el('div', { style: { fontWeight: 700, fontSize: '19px', marginTop: '8px' } }, me.user.name || t('app.player')),
-      me.user.username ? el('div', { class: 'muted' }, '@' + me.user.username) : el('div', { class: 'bad-text', style: { fontSize: '13px' } }, t('prof.noUsername')),
+      el('div', { style: { fontWeight: 700, fontSize: '19px', marginTop: '8px', overflowWrap: 'anywhere' } }, me.user.name || t('app.player')),
+      me.user.username ? el('div', { class: 'muted', style: { overflowWrap: 'anywhere' } }, '@' + me.user.username) : el('div', { class: 'bad-text', style: { fontSize: '13px' } }, t('prof.noUsername')),
       el('div', { class: 'gap8 mt8', style: { justifyContent: 'center' } }, pill(lv.e + ' ' + lv.t + ' · ' + lv.n), me.user.anonymous ? pill('🕶 ' + t('prof.anon'), 'grey') : null)),
     body,
   ];
