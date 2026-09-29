@@ -1,30 +1,31 @@
-// Ігри: колеса (щоденне, за білети, за зірки) з ризиком ×2, спільний банк,
-// ігри на зірки (кубик, дартс, боулінг, баскетбол, футбол, слоти).
+// Ігри: колеса (щоденне, за білети, за зірки) з ризиком ×2 і спільний банк —
+// колесо, де кожен гравець має сектор завбільшки зі свою ставку.
+// Ігри на зірки (кубик, дартс, слоти…) — у чаті з ботом, з анімацією Telegram.
 import { el, mount, img } from '../dom.js';
 import { t } from '../i18n.js';
 import * as api from '../api.js';
 import { S, setBalance, refreshSoon, refresh } from '../state.js';
 import { haptic } from '../tg.js';
 import { createWheel } from '../wheel.js';
+import { createBankWheel, BANK_COLORS } from '../bankwheel.js';
+import { openLink } from '../tg.js';
 import { section, list, row, button, seg, bar, empty, pill, toast, fail, sheet, closeSheet, countdown, clock, left, fmt, stars, tix, when } from '../ui.js';
 
-let view = 'wheels';
 let wheelId = 'daily';
 
 export function render(nav, v) {
-  if (v) view = v === 'dice' ? 'dice' : v;
-  if (!['wheels', 'bank', 'dice'].includes(view)) view = 'wheels';
-  const body = el('div');
-  const pick = (id) => { view = id; nav.rerender(); };
-  const out = [
-    el('div', { class: 'h1' }, t('games.title')),
-    seg([['wheels', t('games.wheels')], ['bank', t('games.bank')], ['dice', t('games.dice')]], view, pick),
-    body,
-  ];
-  if (view === 'wheels') mount(body, wheels(nav));
-  else if (view === 'bank') bankView(nav, body);
-  else diceView(nav, body);
-  return out;
+  if (v === 'bank') wheelId = 'bank';
+  else if (v === 'wheels' && wheelId === 'bank') wheelId = 'daily';
+  return [el('div', { class: 'h1' }, t('games.title')), wheels(nav), diceCard()];
+}
+
+// Ігри на зірки живуть у боті: Telegram сам кидає кубик з анімацією.
+function diceCard() {
+  const bot = S.me.bot;
+  return [...section(t('games.dice'), list(row({
+    icon: '🎲', iconClass: 'c-orange', title: t('dice.inBot'), sub: t('dice.inBotSub'),
+    onClick: () => { if (bot) openLink('https://t.me/' + bot + '?start=games'); try { if (window.Telegram && Telegram.WebApp && Telegram.WebApp.close) setTimeout(() => Telegram.WebApp.close(), 300); } catch (e) {} },
+  })))];
 }
 
 // ─── Колеса ──────────────────────────────────────────────────────────────
@@ -34,14 +35,17 @@ function tierImg(id) { const x = (S.me.tiers || []).find(q => q.id === id); retu
 
 function wheels(nav) {
   const W = S.me.wheels.wheels;
-  if (!W[wheelId]) wheelId = 'daily';
-  const ids = ['daily', 'referral', 'paid'].filter(id => W[id]);
+  if (wheelId !== 'bank' && !W[wheelId]) wheelId = 'daily';
+  const ids = ['daily', 'referral', 'paid'].filter(id => W[id]).concat(['bank']);
+  const bk = S.me.bank || {};
   const tabs = el('div', { class: 'wheel-tabs' }, ids.map(id => {
     const w = W[id];
-    const cost = id === 'daily' ? t('wheel.free') : id === 'referral' ? w.cost.tickets + '🎫' : (w.gifted ? t('wheel.gifted', { n: w.gifted }) : w.cost.stars + '⭐');
+    const cost = id === 'bank' ? (bk.active && bk.status === 'open' ? stars(bk.stars) : '—')
+      : id === 'daily' ? t('wheel.free') : id === 'referral' ? w.cost.tickets + '🎫' : (w.gifted ? t('wheel.gifted', { n: w.gifted }) : w.cost.stars + '⭐');
     return el('button', { class: 'wheel-tab' + (id === wheelId ? ' on' : ''), type: 'button', onclick: () => { wheelId = id; haptic('select'); nav.rerender(); } },
-      el('div', { class: 'wt-t' }, wheelTitle(id)), el('div', { class: 'wt-s' }, cost));
+      el('div', { class: 'wt-t' }, id === 'bank' ? '🏦 ' + t('games.bank') : wheelTitle(id)), el('div', { class: 'wt-s' }, cost));
   }));
+  if (wheelId === 'bank') { const body = el('div'); bankView(nav, body); return [tabs, body]; }
   return [tabs, wheelCard(nav, wheelId), riskCard(nav), fairRow(nav)];
 }
 
@@ -177,7 +181,7 @@ function fairRow(nav) {
 }
 
 // ─── Банк ────────────────────────────────────────────────────────────────
-let bankPoll = null;
+let bankPoll = null, bankSpinning = false;
 async function bankView(nav, body) {
   mount(body, empty(t('common.loading')));
   let b;
@@ -187,7 +191,7 @@ async function bankView(nav, body) {
   clearInterval(bankPoll);
   bankPoll = setInterval(async () => {
     if (!body.isConnected) { clearInterval(bankPoll); return; }
-    if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+    if (bankSpinning || (document.activeElement && document.activeElement.tagName === 'INPUT')) return;
     try { const nb = await api.get('/bank'); if (body.isConnected) drawBank(nav, body, nb); } catch (e) {}
   }, 6000);
 }
@@ -204,32 +208,44 @@ function drawBank(nav, body, b) {
     return;
   }
   const open = b.status === 'open';
-  const hero = el('div', { class: 'card' },
-    el('div', { class: 'hero' },
-      el('div', { class: 'sub' }, open ? t('bank.pot') : t('bank.drawn')),
-      el('div', { class: 'big' }, stars(b.prize.stars) + (b.prize.tickets ? ' + ' + tix(b.prize.tickets) : '')),
-      el('div', { class: 'sub' }, open ? [t('bank.drawIn') + ' ', countdown(b.drawAt, left, () => bankView(nav, body))] : when(b.drawAt))),
-    el('div', { class: 'stat-grid' },
-      el('div', null, el('b', null, String(b.players)), el('span', null, t('bank.players'))),
-      el('div', null, el('b', null, fmt(b.mine.weight)), el('span', null, t('bank.myStake'))),
-      el('div', null, el('b', null, b.mine.chance + '%'), el('span', null, t('bank.chance')))));
-  const parts = [hero];
-
+  const late = open && b.drawAt <= Date.now();
+  const wheel = createBankWheel(b.sectors || [], b.id, t('common.you'));
+  const status = el('div', { class: 'bank-live' + (open ? '' : ' done') },
+    open ? (late ? t('bank.drawing') : [t('bank.drawIn') + ' ', countdown(b.drawAt, clock, () => bankView(nav, body))]) : t('bank.drawn'));
+  const legend = el('div', { class: 'bank-legend' }, (b.sectors || []).slice(0, 10).map((s, i) =>
+    el('span', { class: 'bl' + (s.me ? ' me' : '') }, el('i', { style: { background: BANK_COLORS[i % BANK_COLORS.length] } }), (s.me ? t('common.you') : s.name) + ' ', el('b', null, s.percent + '%'))),
+    (b.sectors || []).length > 10 ? el('span', { class: 'bl' }, t('bank.more', { n: b.sectors.length - 10 })) : null);
+  const winnerBox = el('div');
+  const showWinner = () => {
+    if (!b.winner) return;
+    mount(winnerBox, el('div', { class: 'banner ' + (b.winner.me ? 'green' : 'gold') + ' mt12' }, el('div', { class: 'bi' }, b.winner.me ? '🏆' : '🎉'),
+      el('div', { class: 'bm' }, el('div', { class: 'bt' }, b.winner.me ? t('bank.youWon') : t('bank.winner', { name: b.winner.name })),
+        b.won ? el('div', { class: 'bs' }, stars(b.won.stars) + (b.won.tickets ? ' + ' + tix(b.won.tickets) : '')) : null)));
+  };
+  const card = el('div', { class: 'card pad bank-card' },
+    el('div', { class: 'bank-top' }, el('div', { class: 'bank-title' }, '🏦 ' + t('bank.title')), status),
+    el('div', { class: 'bank-pot' }, stars(b.prize.stars) + (b.prize.tickets ? ' + ' + tix(b.prize.tickets) : '')),
+    el('div', { class: 'center muted' }, t('bank.potSub', { n: b.players })),
+    wheel.el,
+    (b.sectors || []).length ? legend : el('div', { class: 'center muted mt8' }, t('bank.first')),
+    b.mine.weight > 0 ? el('div', { class: 'bank-mine' },
+      el('div', null, t('bank.mineLine', { s: fmt(b.mine.stars), t: b.mine.tickets, w: fmt(b.mine.weight) })),
+      el('div', null, t('bank.chance') + ': ', el('b', null, b.mine.chance + '%')),
+      b.consolation ? el('div', { class: 'muted' }, t('bank.consLine', { n: b.consolation })) : null) : null,
+    winnerBox);
+  const parts = [card];
+  // Розіграно: крутимо колесо до переможця (один раз), потім показуємо результат.
   if (!open && b.winner) {
-    parts.push(el('div', { class: 'banner ' + (b.winner.me ? 'green' : '') + ' mt12' }, el('div', { class: 'bi' }, b.winner.me ? '🏆' : '🎉'),
-      el('div', { class: 'bm' }, el('div', { class: 'bt' }, b.winner.me ? t('bank.youWon') : t('bank.winner', { name: b.winner.name })), b.won ? el('div', { class: 'bs' }, stars(b.won.stars) + (b.won.tickets ? ' + ' + tix(b.won.tickets) : '')) : null)));
+    if (wheel.alreadySpun()) { wheel.spinToWinner(b.winner.uid); showWinner(); }
+    else { bankSpinning = true; setTimeout(() => wheel.spinToWinner(b.winner.uid).then(() => { bankSpinning = false; haptic(b.winner.me ? 'success' : 'light'); showWinner(); refreshSoon(); }), 300); }
   }
-  if (open) parts.push(...section(t('bank.bet'), el('div', { class: 'card pad' }, betForm(nav, body, b)), t('bank.betFoot', { w: b.ticketWeight, c: b.consolePer })));
+  if (open && !late) parts.push(...section(t('bank.bet'), el('div', { class: 'card pad' }, betForm(nav, body, b)), t('bank.betFoot', { w: b.ticketWeight, c: b.consolePer })));
 
   const ms = b.milestones;
   if (ms && ms.list && ms.list.length) {
     parts.push(...section(t('bank.milestones'), el('div', { class: 'card pad' },
       ms.next ? [el('div', { class: 'kv', style: { marginTop: 0 } }, el('span', null, t('bank.toNext', { n: fmt(ms.toNext), label: ms.next.label })), el('span', null, ms.nextPercent + '%')), el('div', { class: 'mt8' }, bar(ms.nextPercent, 'gold'))] : el('div', { class: 'ok-text' }, t('bank.allMs')),
       el('div', { class: 'gap8 mt12' }, ms.list.map(m => pill((m.reached ? '✓ ' : '') + m.at + ' → +' + m.bonus + '⭐', m.reached ? 'ok' : 'grey'))))));
-  }
-  if (b.sectors && b.sectors.length) {
-    parts.push(...section(t('bank.table'), list(b.sectors.slice(0, 15).map((s, i) =>
-      row({ icon: i < 3 ? ['🥇', '🥈', '🥉'][i] : String(i + 1), title: s.name + (s.me ? ' · ' + t('common.you') : ''), sub: (s.stars ? stars(s.stars) : '') + (s.stars && s.tickets ? ' + ' : '') + (s.tickets ? tix(s.tickets) : ''), value: s.percent + '%', strong: s.me })))));
   }
   if (b.feed && b.feed.length && open) {
     parts.push(...section(t('bank.feed'), list(b.feed.slice(0, 6).map(f => row({ icon: f.tickets && !f.stars ? '🎫' : '⭐', title: f.name, sub: when(f.at), value: '+' + (f.stars ? stars(f.stars) : '') + (f.stars && f.tickets ? ' ' : '') + (f.tickets ? tix(f.tickets) : '') })))));
@@ -274,64 +290,4 @@ function betForm(nav, body, b) {
         drawBank(nav, body, nb);
       } catch (e) { fail(e); }
     })));
-}
-
-// ─── Ігри на зірки ───────────────────────────────────────────────────────
-let gameId = 'dice', betId = null, stake = 5;
-async function diceView(nav, body) {
-  let cat = S.cache.games;
-  if (!cat) {
-    mount(body, empty(t('common.loading')));
-    try { cat = S.cache.games = await api.get('/games'); } catch (e) { mount(body, empty(t('err.generic'))); return; }
-  }
-  if (!body.isConnected) return;
-  drawDice(nav, body, cat);
-}
-
-const SLOT = ['BAR', '🍇', '🍋', '7'];
-function drawDice(nav, body, cat) {
-  const g = cat.games.find(x => x.id === gameId) || cat.games[0];
-  gameId = g.id;
-  if (!g.bets.find(x => x.id === betId)) betId = g.bets[0].id;
-  const bt = g.bets.find(x => x.id === betId);
-  const stage = el('div', { class: 'dice-stage' }, g.id === 'slots'
-    ? el('div', { class: 'reels' }, [0, 1, 2].map(() => el('div', { class: 'reel' }, '7')))
-    : el('div', { class: 'dice-face' }, g.emoji), el('div', { class: 'dice-val' }));
-  const outcome = el('div', { class: 'center muted', style: { minHeight: '22px' } }, bt.slots ? t('dice.slotsRule') : t('dice.rule', { win: (bt.win || []).join(', '), k: bt.k, p: bt.chance }));
-  const balLine = el('span', null, t('wheel.youHave', { v: stars(S.me.balance.stars) }));
-  const stakeIn = el('input', { type: 'number', inputmode: 'numeric', min: cat.bet.min, max: cat.bet.max, value: String(stake) });
-  stakeIn.addEventListener('input', () => { stake = Math.floor(Number(stakeIn.value) || 0); });
-  const presets = el('div', { class: 'presets mt8' }, cat.bet.presets.map(n => el('button', { class: 'preset' + (n === stake ? ' on' : ''), type: 'button', onclick: () => { stake = n; drawDice(nav, body, cat); } }, n + '⭐')));
-
-  mount(body,
-    el('div', { class: 'grid3' }, cat.games.map(x => el('button', { class: 'tile' + (x.id === gameId ? ' on' : ''), type: 'button', onclick: () => { gameId = x.id; betId = null; haptic('select'); drawDice(nav, body, cat); } },
-      el('div', { class: 'em' }, x.emoji), el('div', { class: 'tt' }, x.title)))),
-    ...section(g.title, el('div', { class: 'card pad' },
-      stage, outcome,
-      g.bets.length > 1 ? el('div', { class: 'presets mt12' }, g.bets.map(x => el('button', { class: 'preset' + (x.id === betId ? ' on' : ''), type: 'button', onclick: () => { betId = x.id; drawDice(nav, body, cat); } }, x.title, el('small', null, '×' + x.k)))) : null,
-      el('div', { class: 'label' }, t('dice.stake')),
-      el('div', { class: 'field' }, stakeIn, el('span', { class: 'unit' }, '⭐')),
-      presets,
-      el('div', { class: 'kv' }, balLine, el('span', null, bt.slots ? '777 ×20 · ×6 · ×2' : t('dice.win', { v: fmt(stake * bt.k) }))),
-      el('div', { class: 'mt12' }, button(bt.slots ? t('dice.spin') : t('dice.play'), async () => {
-        const st = Math.floor(Number(stakeIn.value) || 0);
-        if (st < cat.bet.min || st > cat.bet.max) { toast(t('err.bad_bet', { min: cat.bet.min, max: cat.bet.max })); return; }
-        if (st > S.me.balance.stars) { toast(t('err.not_enough_stars')); return; }
-        const face = stage.firstChild;
-        if (g.id === 'slots') face.childNodes.forEach(n => n.classList.add('spin')); else face.classList.add('rolling');
-        let r;
-        const started = Date.now();
-        try { r = await api.post('/games/play', { game: g.id, bet: bt.id, stake: st }); }
-        catch (e) { fail(e); if (g.id === 'slots') face.childNodes.forEach(n => n.classList.remove('spin')); else face.classList.remove('rolling'); return; }
-        await new Promise(res => setTimeout(res, Math.max(0, 900 - (Date.now() - started))));
-        if (g.id === 'slots') { face.childNodes.forEach((n, i) => { n.classList.remove('spin'); n.textContent = SLOT[r.reels[i]]; }); }
-        else { face.classList.remove('rolling'); stage.lastChild.textContent = t('dice.value', { v: r.value }); }
-        setBalance(r.balance);
-        balLine.textContent = t('wheel.youHave', { v: stars(r.balance) });
-        outcome.textContent = r.won ? t('dice.won', { v: fmt(r.payout), k: r.k }) : t('dice.lost', { v: fmt(r.stake) });
-        outcome.className = 'center ' + (r.won ? 'ok-text' : 'bad-text');
-        haptic(r.won ? 'success' : 'error');
-        refreshSoon();
-      })))),
-    el('div', { class: 'sec-foot' }, t('dice.fair', { n: cat.fair ? cat.fair.nonce : 0 })));
 }

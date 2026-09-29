@@ -107,4 +107,52 @@ async function play(uid, gameId, betId, stake) {
   });
 }
 
-module.exports = { riskState, risk, catalog, play };
+// ─── Ігри в чаті з ботом ────────────────────────────────────────────────
+// Кубик кидає сам Telegram (анімація, підробити неможливо), тож результат
+// бере не наш генератор, а число з кубика. Ставку списуємо ДО кидка,
+// виграш нараховуємо після, коли Telegram повернув значення.
+function findBet(gameId, betId) {
+  const g = Object.prototype.hasOwnProperty.call(E.GAMES, gameId) ? E.GAMES[gameId] : null;
+  const b = g && Object.prototype.hasOwnProperty.call(g.bets, betId) ? g.bets[betId] : null;
+  return g && b ? { g, b } : null;
+}
+async function botStake(uid, gameId, betId, stake) {
+  const f = findBet(gameId, betId);
+  if (!f) return { ok: false, error: 'unknown_game' };
+  const bet = Math.floor(Number(stake));
+  if (!Number.isFinite(bet) || bet < E.GAME_BET.min || bet > E.GAME_BET.max) return { ok: false, error: 'bad_bet', min: E.GAME_BET.min, max: E.GAME_BET.max };
+  return users.withLock(uid, () => {
+    const u = users.get(uid);
+    if (!u) return { ok: false, error: 'no_user' };
+    if (users.stars(u) < bet) return { ok: false, error: 'not_enough_stars', have: users.stars(u), need: bet };
+    const r = users.move(uid, { stars: -bet }, 'game_bet', { game: gameId, bet: betId, via: 'bot' });
+    if (!r.ok) return { ok: false, error: 'not_enough_stars', have: users.stars(u), need: bet };
+    return { ok: true, stake: bet, emoji: f.g.emoji, balance: r.stars };
+  });
+}
+// Кубик не надіслався — повертаємо ставку.
+function botRefund(uid, gameId, stake) {
+  return users.move(uid, { stars: stake }, 'game_refund', { game: gameId });
+}
+async function botSettle(uid, gameId, betId, stake, value) {
+  const f = findBet(gameId, betId);
+  if (!f) return { ok: false, error: 'unknown_game' };
+  return users.withLock(uid, () => {
+    let k = 0, reels = null;
+    if (f.b.slots) { const sr = E.slotResult(value); k = sr.k; reels = sr.reels; }
+    else k = f.b.win.includes(value) ? f.b.k : 0;
+    const payout = round2(stake * k);
+    if (payout) users.move(uid, { stars: payout }, 'game_win', { game: gameId, k, via: 'bot' });
+    const u2 = users.get(uid);
+    users.patch(uid, {
+      diceGames: (u2.diceGames || 0) + 1,
+      diceWagered: round2((u2.diceWagered || 0) + stake),
+      diceWon: round2((u2.diceWon || 0) + payout),
+    });
+    progress.addXp(uid, 'wager', stake * E.XP_RATES.gamePerStar);
+    quests.track(uid, 'game');
+    return { ok: true, value, k, reels, payout, won: payout > 0, balance: users.stars(users.get(uid)) };
+  });
+}
+
+module.exports = { riskState, risk, catalog, play, findBet, botStake, botRefund, botSettle };

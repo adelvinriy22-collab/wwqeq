@@ -109,7 +109,7 @@ function register(bot, hooks) {
     await ctx.reply(`💬 Чат ${s.chatRef}` + (s.chatId ? ` (${s.chatId})` : ' — ❌ НЕ ПІДКЛЮЧЕНО: додай бота адміном або напиши в чаті /chat_here') + '\n' +
       'Стан: ' + (s.paused ? '⏸ на паузі' : '▶️ працює') + '\n\n' +
       `🎁 Наступний дроп: ${f(s.nextDropAt)}\n🧠 Наступна вікторина: ${f(s.nextQuizAt)}\n📣 Оголошень сьогодні: ${s.annCount || 0}\n\n` +
-      'Зараз: /chat_drop · /chat_quiz · /chat_word · /chat_top\nПауза: /chat_pause · /chat_resume\nДіагностика: /chat_debug');
+      'Зараз: /chat_drop · /chat_boxes · /chat_quiz · /chat_word · /chat_top\nПауза: /chat_pause · /chat_resume\nДіагностика: /chat_debug');
   });
   bot.command('chat_debug', async (ctx) => {
     if (!isAdminCtx(ctx) || !needChat(ctx)) return;
@@ -133,6 +133,7 @@ function register(bot, hooks) {
   });
   bot.command('chat_drop', async (ctx) => { if (!isAdminCtx(ctx) || !needChat(ctx)) return; await ctx.reply((await chat().postDrop(true)) ? '🎁 Дроп у чаті' : '❌ Не вдалось — чат не підключено або на паузі'); });
   bot.command('chat_quiz', async (ctx) => { if (!isAdminCtx(ctx) || !needChat(ctx)) return; await ctx.reply((await chat().postQuiz()) ? '🧠 Вікторина в чаті' : '❌ Не вдалось'); });
+  bot.command('chat_boxes', async (ctx) => { if (!isAdminCtx(ctx) || !needChat(ctx)) return; await ctx.reply((await chat().postBoxes()) ? '🎁 Скриньки в чаті' : '❌ Не вдалось — чат не підключено або на паузі'); });
   bot.command('chat_word', async (ctx) => { if (!isAdminCtx(ctx) || !needChat(ctx)) return; await ctx.reply((await chat().postRace()) ? '⚡ «Хто швидший» у чаті' : '❌ Не вдалось'); });
   bot.command('chat_top', async (ctx) => { if (!isAdminCtx(ctx) || !needChat(ctx)) return; await chat().postLeagueTop(); await ctx.reply('🏆 Таблицю надіслано в чат'); });
   bot.command('chat_pause', async (ctx) => { if (!isAdminCtx(ctx) || !needChat(ctx)) return; chat().pause(); await ctx.reply('⏸ Чат-активності на паузі'); });

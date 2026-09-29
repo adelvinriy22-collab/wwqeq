@@ -87,6 +87,8 @@ function createBot(token) {
 
   // 4. Модулі.
   start.register(bot, hooks);
+  require('./games').register(bot, hooks, start.gate);
+  require('./menu').register(bot, hooks, start.gate);
   campaigns.register(bot, hooks);
   apps.register(bot, hooks);
   ops.register(bot);
@@ -114,8 +116,11 @@ function createBot(token) {
 async function setupUi(bot) {
   const tg = bot.telegram;
   await tg.setMyCommands([
-    { command: 'start', description: '🏠 Відкрити StarForge' },
+    { command: 'start', description: '🏠 Головне меню' },
+    { command: 'menu', description: '📋 Меню' },
+    { command: 'bank', description: '🏦 Спільний банк' },
     { command: 'topup', description: '⭐ Поповнити баланс' },
+    { command: 'games', description: '🎲 Ігри на зірки' },
     { command: 'friends', description: '👥 Запросити друзів' },
     { command: 'promo', description: '🎁 Ввести промокод' },
     { command: 'lang', description: '🌐 Мова' },

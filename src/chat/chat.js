@@ -1098,6 +1098,7 @@ function createChat(bot, opts) {
       sec('statsIcon', 'СПІЛЬНА ЦІЛЬ', 'Чат разом пише ' + CFG.goalTarget + ' повідомлень за день. <b>Кожен, хто написав ' + CFG.goalMinPer + '+, отримує бонус.</b> <code>/goal</code> — прогрес.', goalText()) + '\n' +
       sec('crown', 'РІВНІ Й ТИТУЛИ', 'За будь-яку активність — у чаті й у застосунку — копиться XP: від 🌱 Новачка до 🍀 Бога удачі. <b>XP не згорає.</b> <code>/rank</code> — топ.', 'новий титул і білети за кожен рівень') + '\n' +
       sec('statsIcon', 'КВЕСТИ ДНЯ', 'Щодня три завдання для всіх: написати повідомлення, забрати дроп, виграти дуель тощо. <code>/quests</code> — прогрес.', '+' + QREWARD + ' XP за кожен, за всі три ще +' + QALL + ' ' + TIX + ' +' + QALL_PTS + ' XP') + '\n' +
+      sec('giftBox', 'СКРИНЬКИ', 'Кілька разів на день бот ставить 9 скриньок. <b>Кожен відкриває лише одну</b>: в одній — головний приз, у двох — по білету, решта порожні.', '5–10 ' + TIX + ' або 3 ' + S) + '\n' +
       sec('lightning', 'ХТО ШВИДШИЙ', 'Кілька разів на день бот публікує слово з переплутаними літерами. <b>Перший, хто напише правильне слово в чат, — виграє.</b>', prizeText({ tickets: CFG.raceTickets, xp: CFG.racePts })) + '\n' +
       sec('crown', 'ЩАСЛИВЕ ПОВІДОМЛЕННЯ', 'Бот випадково обирає повідомлення в чаті й дає бонус. <b>Кожне твоє повідомлення може стати щасливим.</b>', '+' + CFG.luckyPts + ' XP') + '\n' +
       sec('almost', 'СЕРІЯ В ЧАТІ', 'Пиши щодня хоча б ' + CFG.streakMinMsgs + ' повідомлень — і серія росте. На 3, 7, 14 і 30 днях — великі бонуси.', 'до +300 XP') + '\n' +
@@ -1110,6 +1111,98 @@ function createChat(bot, opts) {
   }
 
   // ─────────────────────── 🎁 ДРОПИ ───────────────────────
+  // ─────────────────────── 🎁 СКРИНЬКИ ───────────────────────
+  // 9 закритих скриньок. Кожен відкриває лише ОДНУ. В одній — головний приз,
+  // у двох — по білету, решта порожні. Хто знайшов приз — того чує весь чат.
+  const BOX = {
+    main: [{ w: 70, tickets: 5 }, { w: 25, tickets: 10 }, { w: 5, stars: 3 }],
+    smallTickets: 1, smallCount: 2, xp: 3, ttlMin: 20, gapFrom: 200, gapTo: 320,
+  };
+  const boxPrizeLabel = (p) => p.stars ? p.stars + ' ' + E('starIcon', '⭐') : p.tickets + ' ' + TIX;
+  function boxKeyboard(bx) {
+    const rows = [];
+    for (let r = 0; r < 3; r++) {
+      rows.push([0, 1, 2].map(c => {
+        const i = r * 3 + c, o = bx.opened[i];
+        let label = '❔';
+        if (o) label = o.kind === 'main' ? '🎁' : o.kind === 'small' ? '🎫' : '💨';
+        else if (bx.done) label = i === bx.mainIdx ? '🎁' : bx.small.includes(i) ? '🎫' : '▫️';
+        return btn(label, 'bx:' + bx.id + ':' + i, o && o.kind === 'main' ? 'success' : undefined);
+      }));
+    }
+    return { inline_keyboard: rows };
+  }
+  function boxText(bx) {
+    const n = Object.keys(bx.opened).length;
+    const main = Object.values(bx.opened).find(o => o.kind === 'main');
+    if (bx.done) {
+      return card('giftBox', 'СКРИНЬКИ ВІДКРИТО', [
+        main ? E('crown', '👑') + ' <b>' + main.name + '</b> знайшов <b>' + boxPrizeLabel(bx.prize) + '</b>!' : E('clockIcon', '⏰') + ' Час вийшов — приз лежав у скриньці №' + (bx.mainIdx + 1),
+        'Відкрито скриньок: ' + n + ' з 9',
+      ], 'Наступні скриньки — несподівано. Будь у чаті 👀');
+    }
+    return card('giftBox', 'СКРИНЬКИ', [
+      'В одній — <b>' + boxPrizeLabel(bx.prize) + '</b>, у двох — по ' + BOX.smallTickets + ' ' + TIX + ', решта порожні',
+      '',
+      E('lightning', '⚡') + ' <b>Як грати:</b> відкрий <b>одну</b> скриньку ❔',
+      'Відкрито: <b>' + n + '</b> з 9',
+    ], 'Одна спроба на людину · треба бути в боті · ' + BOX.ttlMin + ' хв');
+  }
+  async function postBoxes() {
+    const id = crypto.randomBytes(4).toString('hex');
+    const idx = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    for (let i = idx.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+    const bx = { id, at: Date.now(), mainIdx: idx[0], small: idx.slice(1, 1 + BOX.smallCount), prize: pickWeighted(BOX.main), opened: {}, who: {}, done: false, msgId: null };
+    const m = await send(boxText(bx), { reply_markup: boxKeyboard(bx) });
+    if (!m) return false;
+    bx.msgId = m.message_id;
+    setSt({ boxes: bx });
+    return true;
+  }
+  // Оновлюємо повідомлення не частіше ніж раз на 1,2 с — інакше Telegram обмежить.
+  let boxEditTimer = null;
+  function redrawBoxes(now) {
+    const run = () => {
+      boxEditTimer = null;
+      const bx = st().boxes;
+      if (!bx || !bx.msgId) return;
+      bot.telegram.editMessageText(chatId, bx.msgId, undefined, boxText(bx), { parse_mode: 'HTML', reply_markup: boxKeyboard(bx) }).catch(() => {});
+    };
+    if (now) { clearTimeout(boxEditTimer); return run(); }
+    if (!boxEditTimer) boxEditTimer = setTimeout(run, 1200);
+  }
+  async function onBoxClick(ctx, id, i) {
+    const bx = st().boxes;
+    const uid = String(ctx.from.id);
+    if (!bx || bx.id !== id || bx.done) return ctx.answerCbQuery('Ці скриньки вже відкрито — чекай наступні!').catch(() => {});
+    if (!registered(uid)) return ctx.answerCbQuery('Спершу запусти бота @' + (getBotUsername() || 'бота') + ' — і повертайся до скриньок!', { show_alert: true }).catch(() => {});
+    if (isAdminUid(uid)) return ctx.answerCbQuery('Адмін скриньки не відкриває 🙂', { show_alert: true }).catch(() => {});
+    if (bx.who[uid] !== undefined) return ctx.answerCbQuery('Ти вже відкрив скриньку №' + (bx.who[uid] + 1) + ' — дай шанс іншим 🙂', { show_alert: true }).catch(() => {});
+    if (!(i >= 0 && i < 9) || bx.opened[i]) return ctx.answerCbQuery('Цю скриньку вже відкрили — обери іншу').catch(() => {});
+    const kind = i === bx.mainIdx ? 'main' : bx.small.includes(i) ? 'small' : 'empty';
+    // Фіксуємо ДО нарахування — два швидкі кліки не отримають приз двічі.
+    bx.opened[i] = { kind, uid, name: nameOf(ctx.from) };
+    bx.who[uid] = i;
+    if (kind === 'main') bx.done = true;
+    setSt({ boxes: bx });
+    addChatPts(uid, BOX.xp, null);
+    if (kind === 'main') {
+      if (bx.prize.stars) addStars(uid, bx.prize.stars, 'скриньки в чаті'); else addTickets(uid, bx.prize.tickets, 'скриньки в чаті');
+      addPts(uid, 'drop');
+      const plain = bx.prize.stars ? '+' + bx.prize.stars + '⭐' : '+' + bx.prize.tickets + '🎫';
+      await ctx.answerCbQuery('🎉 ПРИЗ! ' + plain + ' уже на балансі', { show_alert: true }).catch(() => {});
+      redrawBoxes(true);
+      return;
+    }
+    if (kind === 'small') {
+      addTickets(uid, BOX.smallTickets, 'скриньки в чаті');
+      await ctx.answerCbQuery('🎫 +' + BOX.smallTickets + ' білет! Непогано 🙂', { show_alert: true }).catch(() => {});
+    } else {
+      await ctx.answerCbQuery('💨 Порожньо… Пощастить наступного разу!').catch(() => {});
+    }
+    redrawBoxes(false);
+  }
+
   async function postDrop(force) {
     const prize = pickWeighted(CFG.dropPrizes);
     const id = crypto.randomBytes(4).toString('hex');
@@ -1526,6 +1619,8 @@ function createChat(bot, opts) {
     }
     const kc = st().contest;
     if (kc && !kc.finished && Date.now() >= kc.endsAt) await finishContest();
+    const ob = st().boxes;
+    if (ob && !ob.done && Date.now() - ob.at > BOX.ttlMin * 60000) { ob.done = true; setSt({ boxes: ob }); redrawBoxes(true); }
     if (!chatId) return;
     const s = st();
     if (s.paused) return;
@@ -1538,6 +1633,12 @@ function createChat(bot, opts) {
       else if (now >= s.nextDropAt) {
         setSt({ nextDropAt: now + randBetween(CFG.dropMinGapMin, CFG.dropMaxGapMin) * 60000 });
         await postDrop();
+      }
+      const sb = st();
+      if (!sb.nextBoxesAt) setSt({ nextBoxesAt: now + randBetween(60, 150) * 60000 });
+      else if (now >= sb.nextBoxesAt && !(sb.boxes && !sb.boxes.done)) {
+        setSt({ nextBoxesAt: now + randBetween(BOX.gapFrom, BOX.gapTo) * 60000 });
+        await postBoxes();
       }
       const s2 = st();
       if (!s2.nextQuizAt) setSt({ nextQuizAt: now + randBetween(30, 90) * 60000 });
@@ -1623,6 +1724,7 @@ function createChat(bot, opts) {
         if (ctx.updateType === 'callback_query') {
           const data = ctx.callbackQuery.data || '';
           if (data.startsWith('cd:')) return onDropClick(ctx, data.slice(3));
+          if (data.startsWith('bx:')) { const [, id, i] = data.split(':'); return onBoxClick(ctx, id, +i); }
           if (data.startsWith('cq:')) { const [, id, ch] = data.split(':'); return onQuizClick(ctx, id, +ch); }
           if (data.startsWith('dl:')) { const [, act, id] = data.split(':'); return onDuelClick(ctx, act, id); }
           return ctx.answerCbQuery().catch(() => {});
@@ -1674,7 +1776,7 @@ function createChat(bot, opts) {
     levelOf: (pts) => LEVELS[levelOf(pts || 0)],
     levelInfo: (pts) => progress.levelInfo(pts || 0, 'uk'),
     announce, postDrop, postQuiz, postLeagueTop, refundStaleDuels,
-    startContest, finishContest, contestRows: () => { const k = st().contest; return k ? contestRows(k) : []; },
+    postBoxes, startContest, finishContest, contestRows: () => { const k = st().contest; return k ? contestRows(k) : []; },
     E, card, status() { return { chatId, chatRef, ...st() }; },
     pause() { setSt({ paused: true }); },
     resume() { setSt({ paused: false }); },

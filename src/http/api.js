@@ -116,6 +116,7 @@ function bootstrap(req) {
   return {
     ok: true, build: req.app.locals.build, serverNow: Date.now(),
     user: { id: u.id, name: u.name || '', username: u.username || null, lang, photo: u.photo || null, isAdmin: users.isAdmin(req.uid), anonymous: !!u.anonymous },
+    bot: notify.tg.botUsername || null,
     balance: { stars: users.stars(u), tickets: users.tickets(u) },
     progress: progress.view(u, lang),
     wheels: wheels.view(u),

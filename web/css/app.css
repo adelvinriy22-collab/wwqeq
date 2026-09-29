@@ -188,10 +188,12 @@ button.row:active, a.row:active { background: var(--tint); }
 .wheel-rot { transform-origin: 50% 50%; transform-box: fill-box; will-change: transform; }
 .wheel-pointer { position: absolute; top: -4px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 13px solid transparent; border-right: 13px solid transparent; border-top: 24px solid var(--text); filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .25)); z-index: 2; }
 .wheel-hub { position: absolute; top: 0; right: 0; bottom: 0; left: 0; margin: auto; width: 22%; height: 22%; border-radius: 50%; background: var(--section); box-shadow: 0 2px 10px rgba(0, 0, 0, .18); display: grid; place-items: center; font-size: 26px; z-index: 1; }
-.wheel-tabs { display: flex; gap: 8px; margin: 0 16px 6px; overflow-x: auto; scrollbar-width: none; }
-.wheel-tabs::-webkit-scrollbar { display: none; }
-.wheel-tab { flex: 1; min-width: 96px; border: 0; border-radius: 12px; background: var(--section); padding: 9px 8px; cursor: pointer; text-align: center; }
-.wheel-tab .wt-t { font-weight: 600; font-size: 14px; }
+/* Усі вкладки коліс видно одразу: 4 в ряд, на вузьких екранах — 2×2. */
+.wheel-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0 16px 6px; }
+@media (max-width: 379px) { .wheel-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.wheel-tab { min-width: 0; border: 0; border-radius: 12px; background: var(--section); padding: 8px 4px; cursor: pointer; text-align: center; color: var(--text); }
+.wheel-tab .wt-t, .wheel-tab .wt-s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wheel-tab .wt-t { font-weight: 600; font-size: 13px; }
 .wheel-tab .wt-s { font-size: 12px; color: var(--hint); }
 .wheel-tab.on { background: var(--btn); color: var(--btn-text); }
 .wheel-tab.on .wt-s { color: var(--btn-sub); }
@@ -203,6 +205,20 @@ button.row:active, a.row:active { background: var(--tint); }
 .action .ai { width: 36px; height: 36px; border-radius: 50%; background: var(--btn); color: var(--btn-text); display: grid; place-items: center; font-size: 18px; line-height: 1; }
 .action span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .action:active { transform: scale(.97); }
+
+/* Спільний банк: колесо з секторами гравців */
+.bank-card { padding-top: 14px; }
+.bank-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 8px; }
+.bank-title { font-weight: 800; letter-spacing: .3px; font-size: 14px; white-space: nowrap; }
+.bank-live { font-size: 13px; font-weight: 600; color: var(--danger); background: var(--danger-t); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.bank-live.done { color: var(--ok); background: var(--ok-t); }
+.bank-pot { text-align: center; font-size: 34px; font-weight: 800; margin-top: 8px; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+.bank-hub { font-size: 24px; }
+.bank-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 12px; margin: 8px 0 2px; font-size: 13px; }
+.bank-legend .bl { display: inline-flex; align-items: center; gap: 5px; color: var(--sub); max-width: 100%; overflow-wrap: anywhere; }
+.bank-legend .bl.me { color: var(--text); font-weight: 600; }
+.bank-legend .bl i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.bank-mine { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--tint); font-size: 14px; line-height: 1.5; }
 
 /* Результат */
 .result { text-align: center; padding: 8px 0 4px; }
@@ -283,7 +299,8 @@ button.row:active, a.row:active { background: var(--tint); }
 .banner.red { background: var(--danger-t); }
 .banner.green { background: var(--ok-t); }
 .banner .bi { font-size: 26px; flex: none; }
-.banner .bt { font-weight: 600; }
+.banner .bm { min-width: 0; }
+.banner .bt { font-weight: 600; overflow-wrap: anywhere; }
 .banner .bs { font-size: 13px; color: var(--sub); }
 .banner .bm { flex: 1; min-width: 0; }
 

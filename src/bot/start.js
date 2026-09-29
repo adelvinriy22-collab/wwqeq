@@ -4,7 +4,6 @@
 // ==========================================================================
 const config = require('../config');
 const users = require('../core/users');
-const progress = require('../core/progress');
 const subscription = require('../core/subscription');
 const notify = require('../core/notify');
 const i18n = require('../i18n');
@@ -13,7 +12,7 @@ const promo = require('../features/promo');
 const wallet = require('../features/wallet');
 const maintenance = require('../features/maintenance');
 const ui = require('./ui');
-const { esc, fmtStars } = require('../lib/util');
+const { esc } = require('../lib/util');
 const time = require('../lib/time');
 
 const awaitingPromo = new Set();
@@ -30,20 +29,12 @@ function shareUrl(uid, lang) {
   return 'https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent(txt);
 }
 
+// Привітання — головне меню бота (як у попередній версії): нагороди, ігри,
+// банк, поповнення, профіль, промокод, налаштування. Уся гра — ще й у застосунку.
 async function sendWelcome(ctx, uid) {
-  const u = users.get(uid);
-  const lang = u.lang || 'uk';
-  const lv = progress.view(u, lang).level;
-  const text = i18n.t(lang, 'start.welcome', {
-    name: esc(u.name || u.username || ''), stars: fmtStars(users.stars(u)), tickets: users.tickets(u),
-    level: lv.e + ' ' + esc(lv.t) + ' · ' + (lang === 'en' ? 'level' : 'рівень') + ' ' + lv.n,
-  }) + (config.WEBAPP_URL ? '' : i18n.t(lang, 'start.noApp'));
-  const share = shareUrl(uid, lang);
-  await ctx.reply(text, { parse_mode: 'HTML', ...ui.kb([
-    [ui.app(i18n.t(lang, 'btn.open'), null, 'success')],
-    [share ? ui.url(i18n.t(lang, 'btn.invite'), share, 'primary') : null],
-    [ui.cb(i18n.t(lang, 'btn.lang'), 'lang_menu')],
-  ]) }).catch(() => {});
+  const m = require('./menu').mainMenu(uid);
+  const noApp = config.WEBAPP_URL ? '' : i18n.t((users.get(uid) || {}).lang || 'uk', 'start.noApp');
+  await ctx.reply(m.text + noApp, m.extra).catch(() => {});
 }
 
 async function sendSubscribe(ctx, uid) {
@@ -116,10 +107,7 @@ function register(bot, hooks) {
     await ctx.reply(i18n.t(lang, 'start.inApp'), ui.openApp(lang, tab)).catch(() => {});
   };
   bot.command('app', openTab(null));
-  bot.command('bank', openTab('bank'));
   bot.command('pass', openTab('pass'));
-  bot.command('games', openTab('games'));
-  bot.command('topup', openTab('wallet'));
   bot.command('wallet', openTab('wallet'));
   bot.command('friends', openTab('friends'));
 

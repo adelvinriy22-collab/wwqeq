@@ -5,6 +5,7 @@
 const T = {
   uk: {
     'btn.open': '🎰 Відкрити StarForge',
+    'btn.games': '🎲 Ігри на зірки',
     'btn.openWallet': '💸 Відкрити гаманець',
     'btn.subscribe': '📣 Підписатись на канал',
     'btn.checkSub': '✅ Я підписався',
@@ -51,6 +52,7 @@ const T = {
   },
   en: {
     'btn.open': '🎰 Open StarForge',
+    'btn.games': '🎲 Star games',
     'btn.openWallet': '💸 Open wallet',
     'btn.subscribe': '📣 Join the channel',
     'btn.checkSub': '✅ I joined',
@@ -97,6 +99,7 @@ const T = {
   },
   ru: {
     'btn.open': '🎰 Открыть StarForge',
+    'btn.games': '🎲 Игры на звёзды',
     'btn.openWallet': '💸 Открыть кошелёк',
     'btn.subscribe': '📣 Подписаться на канал',
     'btn.checkSub': '✅ Я подписался',

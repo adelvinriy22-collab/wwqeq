@@ -2,6 +2,8 @@
 import { langCode } from './tg.js';
 
 const uk = {
+  'bank.title': 'Спільний банк', 'bank.drawing': 'Розігруємо…', 'bank.potSub': 'учасників: {n}', 'bank.first': 'Постав першим — усе колесо твоє', 'bank.mineLine': 'Твоя ставка: {s}⭐ + {t}🎫 → вага {w}', 'bank.consLine': 'Навіть якщо не пощастить — {n}🎫 твої', 'bank.more': '+{n} інших', 'bank.you': 'ти',
+  'dice.inBot': 'Ігри на зірки — у боті', 'dice.inBotSub': 'Кубик, дартс, футбол, баскетбол, боулінг, слоти — Telegram сам кидає кубик',
   'app.player': 'Гравець',
   'tab.home': 'Головна', 'tab.games': 'Ігри', 'tab.progress': 'Прогрес', 'tab.wallet': 'Гаманець', 'tab.profile': 'Профіль',
   'common.loading': 'Завантаження…', 'common.great': 'Супер!', 'common.ok': 'Зрозуміло', 'common.later': 'Пізніше', 'common.saved': 'Збережено', 'common.you': 'ти',
@@ -125,6 +127,8 @@ const uk = {
 };
 
 const en = {
+  'bank.title': 'Shared bank', 'bank.drawing': 'Drawing…', 'bank.potSub': 'players: {n}', 'bank.first': 'Bet first — the whole wheel is yours', 'bank.mineLine': 'Your bet: {s}⭐ + {t}🎫 → weight {w}', 'bank.consLine': 'Even if you lose — {n}🎫 are yours', 'bank.more': '+{n} more', 'bank.you': 'you',
+  'dice.inBot': 'Star games — in the bot', 'dice.inBotSub': 'Dice, darts, football, basketball, bowling, slots — Telegram rolls the dice itself',
   'app.player': 'Player',
   'tab.home': 'Home', 'tab.games': 'Games', 'tab.progress': 'Progress', 'tab.wallet': 'Wallet', 'tab.profile': 'Profile',
   'common.loading': 'Loading…', 'common.great': 'Great!', 'common.ok': 'Got it', 'common.later': 'Later', 'common.saved': 'Saved', 'common.you': 'you',
@@ -236,6 +240,8 @@ const en = {
 };
 
 const ru = {
+  'bank.title': 'Общий банк', 'bank.drawing': 'Разыгрываем…', 'bank.potSub': 'участников: {n}', 'bank.first': 'Поставь первым — всё колесо твоё', 'bank.mineLine': 'Твоя ставка: {s}⭐ + {t}🎫 → вес {w}', 'bank.consLine': 'Даже если не повезёт — {n}🎫 твои', 'bank.more': '+{n} других', 'bank.you': 'ты',
+  'dice.inBot': 'Игры на звёзды — в боте', 'dice.inBotSub': 'Кубик, дартс, футбол, баскетбол, боулинг, слоты — Telegram сам бросает кубик',
   'app.player': 'Игрок',
   'tab.home': 'Главная', 'tab.games': 'Игры', 'tab.progress': 'Прогресс', 'tab.wallet': 'Кошелёк', 'tab.profile': 'Профиль',
   'common.loading': 'Загрузка…', 'common.great': 'Супер!', 'common.ok': 'Понятно', 'common.later': 'Позже', 'common.saved': 'Сохранено', 'common.you': 'ты',

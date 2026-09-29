@@ -44,6 +44,10 @@ function seedV2() {
       901: U('901', { starBalance: 0, tickets: 0 }),
       // Для /stars і /tickets.
       960: U('960', { starBalance: 6, tickets: 2 }),
+      // Грає в кубик у чаті з ботом.
+      970: U('970', { starBalance: 50 }),
+      // Відкривають скриньки в чаті.
+      980: U('980', { tickets: 0 }), 981: U('981', { tickets: 0 }),
     },
     giveaways: {}, applications: [], nextApplicationId: 1,
     featureFlags: {
@@ -316,6 +320,68 @@ test('адмін: /stars і /tickets нараховують і забирают�
   tg.push({ message: { message_id: 991, date: Math.floor(Date.now() / 1000), chat: { id: 700, type: 'private' }, from: { id: 700, is_bot: false, first_name: 'U' }, text: '/stars 700 1000', entities: [{ type: 'bot_command', offset: 0, length: 6 }] } });
   await sleep(700);
   assert.strictEqual(readDb().users['700'].starBalance < 1000, true);
+});
+
+test('ігри в боті: Telegram кидає кубик, результат і реакція, «Ще раз»', async () => {
+  const from = { id: 970, is_bot: false, first_name: 'U970', username: 'user970' };
+  const cb = (data) => tg.push({ callback_query: { id: 'q' + Math.random(), from, chat_instance: 'x', data, message: { message_id: 5, date: 0, chat: { id: 970, type: 'private' } } } });
+  const n0 = tg.calls.length;
+  cb('dice_menu');
+  let menuMsg;
+  for (let i = 0; i < 20 && !menuMsg; i++) { await sleep(150); menuMsg = tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '970'); }
+  assert.ok(menuMsg && /dg:dice:even/.test(JSON.stringify(menuMsg.payload.reply_markup)), 'меню ігор з кнопками');
+  // Фейковий Telegram завжди «кидає» 6: парне виграє ×1.85.
+  cb('dp:dice:even:10');
+  let res;
+  for (let i = 0; i < 40 && !res; i++) { await sleep(200); res = tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '970' && /Виграш/.test(c.payload.text || '')); }
+  assert.ok(res, 'результат після анімації');
+  assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendDice' && c.payload.emoji === '🎲'), 'кубик кинув Telegram');
+  assert.ok(tg.calls.slice(n0).some(c => c.method === 'setMessageReaction'), 'реакція на кубику');
+  assert.match(JSON.stringify(res.payload.reply_markup), /dp:dice:even:10/, 'кнопка «Ще раз»');
+  await sleep(500);
+  const u = readDb().users['970'];
+  assert.strictEqual(u.starBalance, 58.5, '50 − 10 + 18.5');
+  assert.strictEqual(u.diceGames, 1);
+  // Своя ставка текстом.
+  cb('do:dice:six');
+  await sleep(400);
+  tg.push({ message: { message_id: 993, date: Math.floor(Date.now() / 1000), chat: { id: 970, type: 'private' }, from, text: '3' } });
+  for (let i = 0; i < 40; i++) { await sleep(200); if ((readDb().users['970'].diceGames || 0) >= 2) break; }
+  assert.strictEqual(readDb().users['970'].starBalance, 58.5 - 3 + 15.6, 'рівно 6 ×5.2');
+});
+
+test('скриньки в чаті: одна спроба на людину, головний приз — одному', async () => {
+  const GROUP = -1001;
+  const wait = async (pred) => { for (let i = 0; i < 30; i++) { await sleep(150); try { if (pred()) return true; } catch (e) {} } return false; };
+  const gmsg = (from, text) => tg.push({ message: { message_id: Math.floor(Math.random() * 1e6), date: Math.floor(Date.now() / 1000), chat: { id: GROUP, type: 'supergroup', title: 'G' }, from, text, entities: text.startsWith('/') ? [{ type: 'bot_command', offset: 0, length: text.split(' ')[0].length }] : undefined } });
+  const click = (uid, data) => tg.push({ callback_query: { id: 'b' + uid + Math.random(), from: { id: uid, is_bot: false, first_name: 'P' + uid }, chat_instance: 'g', data, message: { message_id: 1, date: 0, chat: { id: GROUP, type: 'supergroup' } } } });
+  const answers = (uid) => tg.calls.filter(c => c.method === 'answerCallbackQuery' && String(c.payload.callback_query_id).startsWith('b' + uid));
+  const n0 = tg.calls.length;
+  gmsg({ id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, '/chat_here');
+  assert.ok(await wait(() => tg.calls.slice(n0).some(c => c.method === 'sendMessage' && /прив/.test(c.payload.text || ''))), 'чат прив\'язано');
+  adminCmd('/chat_boxes');
+  let post;
+  for (let i = 0; i < 30 && !post; i++) { await sleep(150); post = tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === String(GROUP) && /СКРИНЬКИ/.test(c.payload.text || '')); }
+  assert.ok(post, 'скриньки опубліковано');
+  const kb = post.payload.reply_markup.inline_keyboard;
+  assert.strictEqual(kb.flat().length, 9);
+  const id = kb[0][0].callback_data.split(':')[1];
+  await sleep(500);
+  const bx = readDb().featureFlags.chat.boxes;
+  const empty = [...Array(9).keys()].find(i => i !== bx.mainIdx && !bx.small.includes(i));
+  click(980, 'bx:' + id + ':' + empty);
+  assert.ok(await wait(() => answers(980).length === 1), 'відповідь на першу скриньку');
+  assert.match(answers(980)[0].payload.text, /Порожньо/);
+  click(980, 'bx:' + id + ':' + bx.mainIdx);
+  assert.ok(await wait(() => answers(980).length === 2));
+  assert.match(answers(980)[1].payload.text, /вже відкрив/, 'друга спроба заборонена');
+  click(981, 'bx:' + id + ':' + bx.mainIdx);
+  assert.ok(await wait(() => answers(981).length === 1));
+  assert.match(answers(981)[0].payload.text, /ПРИЗ/);
+  const bal = (uid) => { const u = readDb().users[uid]; return (u.tickets || 0) + ':' + (u.starBalance || 0); };
+  assert.ok(await wait(() => bal('981') === (bx.prize.tickets || 0) + ':' + (bx.prize.stars || 0)), 'головний приз нараховано');
+  assert.strictEqual(bal('980'), '0:0', 'за порожню нічого');
+  assert.ok(await wait(() => tg.calls.some(c => c.method === 'editMessageText' && /ВІДКРИТО/.test(c.payload.text || ''))), 'повідомлення оновлено');
 });
 
 test('пас: закритий рівень не видається; промокод один раз', async () => {
