@@ -100,7 +100,10 @@ function persist() {
 
 // Примусовий запис — на випадок зупинки процесу.
 function flushNow() {
-  const json = JSON.stringify(cache, null, 2);
+  // Без відступів: база на кілька тисяч гравців із відступами важила б
+  // удвічі більше, а серіалізація й запис — це синхронна робота в головному
+  // потоці, під час якої бот не відповідає нікому.
+  const json = JSON.stringify(cache);
   const tmp = DB_FILE + '.tmp';
   try {
     fs.writeFileSync(tmp, json);
@@ -218,8 +221,14 @@ module.exports = {
     // Тепер рахуємо ТІЛЬКИ заявки зі сходів. Раніше був чорний список джерел,
     // і кожне нове джерело (колесо, магазин, квести) доводилось туди дописувати —
     // а поки не дописали, виграна в колесі мішка блокувала мішку за рефералів.
+    // Заявки без джерела — найстаріші, створені ще до появи поля source,
+    // і всі вони були саме зі сходів.
     return cache.applications.some(a =>
-      a.uid === uid && a.tierId === tierId && a.source === 'ladder'
+      a.uid === uid && a.tierId === tierId && isLadderApp(a) && a.status !== 'cancelled'
     );
   },
+  isLadderApp,
+  flush() { if (dirty || flushTimer) { clearTimeout(flushTimer); flushTimer = null; dirty = false; firstDirtyAt = 0; flushNow(); } },
 };
+
+function isLadderApp(a) { return !!a && (!a.source || a.source === 'ladder'); }

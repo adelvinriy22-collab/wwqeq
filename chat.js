@@ -465,8 +465,11 @@ function createChat(deps) {
     // Картинку завантажуємо один раз, далі шлемо за file_id — швидше й без повторного завантаження.
     let m = null;
     const cached = st().jpFileId;
+    const jpFile = require('path').join(__dirname, 'jackpot.jpg');
     try {
-      m = await bot.telegram.sendPhoto(chatId, cached || { source: require('path').join(__dirname, 'jackpot.jpg') }, extra);
+      // Файлу картинки може не бути в деплої — тоді одразу текстом, без помилки.
+      if (!cached && !require('fs').existsSync(jpFile)) throw new Error('no jackpot.jpg');
+      m = await bot.telegram.sendPhoto(chatId, cached || { source: jpFile }, extra);
       const ph = m && m.photo && m.photo[m.photo.length - 1];
       if (ph && ph.file_id && ph.file_id !== cached) setSt({ jpFileId: ph.file_id });
     } catch (e) {

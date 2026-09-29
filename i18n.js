@@ -58,8 +58,8 @@ const STATE_ICON = { locked: 'lockIcon', claimable: '✨', pending: '⏳', appro
 // українською — це для тебе, а не для юзера, там достатньо CFG.TIERS.name).
 const TIER_NAMES = {
   uk: { bear: 'Мішка', gift: 'Подарунок', rocket: 'Ракета', trophy: 'Трофей', xmas_stocking: 'Xmas Stocking', fresh_socks: 'Fresh Socks', diamond_ring: 'Diamond Ring', wheel_eye: 'Evil Eye', wheel_stocking: 'Xmas Stocking', wheel_snake: 'Lunar Snake', wheel_lolpop: 'Lol Pop', premium3m: 'Telegram Premium 3 міс' },
-  en: { bear: 'Teddy Bear', gift: 'Gift', rocket: 'Rocket', trophy: 'Trophy', xmas_stocking: 'Xmas Stocking', fresh_socks: 'Fresh Socks', diamond_ring: 'Diamond Ring', wheel_eye: 'Evil Eye', wheel_stocking: 'Xmas Stocking', wheel_snake: 'Lunar Snake', wheel_lolpop: 'Lol Pop', premium3m: 'Telegram Premium 3 міс' },
-  ru: { bear: 'Мишка', gift: 'Подарок', rocket: 'Ракета', trophy: 'Трофей', xmas_stocking: 'Xmas Stocking', fresh_socks: 'Fresh Socks', diamond_ring: 'Diamond Ring', wheel_eye: 'Evil Eye', wheel_stocking: 'Xmas Stocking', wheel_snake: 'Lunar Snake', wheel_lolpop: 'Lol Pop', premium3m: 'Telegram Premium 3 міс' },
+  en: { bear: 'Teddy Bear', gift: 'Gift', rocket: 'Rocket', trophy: 'Trophy', xmas_stocking: 'Xmas Stocking', fresh_socks: 'Fresh Socks', diamond_ring: 'Diamond Ring', wheel_eye: 'Evil Eye', wheel_stocking: 'Xmas Stocking', wheel_snake: 'Lunar Snake', wheel_lolpop: 'Lol Pop', premium3m: 'Telegram Premium 3 months' },
+  ru: { bear: 'Мишка', gift: 'Подарок', rocket: 'Ракета', trophy: 'Трофей', xmas_stocking: 'Xmas Stocking', fresh_socks: 'Fresh Socks', diamond_ring: 'Diamond Ring', wheel_eye: 'Evil Eye', wheel_stocking: 'Xmas Stocking', wheel_snake: 'Lunar Snake', wheel_lolpop: 'Lol Pop', premium3m: 'Telegram Premium 3 мес.' },
 };
 function tierName(tierId, lang) {
   return (TIER_NAMES[lang] && TIER_NAMES[lang][tierId]) || TIER_NAMES.uk[tierId] || tierId;
@@ -161,7 +161,7 @@ const TEXTS = {
     btnHintOff: 'Підказка "Кнопка нижче...": Вимк',
     btnNotifyOn: 'Сповіщення про рефералів: Увімк',
     btnNotifyOff: 'Сповіщення про рефералів: Вимк',
-    newReferralNotify: (name, total) => `Новий реферал: ${name}! Всього запрошено: ${total}.`,
+    newReferralNotify: (name, total) => `Новий реферал: ${name}! +1 🎫 білет. Всього запрошено: ${total}.`,
     btnJoinGiveaway: 'Участь',
     btnShareOneTap: 'Поділитись за 1 тап',
     gaAnnounce: (name, endsAtLabel) => [
@@ -305,7 +305,7 @@ const TEXTS = {
     btnHintOff: 'Back-button hint: Off',
     btnNotifyOn: 'Referral notifications: On',
     btnNotifyOff: 'Referral notifications: Off',
-    newReferralNotify: (name, total) => `New referral: ${name}! Total invited: ${total}.`,
+    newReferralNotify: (name, total) => `New referral: ${name}! +1 🎫 ticket. Total invited: ${total}.`,
     btnJoinGiveaway: 'Join',
     btnShareOneTap: 'Share in 1 tap',
     gaAnnounce: (name, endsAtLabel) => [
@@ -449,7 +449,7 @@ const TEXTS = {
     btnHintOff: 'Подсказка "Кнопка ниже...": Выкл',
     btnNotifyOn: 'Уведомления о рефералах: Вкл',
     btnNotifyOff: 'Уведомления о рефералах: Выкл',
-    newReferralNotify: (name, total) => `Новый реферал: ${name}! Всего приглашено: ${total}.`,
+    newReferralNotify: (name, total) => `Новый реферал: ${name}! +1 🎫 билет. Всего приглашено: ${total}.`,
     btnJoinGiveaway: 'Участвовать',
     btnShareOneTap: 'Поделиться за 1 тап',
     gaAnnounce: (name, endsAtLabel) => [
@@ -499,4 +499,4 @@ const TEXTS = {
   },
 };
 
-module.exports = { EMOJI, TEXTS, STATE_ICON, tierName };
+module.exports = { EMOJI, TEXTS, STATE_ICON, tierName, fmtStars };

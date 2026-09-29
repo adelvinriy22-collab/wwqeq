@@ -2,8 +2,8 @@
 // Вся конфігурація в одному місці.
 // ==========================================================================
 
-const CHANNEL_USERNAME = '@starforge_news';
-const CHANNEL_URL = 'https://t.me/starforge_news';
+const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME || '@starforge_news';
+const CHANNEL_URL = process.env.CHANNEL_URL || ('https://t.me/' + CHANNEL_USERNAME.replace(/^@/, ''));
 
 // Партнерський канал для спільних розіграшів (наприклад /joint_giveaway_start).
 // Онови на реальний юзернейм, коли домовишся з партнером.
@@ -93,7 +93,11 @@ function commissionFor(tierId) {
 }
 
 // ---- Пароль підтвердження для прихованих адмін-функцій ----
-const ADVANCED_UNLOCK_PASSWORD = '12345678';
+// Береться зі змінної оточення. Пароль у коді бачить кожен, хто має доступ
+// до репозиторію, тому стандартний лишено лише для сумісності — сервер
+// попереджає про нього в логах на старті.
+const ADVANCED_UNLOCK_PASSWORD = process.env.ADVANCED_UNLOCK_PASSWORD || '12345678';
+const ADVANCED_UNLOCK_PASSWORD_IS_DEFAULT = !process.env.ADVANCED_UNLOCK_PASSWORD;
 
 // Мінімальний баланс внутрішніх зірок для виводу (обміну на приз).
 // Мінімальний баланс внутрішніх зірок для виводу — динамічно дорівнює ціні
@@ -107,5 +111,5 @@ module.exports = {
   TIERS, getTier,
   EVENT_END, EVENT_PRIZES_BY_PLACE, EVENT_PLACES_BEAR_ONLY,
   commissionFor,
-  ADVANCED_UNLOCK_PASSWORD, STAR_WITHDRAW_MIN, STAR_WITHDRAW_TIER_IDS,
+  ADVANCED_UNLOCK_PASSWORD, ADVANCED_UNLOCK_PASSWORD_IS_DEFAULT, STAR_WITHDRAW_MIN, STAR_WITHDRAW_TIER_IDS,
 };

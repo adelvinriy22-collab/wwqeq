@@ -3,8 +3,9 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { Telegraf, Markup } = require('telegraf');
+const crypto = require('crypto');
 const db = require('./db');
-const { EMOJI, TEXTS, STATE_ICON, tierName } = require('./i18n');
+const { EMOJI, TEXTS, STATE_ICON, tierName, fmtStars } = require('./i18n');
 const CFG = require('./config');
 const pass = require('./pass');
 const bank = require('./bank');
@@ -21,7 +22,89 @@ if (!BOT_TOKEN) {
 }
 
 const BOOT_AT = Date.now();
-const bot = new Telegraf(BOT_TOKEN);
+const bot = new Telegraf(BOT_TOKEN, {
+  handlerTimeout: 10 * 60 * 1000,
+  // Власний сервер Bot API (або тестовий) — через змінну оточення.
+  ...(process.env.TELEGRAM_API_ROOT ? { telegram: { apiRoot: process.env.TELEGRAM_API_ROOT } } : {}),
+});
+
+// Ліміти Telegram. На 429 («Too Many Requests») Telegram каже, скільки
+// почекати. Раніше таке повідомлення просто губилось — особливо в розсилках
+// і в години пік у чаті. Тепер кожен виклик API чекає й повторює (до двох разів).
+{
+  const callApi = bot.telegram.callApi.bind(bot.telegram);
+  bot.telegram.callApi = async function (method, payload, opts) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await callApi(method, payload, opts);
+      } catch (e) {
+        const retry = e && ((e.parameters && e.parameters.retry_after) ||
+          (e.response && e.response.parameters && e.response.parameters.retry_after));
+        if (e && e.code === 429 && retry && retry <= 30 && attempt < 2) {
+          await new Promise(r => setTimeout(r, (retry + 0.5) * 1000));
+          continue;
+        }
+        throw e;
+      }
+    }
+  };
+}
+
+// Екранування для parse_mode: 'HTML'. Імена людей ідуть у повідомлення як є,
+// і ім'я на кшталт «<b>» або «a & b» ламало розмітку — Telegram відхиляв
+// усе повідомлення (оголошення в чаті просто не з'являлось).
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+}
+// Як людину назвати в тексті: @username (він завжди безпечний) або ім'я.
+function whoOf(u, fallback) {
+  if (u && u.username) return '@' + u.username;
+  return esc((u && u.name) || fallback || 'гравець');
+}
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Запис історії спінів → підпис. Білетні виграші (tix) раніше показувались
+// як «+0⭐», а ризик ×2 — як звичайні зірки.
+function isTixId(id) { return String(id || '').indexOf('tix') === 0; }
+function historyName(h) {
+  if (h.id === 'risk_win') return '×' + (h.mult || 2) + ' — виграв ' + h.am + '⭐';
+  if (h.id === 'risk_lose') return 'ризик ×2 — втратив ' + h.am + '⭐';
+  if (h.sp) return CFG.getTier(h.id).name;
+  if (h.tk || isTixId(h.id)) return '+' + (h.tk || parseInt(String(h.id).slice(3), 10) || 0) + ' 🎫';
+  return '+' + (h.am || 0) + '⭐';
+}
+function historyIcon(h) {
+  if (h.sp) return '🎁';
+  if (h.id === 'risk_win') return '📈';
+  if (h.id === 'risk_lose') return '📉';
+  if (h.tk || isTixId(h.id)) return '🎫';
+  return '⭐';
+}
+
+// Надійна відправка для розсилок. Telegram при перевищенні ліміту відповідає
+// 429 з retry_after — раніше таке повідомлення просто губилось. Тепер чекаємо
+// і пробуємо ще раз; заблокованих (403) позначаємо, щоб більше не турбувати.
+async function safeSend(chatId, fn) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await fn();
+      return 'ok';
+    } catch (e) {
+      const code = e && (e.code || (e.response && e.response.error_code));
+      const retry = e && e.parameters && e.parameters.retry_after
+        || (e && e.response && e.response.parameters && e.response.parameters.retry_after);
+      if (code === 429 && retry && attempt < 2) { await sleep((retry + 1) * 1000); continue; }
+      const m = String((e && e.message) || '');
+      if (code === 403 || m.includes('blocked') || m.includes('deactivated') || m.includes('chat not found')) {
+        const u = db.getUser(String(chatId));
+        if (u && !u.remindersOff) db.upsertUser(String(chatId), { remindersOff: true });
+        return 'blocked';
+      }
+      return 'failed';
+    }
+  }
+  return 'failed';
+}
 
 // Telegraf бере нову пачку оновлень, лише коли ПОВНІСТЮ обробив попередню.
 // Гра в чаті чекає анімацію кубика 3–4 с, дуель — довше, розсилка — хвилини.
@@ -83,7 +166,10 @@ bot.use(async (ctx, next) => {
     const existing = db.getUser(uid);
     if (existing) {
       const newName = ctx.from.first_name || existing.name || '';
-      db.upsertUser(uid, { username: ctx.from.username || null, name: newName });
+      // Пишемо лише якщо щось змінилось: кожен upsert — це запис бази на диск.
+      if (existing.username !== (ctx.from.username || null) || existing.name !== newName || existing.id !== uid) {
+        db.upsertUser(uid, { id: uid, username: ctx.from.username || null, name: newName });
+      }
 
       // Автоперевірка: чи є StarForgeX_bot в імені юзера — +2/-2 квитки автоматично,
       // без ручного підтвердження (бот сам бачить ім'я при кожній дії).
@@ -206,21 +292,6 @@ bot.use(async (ctx, next) => {
     ).catch(() => {});
   }
   return; // далі не пускаємо
-});
-
-bot.use(async (ctx, next) => {
-  if (!ctx.from) return next();
-  if (isAdmin(ctx)) return next(); // адмін-чат завжди пропускаємо
-
-  const isStartCmd = ctx.updateType === 'message' && ctx.message.text === '/start';
-  const isCheckSub = ctx.updateType === 'callback_query' && ctx.callbackQuery.data === 'check_sub';
-  if (isStartCmd || isCheckSub) return next();
-
-  const uid = String(ctx.from.id);
-  const u = db.getUser(uid);
-  if (u && u.subscribed) return next();
-
-  return next(); // саму блокуючу перевірку робимо всередині конкретних хендлерів (нижче)
 });
 
 // Трекінг активності — БУДЬ-яка дія юзера (команда, кнопка, текст) оновлює
@@ -390,13 +461,9 @@ async function sendSubscribeRequired(ctx, uid) {
   // тож другий канал коштує їй одного зайвого тапу. Це найдешевший трафік.
   const rows = [
     [urlBtn(T.btnSubscribe, CFG.CHANNEL_URL, 'primary', 'megaphone')],
+    [callbackBtn(T.btnCheckSub, 'check_sub', 'success', 'check')],
   ];
-  if (PARTNER_TASK_LINK) {
-  }
-  rows.push([callbackBtn(T.btnCheckSub, 'check_sub', 'success', 'check')]);
-
   await bot.telegram.sendMessage(uid, text, { entities, ...Markup.inlineKeyboard(rows) }).catch(() => {});
-
 }
 
 // ---------------------------------------------------------------------------
@@ -515,17 +582,22 @@ async function showMainMenu(ctx, uid) {
   const u = db.getUser(uid);
   const balance = (u && u.starBalance) || 0;
   const { text: greetText, entities: greetEntities } = buildText(T.greeting());
-  const { text: balanceText, entities: balanceEntities } = buildText(['starIcon', ' ', { b: `БАЛАНС: ${balance} ` }, 'starIcon']);
+  const tix = ticketsOf(u);
+  const { text: balanceText, entities: balanceEntities } = buildText(['starIcon', ' ', { b: `БАЛАНС: ${fmtStars(balance)} ` }, 'starIcon', tix ? `   🎫 ${tix}` : '']);
   const text = greetText + '\n\n' + balanceText;
   const entities = [...greetEntities, ...balanceEntities.map(e => ({ ...e, offset: e.offset + greetText.length + 2 }))];
 
-  const rows = [[callbackBtn(T.btnRewards, 'rewards', 'primary', 'giftBox')]];
+  const rows = [];
+  // Головна дія — застосунок із колесами. Раніше в меню його не було взагалі:
+  // людина мусила знайти кнопку меню біля поля вводу.
+  if (WEBAPP_URL) rows.push([{ text: '🎰 ВІДКРИТИ КОЛЕСА', web_app: { url: WEBAPP_URL }, style: 'success' }]);
+  rows.push([callbackBtn(T.btnRewards, 'rewards', 'primary', 'giftBox')]);
 
   rows.push([callbackBtn('🎲 ІГРИ (кубик, дартс, футбол, слоти)', 'dice_menu', 'danger', 'starIcon')]);
   {
     const bk = (db.getFeatureFlags() || {}).bank;
     if (bk && bk.status === 'open') {
-      rows.push([callbackBtn(`🏦 СПІЛЬНИЙ БАНК — ${Math.round((bk.pot || 0) * 100) / 100}⭐`, 'bank_show', 'danger', 'starIcon')]);
+      rows.push([callbackBtn(`🏦 СПІЛЬНИЙ БАНК — ${fmtStars(bk.stars != null ? bk.stars : bk.pot)}⭐`, 'bank_show', 'danger', 'starIcon')]);
     }
   }
   rows.push([callbackBtn('⭐ ПОПОВНИТИ БАЛАНС', 'topup_menu', 'success', 'starIcon')]);
@@ -658,106 +730,47 @@ bot.action('toggle_back_hint', async (ctx) => {
   await showSettings(ctx, uid);
 });
 
-// Щоденний бонус — зважений випадковий приз. Шанси НЕ показуємо юзеру навмисно.
-const DAILY_BONUS_TABLE = [
-  { weight: 65,  type: 'stars', amount: 1 },
-  { weight: 20,  type: 'stars', amount: 3 },
-  { weight: 10,  type: 'stars', amount: 5 },
-  { weight: 3,   type: 'stars', amount: 7 },
-  { weight: 1,   type: 'tier', tierId: 'bear', qty: 1 },
-  { weight: 0.5, type: 'tier', tierId: 'bear', qty: 2 },
-  { weight: 0.3, type: 'tier', tierId: 'bear', qty: 3 },
-  { weight: 0.2, type: 'tier', tierId: 'bear', qty: 4 },
-  { weight: 0.1, type: 'tier', tierId: 'rocket', qty: 1 },
-];
-const DAILY_BONUS_TOTAL_WEIGHT = DAILY_BONUS_TABLE.reduce((s, r) => s + r.weight, 0);
-
-function rollDailyBonus() {
-  let r = Math.random() * DAILY_BONUS_TOTAL_WEIGHT;
-  for (const reward of DAILY_BONUS_TABLE) {
-    r -= reward.weight;
-    if (r <= 0) return reward;
-  }
-  return DAILY_BONUS_TABLE[0];
-}
-
-// Вивід зірок: жадібний обмін балансу на призи (від найдорожчого до найдешевшого),
-// мінімум CFG.STAR_WITHDRAW_MIN. Дозволені рівні: bear/gift/rocket/trophy/xmas_stocking
-// (fresh_socks і diamond_ring поки НЕ доступні через вивід — надто дорогі).
-// Умови: мінімум 3 реферали за все життя + мінімум 1 підтверджена заявка раніше
-// (страховка від миттєвого "зареєструвався-і-одразу-вивів").
-const STAR_WITHDRAW_TIERS = ['xmas_stocking', 'trophy', 'rocket', 'gift', 'bear']; // від дорогого до дешевого
-const STAR_WITHDRAW_MIN_REFERRALS = 3;
-
 // ---------------------------------------------------------------------------
-// ВИВІД ЗІРОК. Telegram уміє надсилати зірки лише певними номіналами — 22⭐
-// переказати неможливо. Тому фіксуємо СУМУ ДО ВИДАЧІ, а комісію додаємо ЗВЕРХУ.
-// Єдина межа виводу — 15⭐ (перевіряє isAllowedPayout). Раніше тут було 125,
-// і підписи казали «від 125», хоча сервер приймав від 15.
-const APP_WITHDRAW_MIN = 15;
-// Номінали, які Telegram реально вміє переказувати. Було лише 5 варіантів,
-// тому людина з 40⭐ не могла вивести нічого понад 25 — решта зависала.
-const WITHDRAW_PAYOUTS = [15, 25, 50, 75, 100, 150, 250, 350, 500, 750, 1000];
+// ВИВІД ЗІРОК. Вводиться сума ДО ВИДАЧІ, комісія додається зверху.
+// Єдина межа — WITHDRAW_MIN_ANY (15⭐), далі будь-яке ціле число.
+// Умова доступу: STAR_WITHDRAW_MIN_REFERRALS запрошених друзів за весь час.
+const STAR_WITHDRAW_MIN_REFERRALS = 3;
+const WITHDRAW_MIN_ANY = 15;
+const APP_WITHDRAW_MIN = WITHDRAW_MIN_ANY;
 const WITHDRAW_FEE_PERCENT = 5;
 const APP_WITHDRAW_FEE_PERCENT = WITHDRAW_FEE_PERCENT;
 
 // ==========================================================================
-// БОНУС ЗА ПОПОВНЕННЯ.
-// Ці дві константи вживались у 9 місцях коду, але НЕ БУЛИ ОГОЛОШЕНІ ЖОДНОГО
-// разу — їх з'їло попереднє редагування. Наслідок: кожен виклик
-// /api/create-invoice і /api/wheel-status падав із ReferenceError, тобто
-// поповнення не працювало взагалі, а застосунок не міг завантажити статус
-// (звідси ж і баланс 0 у колесі). Один рядок клав половину бота.
+// БОНУС ЗА ПОПОВНЕННЯ: +10% на перші три поповнення.
 // ==========================================================================
 const DEPOSIT_BONUS_PERCENT = 10;   // +10% до суми
 const DEPOSIT_BONUS_TIMES = 3;      // на перші 3 поповнення
-
-// Запобіжник, щоб ця історія не повторилась: перевіряємо критичні константи
-// на старті й падаємо голосно, а не тихо на кожному запиті користувача.
-(function assertConstants() {
-  const required = {
-    DEPOSIT_BONUS_PERCENT, DEPOSIT_BONUS_TIMES,
-    WITHDRAW_FEE_PERCENT, APP_WITHDRAW_FEE_PERCENT,
-  };
-  const bad = Object.keys(required).filter((k) => required[k] === undefined || required[k] === null);
-  if (bad.length) {
-    console.error('❌ Відсутні критичні константи:', bad.join(', '));
-    process.exitCode = 1;
-  } else {
-    console.log('✅ Критичні константи на місці');
-  }
-})();
+// Telegram не приймає рахунки на довільно великі суми зірок — зайвий
+// рахунок просто не створюється. Стелю можна змінити змінною оточення.
+const TOPUP_MAX = Math.max(1, parseInt(process.env.TOPUP_MAX, 10) || 10000);
 
 function withdrawCost(payout) {
   const cost = Math.ceil(payout * (1 + WITHDRAW_FEE_PERCENT / 100));
   return { payout, cost, fee: cost - payout };
 }
 
-// Вивід будь-якої суми від мінімальної. Фіксований список лишили тільки
-// як підказку в інтерфейсі: людина краще розуміє «виведу рівно 137⭐»,
-// ніж «округли до найближчого з одинадцяти варіантів».
 function isAllowedPayout(payout) {
-  return Number.isFinite(payout) && payout >= WITHDRAW_MIN_ANY;
+  return Number.isInteger(payout) && payout >= WITHDRAW_MIN_ANY;
 }
-const WITHDRAW_MIN_ANY = 15;
 
-// Єдина функція виплати для БОТА і ЗАСТОСУНКУ — щоб умови й повідомлення
-// не розʼїжджались.
-async function createStarPayout(uid, w, balance) {
+// Єдина функція виплати для БОТА і ЗАСТОСУНКУ — щоб умови не розʼїжджались.
+// Повертає { app } або { error, ... } з конкретною причиною відмови —
+// раніше будь-яка відмова в застосунку показувалась як «встанови юзернейм».
+// Викликати лише під balanceLocks: баланс читаємо тут, свіжий.
+async function createStarPayout(uid, w) {
   const u = db.getUser(uid) || {};
-
   const refs = (u.invitedIds || []).length;
-  if (refs < STAR_WITHDRAW_MIN_REFERRALS) {
-    await bot.telegram.sendMessage(uid,
-      `Ще не можна вивести 🙂\n\nДля виводу потрібно запросити ${STAR_WITHDRAW_MIN_REFERRALS} друзів — у тебе зараз ${refs}.\n` +
-      `Лишилось: ${STAR_WITHDRAW_MIN_REFERRALS - refs}.\n\nПосилання — у меню бота, кнопка «Запросити друга».`
-    ).catch(() => {});
-    return null;
+  if (!isAdminUid(uid) && refs < STAR_WITHDRAW_MIN_REFERRALS) {
+    return { error: 'need_referrals', need: STAR_WITHDRAW_MIN_REFERRALS, have: refs };
   }
-  if (!u.username) {
-    await bot.telegram.sendMessage(uid, '⚠️ Спочатку встанови юзернейм у налаштуваннях Telegram — без нього неможливо надіслати зірки.').catch(() => {});
-    return null;
-  }
+  if (!u.username) return { error: 'need_username' };
+  const balance = u.starBalance || 0;
+  if (balance < w.cost) return { error: 'not_enough', balance, cost: w.cost, payout: w.payout };
 
   db.upsertUser(uid, { starBalance: balance - w.cost });
   const app_ = db.addApplication({
@@ -776,123 +789,34 @@ async function createStarPayout(uid, w, balance) {
     ).catch(() => {});
   }
 
-  await bot.telegram.sendMessage(
+  bot.telegram.sendMessage(
     uid,
     `✅ Заявка #${app_.id} створена.\nДо видачі: ${w.payout}⭐\nСписано: ${w.cost}⭐ (комісія ${w.fee}⭐)\n\nОбробимо найближчим часом.`
   ).catch(() => {});
 
-  return app_;
+  return { app: app_, balance: Math.round((balance - w.cost) * 100) / 100 };
 }
 
-
-const NFT_TIER_IDS = ['xmas_stocking', 'fresh_socks', 'diamond_ring'];
-// Суворіші окремі умови саме для NFT через вивід (базових 3 реф. + 1 заявки замало для NFT):
-const NFT_WITHDRAW_MIN_REFERRALS = 20;
-const NFT_WITHDRAW_MIN_APPROVED = 3;
-
-function meetsNftConditions(uid) {
-  if (isAdminUid(uid)) return true; // адмінський обхід теж діє тут
-  const u = db.getUser(uid);
-  const refCount = (u.invitedIds || []).length;
-  const approvedCount = db.listApplications('approved').filter(a => a.uid === uid).length;
-  return refCount >= NFT_WITHDRAW_MIN_REFERRALS && approvedCount >= NFT_WITHDRAW_MIN_APPROVED;
+// Вивід — ОДИН шлях, у застосунку. Кнопки бота ведуть у гаманець, тож
+// техроботи «лише вивід» блокують усі шляхи однаково.
+function webAppUrl(tab) {
+  if (!WEBAPP_URL) return null;
+  return tab ? WEBAPP_URL + (WEBAPP_URL.includes('?') ? '&' : '?') + 'tab=' + tab : WEBAPP_URL;
 }
-
-function exchangeStarsForTiers(amount, allowNft) {
-  let remaining = amount;
-  const obtained = [];
-  for (const tierId of STAR_WITHDRAW_TIERS) {
-    if (NFT_TIER_IDS.includes(tierId) && !allowNft) continue; // NFT недоступний без окремої умови
-    const tier = CFG.getTier(tierId);
-    while (remaining >= tier.priceStars) {
-      obtained.push(tierId);
-      remaining -= tier.priceStars;
-    }
-  }
-  return { obtained, remaining };
-}
-
-const awaitingWithdrawAmount = new Map(); // uid -> balance (для валідації)
-
-// Вивід — ОДИН шлях, у застосунку. Раніше були два: кнопки в боті й гаманець
-// у застосунку, з різною логікою. Техроботи «лише вивід» блокували застосунок,
-// а через кнопки бота вивести можна було. Тепер кнопки бота ведуть у гаманець.
 async function redirectWithdraw(ctx) {
   await ctx.answerCbQuery().catch(() => {});
   const mt = maintState();
   if (mt.mode !== 'off' && !isAdmin(ctx)) {
     return ctx.reply('🛠 Вивід тимчасово недоступний — технічні роботи.\n\n' + (mt.text || '')).catch(() => {});
   }
-  const url = WEBAPP_URL ? WEBAPP_URL + (WEBAPP_URL.includes('?') ? '&' : '?') + 'tab=wallet' : null;
+  const url = webAppUrl('wallet');
   return ctx.reply('💸 <b>Вивід зірок — у застосунку</b>\n\nТам видно баланс, суму з комісією та всі умови. Тисни 👇',
     { parse_mode: 'HTML', ...(url ? { reply_markup: { inline_keyboard: [[{ text: '💸 Відкрити гаманець', web_app: { url } }]] } } : {}) }).catch(() => {});
 }
 
-bot.action('withdraw_stars', async (ctx) => {
-  return redirectWithdraw(ctx);
-  const uid = String(ctx.from.id);
-  await ctx.answerCbQuery();
-  if (!(await requireSubscribed(ctx, uid))) return;
-  const T = t(uid);
-
-  const u = db.getUser(uid);
-  const balance = u.starBalance || 0;
-  const refCount = (u.invitedIds || []).length;
-
-  // Адмін тестує функціонал вільно — умови не блокують, і ЖОДНІ фейкові дані
-  // (реферали/заявки) не пишуться в базу, щоб не забруднювати статистику.
-  const bypassConditions = isAdmin(ctx);
-
-  if (!bypassConditions && refCount < STAR_WITHDRAW_MIN_REFERRALS) {
-    const { text, entities } = buildText(['warn', ' ', { b: T.withdrawNeedReferrals(STAR_WITHDRAW_MIN_REFERRALS, refCount) }]);
-    await bot.telegram.sendMessage(uid, text, { entities }).catch(() => {});
-    await sendBackKeyboard(uid);
-    return;
-  }
-
-  const hasApprovedBefore = db.listApplications('approved').some(a => a.uid === uid);
-  if (!bypassConditions && !hasApprovedBefore) {
-    const { text, entities } = buildText(['warn', ' ', { b: T.withdrawNeedApproved }]);
-    await bot.telegram.sendMessage(uid, text, { entities }).catch(() => {});
-    await sendBackKeyboard(uid);
-    return;
-  }
-
-  if (balance < CFG.STAR_WITHDRAW_MIN) {
-    const { text, entities } = buildText(['starIcon', ' ', { b: T.withdrawNeedMin(CFG.STAR_WITHDRAW_MIN, balance) }]);
-    await bot.telegram.sendMessage(uid, text, { entities }).catch(() => {});
-    await sendBackKeyboard(uid);
-    return;
-  }
-
-  if (!ctx.from.username) {
-    const { text, entities } = buildText(t(uid).needUsername());
-    await bot.telegram.sendMessage(uid, text, { entities }).catch(() => {});
-    await sendBackKeyboard(uid);
-    return;
-  }
-
-  const rq = reqFor(uid);
-  const lockLine = rq.ok
-    ? ''
-    : `\n\nМагазин відкриється після ${rq.need} спінів на платному колесі — у тебе ${rq.have}. Разово, назавжди.`;
-
-  const { text, entities } = buildText([
-    'starIcon', ' ', { b: T.withdrawChooseTitle(balance) }, '\n\n', { i: T.withdrawChooseHint },
-    { b: lockLine },
-    '\n\n', { b: '💸 Або виведи ЗІРКИ пакетом (від 100⭐) — відкрий колесо кнопкою меню, блок «Вивід зірок».' },
-  ]);
-  await bot.telegram.sendMessage(uid, text, {
-    entities,
-    ...Markup.inlineKeyboard([
-      ...WITHDRAW_PAYOUTS.map(p => withdrawCost(p)).filter(w => w.cost <= balance).map(w =>
-        [callbackBtn(`Отримати ${w.payout}⭐ (спишеться ${w.cost}⭐)`, `wd_fixed_${w.payout}`, 'success', 'giftBox')]
-      ),
-      [callbackBtn(T.withdrawCustomBtn + ` (від ${APP_WITHDRAW_MIN}⭐)`, 'withdraw_stars_custom', 'primary', 'giftBox')],
-      [callbackBtn('Назад', 'back_to_menu', undefined, 'back')],
-    ]),
-  }).catch(() => {});
-});
+bot.action('withdraw_stars', (ctx) => redirectWithdraw(ctx));
+bot.action(/^wd_fixed_(\d+)$/, (ctx) => redirectWithdraw(ctx));
+bot.action('withdraw_stars_custom', (ctx) => redirectWithdraw(ctx));
 
 bot.action('back_to_menu', async (ctx) => {
   const uid = String(ctx.from.id);
@@ -900,39 +824,6 @@ bot.action('back_to_menu', async (ctx) => {
   if (!(await requireSubscribed(ctx, uid))) return;
   await ctx.deleteMessage().catch(() => {});
   await showMainMenu(ctx, uid);
-});
-
-bot.action(/^wd_fixed_(\d+)$/, async (ctx) => {
-  return redirectWithdraw(ctx);
-  const uid = String(ctx.from.id);
-  await ctx.answerCbQuery();
-  if (!(await requireSubscribed(ctx, uid))) return;
-
-  const payout = parseInt(ctx.match[1], 10);
-  if (!isAllowedPayout(payout)) return ctx.reply('Ця сума недоступна.');
-  const w = withdrawCost(payout);
-
-  if (balanceLocks.has(uid)) return ctx.reply('⏳ Зачекай, попередня дія обробляється.');
-  balanceLocks.add(uid);
-  try {
-    const u = db.getUser(uid);
-    const balance = (u && u.starBalance) || 0;
-    if (balance < w.cost) return ctx.reply(`Щоб отримати ${payout}⭐, потрібно ${w.cost}⭐ на балансі (комісія ${w.fee}⭐).\nЗараз у тебе: ${balance}⭐`);
-    await createStarPayout(uid, w, balance);
-  } finally {
-    balanceLocks.delete(uid);
-  }
-});
-
-bot.action('withdraw_stars_custom', async (ctx) => {
-  return redirectWithdraw(ctx);
-  const uid = String(ctx.from.id);
-  await ctx.answerCbQuery();
-  const u = db.getUser(uid);
-  const balance = u.starBalance || 0;
-  awaitingWithdrawAmount.set(uid, balance);
-  const { text, entities } = buildText(['starIcon', ' ', { i: t(uid).withdrawCustomPrompt(balance) }]);
-  await bot.telegram.sendMessage(uid, text, { entities }).catch(() => {});
 });
 
 // ---------------------------------------------------------------------------
@@ -969,6 +860,7 @@ bot.action('my_profile', async (ctx) => {
     `📉 Витрачено на спіни: <b>${u.starsSpentTotal || 0}⭐</b>\n\n` +
     `🔥 Серія: <b>${u.dailyStreak || 0}</b> дн. (рекорд: ${u.bestStreak || 0})\n` +
     `👥 Рефералів: <b>${(u.invitedIds || []).length}</b>\n` +
+    `🎫 Білетів: <b>${ticketsOf(u)}</b>\n` +
     `🛒 Магазин: <b>${rq.ok ? 'відкрито' : rq.have + '/' + rq.need + ' спінів'}</b>\n\n` +
     `<i>У боті з ${since}</i>`;
 
@@ -977,9 +869,8 @@ bot.action('my_profile', async (ctx) => {
   if (hist.length) {
     text += '\n\n📜 <b>Останні виграші:</b>\n';
     for (const h of hist) {
-      const nm = h.sp ? CFG.getTier(h.id).name : '+' + h.am + '⭐';
       const d = new Date(h.at).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
-      text += `  ${h.sp ? '🎁' : '⭐'} ${nm} · ${d}\n`;
+      text += `  ${historyIcon(h)} ${historyName(h)} · ${d}\n`;
     }
   }
 
@@ -1041,12 +932,15 @@ async function showRewardsScreen(ctx, uid) {
     ...T.conditionsNote(), '\n\n'];
   const claimableButtons = [];
 
+  // Те саме правило, що й у db.hasApplicationFor: сходинку закривають лише
+  // заявки «за друзів». Раніше тут був чорний список джерел, і виграна
+  // на колесі мішка показувалась як уже отримана за рефералів.
+  const mineApps = db.listApplications().filter(a => a.uid === uid && db.isLadderApp(a));
   for (const tier of CFG.TIERS) {
     if (tier.excludeFromLadder) continue;
-    const isLadder = a => a.source !== 'event' && a.source !== 'giveaway' && a.source !== 'password_challenge' && a.source !== 'external_ref' && a.source !== 'daily_bonus' && a.source !== 'star_withdrawal';
-    const approved = db.listApplications('approved').find(a => a.uid === uid && a.tierId === tier.id && isLadder(a));
-    const pending = db.listApplications('pending').find(a => a.uid === uid && a.tierId === tier.id && isLadder(a));
-    const rejected = db.listApplications('rejected').find(a => a.uid === uid && a.tierId === tier.id && isLadder(a) && !approved && !pending);
+    const approved = mineApps.find(a => a.status === 'approved' && a.tierId === tier.id);
+    const pending = mineApps.find(a => a.status === 'pending' && a.tierId === tier.id);
+    const rejected = !approved && !pending && mineApps.find(a => a.status === 'rejected' && a.tierId === tier.id);
 
     let state, statusParts;
     if (approved) { state = 'approved'; statusParts = T.tierStatusApproved(); }
@@ -1103,9 +997,11 @@ function attributeReferral(uid, inviterId) {
     db.upsertUser(inviterId, { invitedIds });
 
     // Пас качається і за друзів, а не лише за ставки.
+    // Білет за друга окремо НЕ нараховуємо: ticketsOf() уже рахує кожного
+    // запрошеного як білет. Раніше тут був ще addTickets(+1) — і кожен друг
+    // давав два білети замість одного.
     awardPassXp(inviterId, 'referral', 'приведений друг');
     leagueXp(inviterId, 'friend', 1);
-    addTickets(inviterId, 1, 'друг приєднався');
 
     const ev = db.getEvent();
     if (ev && ev.active && Date.now() < ev.endsAt) {
@@ -1128,7 +1024,9 @@ function attributeReferral(uid, inviterId) {
     const freshInviter = db.getUser(inviterId);
     if (freshInviter.notifyOnReferral !== false) {
       const T = t(inviterId);
-      bot.telegram.sendMessage(inviterId, T.newReferralNotify(u.name || '—', invitedIds.length)).catch(() => {});
+      bot.telegram.sendMessage(inviterId,
+        T.newReferralNotify(u.username ? '@' + u.username : (u.name || '—'), invitedIds.length) +
+        `\n🎫 Білетів: ${ticketsOf(freshInviter)}`).catch(() => {});
     }
   }
 }
@@ -1149,9 +1047,12 @@ bot.start(async (ctx) => {
 
   const payload = ctx.startPayload;
   if (payload && payload.startsWith('ref_')) {
-    const refId = payload.slice(4);
+    const refId = payload.slice(4).replace(/\D/g, '');
     const current = db.getUser(uid);
-    if (current && !current.referredBy && !current.pendingRef && refId !== uid) {
+    // Реферал — лише новий гравець: той, хто ще жодного разу не пройшов
+    // старт (не обрав мову). Раніше будь-який давній гравець міг «стати
+    // рефералом» друга, просто відкривши його посилання.
+    if (refId && current && !current.referredBy && !current.pendingRef && refId !== uid && !current.lang && db.getUser(refId)) {
       db.upsertUser(uid, { pendingRef: refId });
     }
   }
@@ -1195,9 +1096,12 @@ bot.action('check_sub', async (ctx) => {
     await ctx.reply(text, { entities });
     return;
   }
-  db.upsertUser(uid, { subscribed: true });
+  // Фіксуємо час перевірки й зараховуємо реферала одразу — раніше це
+  // відбувалось лише при наступній дії людини, і друг «зависав».
+  db.upsertUser(uid, { subscribed: true, subCheckedAt: Date.now() });
+  attributeReferralIfPending(uid);
   await ctx.answerCbQuery('✅');
-  const u = db.getUser(uid);
+  const u = db.getUser(uid) || {};
   if (u.lang) await showMainMenu(ctx, uid);
   else await showLanguageSelect(ctx);
 });
@@ -1218,9 +1122,14 @@ bot.action('rewards', async (ctx) => {
 
 const processingClaims = new Set(); // захист від подвійного тапу (race condition)
 
-bot.action(/^claim_(bear|gift|rocket|trophy)$/, async (ctx) => {
+// Будь-яка сходинка драбини, а не лише перші чотири: кнопки «Забрати» для
+// NFT-сходинок раніше просто нічого не робили.
+const LADDER_TIER_IDS = new Set(CFG.TIERS.filter(t => !t.excludeFromLadder && t.referrals).map(t => t.id));
+
+bot.action(/^claim_([a-z0-9_]+)$/, async (ctx) => {
   const uid = String(ctx.from.id);
   const tierId = ctx.match[1];
+  if (!LADDER_TIER_IDS.has(tierId)) return ctx.answerCbQuery('Ця нагорода недоступна').catch(() => {});
   const lockKey = uid + ':' + tierId;
 
   // Синхронна перевірка ДО будь-яких await — блокує паралельну обробку
@@ -1415,14 +1324,25 @@ bot.command('active_today', async (ctx) => {
 // Хто й яке колесо відкриває/крутить — журнал у базі даних (останні 2000 подій).
 // Виявлення зловживання багом (щоденне колесо крутилось без обмеження до
 // фіксу). Журнал у базі даних, переживає перезапуск сервера.
+// Зловживання — це два ЗВИЧАЙНІ (не бонусні) щоденні спіни ближче ніж за
+// 23 години. Раніше рахувалось «більше 2 щоденних спінів у журналі», і
+// після появи бонусних спінів (питання дня, промокоди, пас) під покарання
+// потрапили б чесні гравці. Повертає [uid, кількість порушень].
 function findWheelAbusers() {
-  const counts = {};
+  const byUid = {};
   for (const ev of db.getWheelLog()) {
-    if (ev.kind === 'spin' && ev.wheel === 'daily') {
-      counts[ev.uid] = (counts[ev.uid] || 0) + 1;
-    }
+    if (ev.kind !== 'spin' || ev.wheel !== 'daily') continue;
+    if (ev.extra && ev.extra.bonus) continue;
+    (byUid[ev.uid] = byUid[ev.uid] || []).push(ev.ts || 0);
   }
-  return Object.entries(counts).filter(([, c]) => c > 2);
+  const out = [];
+  for (const [uid, list] of Object.entries(byUid)) {
+    list.sort((a, b) => a - b);
+    let bad = 0;
+    for (let i = 1; i < list.length; i++) if (list[i] - list[i - 1] < 23 * 3600000) bad++;
+    if (bad > 0) out.push([uid, bad]);
+  }
+  return out;
 }
 
 // Ті, хто крутив колесо "за рефералів" більше разів, ніж мав на це право
@@ -1454,7 +1374,8 @@ bot.command('referral_abuse_check', async (ctx) => {
     await ctx.reply('Порушників не знайдено.');
     return;
   }
-  let text = `⚠️ Знайдено ${abusers.length} акаунтів, які крутили "за рефералів" більше, ніж мали право:\n\n`;
+  let text = `⚠️ Знайдено ${abusers.length} акаунтів, які крутили колесо «за білети» частіше, ніж дають самі реферали:\n` +
+    `ℹ️ Колесо тепер крутиться за БІЛЕТИ, а білети дають і промокоди, чат, банк, пас — перевищення саме по собі не доводить зловживання.\n\n`;
   for (const a of abusers) {
     const u = db.getUser(a.uid);
     text += `${(u && u.name) || '—'} (${u && u.username ? '@' + u.username : a.uid})\n`;
@@ -1472,12 +1393,12 @@ bot.command('wheel_abuse_check', async (ctx) => {
     await ctx.reply('Зловживань не знайдено.');
     return;
   }
-  let text = `⚠️ Знайдено ${abusers.length} акаунтів із >2 щоденних спінів:\n\n`;
+  let text = `⚠️ Знайдено ${abusers.length} акаунтів зі щоденними спінами частіше, ніж раз на добу (бонусні спіни не враховано):\n\n`;
   for (const [uid, c] of abusers) {
     const u = db.getUser(uid);
-    text += `${(u && u.name) || '—'} (${u && u.username ? '@' + u.username : uid}) — ${c} спінів, баланс: ${(u && u.starBalance) || 0}⭐\n`;
+    text += `${(u && u.name) || '—'} (${u && u.username ? '@' + u.username : uid}) — порушень: ${c}, баланс: ${(u && u.starBalance) || 0}⭐\n`;
   }
-  text += '\nЩоб обнулити баланс і надіслати попередження всім у списку — напиши /wheel_abuse_punish';
+  text += '\nЩоб обнулити баланс і надіслати попередження всім у списку — напиши /wheel_abuse_punish так';
   while (text.length > 0) { await ctx.reply(text.slice(0, 4000)); text = text.slice(4000); }
 });
 
@@ -1485,6 +1406,10 @@ bot.command('wheel_abuse_punish', async (ctx) => {
   if (!isAdmin(ctx)) return;
   const abusers = findWheelAbusers();
   if (!abusers.length) return ctx.reply('Нікого карати — список порожній.');
+  // Масове обнулення балансів — лише з явним підтвердженням.
+  if ((ctx.message.text.split(/\s+/)[1] || '').toLowerCase() !== 'так') {
+    return ctx.reply(`⚠️ Обнулити баланс ${abusers.length} акаунтам зі списку /wheel_abuse_check?\n\nПідтверди: /wheel_abuse_punish так`);
+  }
 
   let done = 0;
   for (const [uid] of abusers) {
@@ -1690,8 +1615,8 @@ function topUpMenu(uid) {
   for (let i = 0; i < TOPUP_AMOUNTS.length; i += 2) {
     const row = [];
     for (const a of TOPUP_AMOUNTS.slice(i, i + 2)) {
-      const bonus = left > 0 ? Math.round(a * DEPOSIT_BONUS_PERCENT / 100) : 0;
-      row.push(callbackBtn(bonus ? `${a}⭐ → ${a + bonus}⭐` : `${a}⭐`, `topup_${a}`, 'success', 'starIcon'));
+      const bonus = left > 0 ? depositBonusFor(uid, a) : 0;
+      row.push(callbackBtn(bonus ? `${a}⭐ → ${fmtStars(a + bonus)}⭐` : `${a}⭐`, `topup_${a}`, 'success', 'starIcon'));
     }
     rows.push(row);
   }
@@ -1700,10 +1625,10 @@ function topUpMenu(uid) {
 
   return {
     text: `⭐ <b>Поповнення балансу</b>\n\n` +
-      `Баланс: <b>${bal}⭐</b>\n\n` +
+      `Баланс: <b>${fmtStars(bal)}⭐</b>\n\n` +
       `Оплата — реальними Telegram Stars, тими самими, що ти купуєш у Telegram.\n` +
       (left > 0
-        ? `🎁 <b>Бонус +${DEPOSIT_BONUS_PERCENT}%</b> ще на ${left} ${left === 1 ? 'поповнення' : 'поповнення'}: кладеш 100⭐ — отримуєш ${100 + DEPOSIT_BONUS_PERCENT}⭐\n\n`
+        ? `🎁 <b>Бонус +${DEPOSIT_BONUS_PERCENT}%</b> ще на ${left} поповн.: кладеш 100⭐ — отримуєш ${100 + DEPOSIT_BONUS_PERCENT}⭐\n\n`
         : `\n`) +
       `Обери суму:`,
     keyboard: Markup.inlineKeyboard(rows),
@@ -1723,18 +1648,32 @@ bot.command('topup', async (ctx) => {
   await ctx.reply(m.text, { parse_mode: 'HTML', ...m.keyboard });
 });
 
-async function sendTopUpInvoice(ctx, uid, amount) {
-  // Стеля прибрана: мінімум 1⭐, максимуму немає.
-  const a = Math.max(1, parseInt(amount, 10) || 0);
-  if (!a) return ctx.reply('Сума має бути цілим числом від 1.');
+// Бонус за поповнення — одна формула для підпису в рахунку і для нарахування.
+// Раніше рахунок округлював бонус до цілого, а нараховувалось із копійками.
+function depositBonusFor(uid, amount) {
   const u = db.getUser(uid) || {};
-  const left = Math.max(0, DEPOSIT_BONUS_TIMES - (u.depositCount || 0));
-  const bonus = left > 0 ? Math.round(a * DEPOSIT_BONUS_PERCENT / 100) : 0;
+  if ((u.depositCount || 0) >= DEPOSIT_BONUS_TIMES) return 0;
+  return Math.round(amount * DEPOSIT_BONUS_PERCENT) / 100;
+}
+
+function parseTopUpAmount(raw) {
+  // «1 000» → 1000, «75⭐» → 75; «1.5» — це 1, а не 15.
+  const a = parseInt(String(raw == null ? '' : raw).replace(/\s/g, ''), 10);
+  if (!a || a < 1) return { error: 'Сума має бути цілим числом від 1.' };
+  if (a > TOPUP_MAX) return { error: `Максимум за один раз — ${TOPUP_MAX}⭐. Можна поповнити кілька разів.` };
+  return { amount: a };
+}
+
+async function sendTopUpInvoice(ctx, uid, amount) {
+  const p = parseTopUpAmount(amount);
+  if (p.error) return ctx.reply(p.error);
+  const a = p.amount;
+  const bonus = depositBonusFor(uid, a);
   try {
     await ctx.replyWithInvoice({
       title: `Поповнення на ${a}⭐`,
       description: bonus
-        ? `${a}⭐ на внутрішній баланс + бонус ${bonus}⭐. Разом ${a + bonus}⭐.`
+        ? `${a}⭐ на внутрішній баланс + бонус ${fmtStars(bonus)}⭐. Разом ${fmtStars(a + bonus)}⭐.`
         : `${a}⭐ на внутрішній баланс StarForge.`,
       payload: JSON.stringify({ uid, starsAmount: a, ts: Date.now() }),
       // provider_token для XTR не передається взагалі.
@@ -1757,98 +1696,125 @@ bot.action('topup_own', async (ctx) => {
   const uid = String(ctx.from.id);
   await ctx.answerCbQuery();
   awaitingTopUpAmount.add(uid);
-  await ctx.reply('Напиши суму поповнення числом, . Мінімум — 1⭐, стелі немає.\n\nНаприклад: <code>75</code>', { parse_mode: 'HTML' });
+  await ctx.reply(`Напиши суму поповнення числом. Від 1 до ${TOPUP_MAX}⭐.\n\nНаприклад: <code>75</code>`, { parse_mode: 'HTML' });
 });
 
+function parsePaymentPayload(raw) {
+  try {
+    const p = JSON.parse(raw);
+    return p && typeof p === 'object' && p.uid ? p : null;
+  } catch (e) { return null; }
+}
+
 // Telegram Stars: обов'язково відповісти на pre_checkout протягом 10с.
+// Раніше відповідь була «так» на все підряд — тепер відсікаємо чужі й
+// застарілі рахунки ще до списання грошей у людини.
 bot.on('pre_checkout_query', async (ctx) => {
+  const q = ctx.preCheckoutQuery;
+  const payload = parsePaymentPayload(q.invoice_payload);
+  let err = null;
+  if (q.currency !== 'XTR') err = 'Непідтримувана валюта.';
+  else if (!payload) err = 'Рахунок пошкоджено. Створи новий.';
+  else if (String(payload.uid) !== String(q.from.id)) err = 'Цей рахунок створено для іншого акаунта.';
+  else if (payload.type === 'premium_spin' && WHEEL_CONFIGS.premium.disabled) err = 'Преміум-колесо вимкнено.';
+  else if (payload.type === 'pass_premium' && pass.ensure(db.getUser(String(q.from.id)) || {}, Date.now()).premium) err = 'Платна лінія пасу вже відкрита.';
+  if (err) return ctx.answerPreCheckoutQuery(false, err).catch(() => {});
   await ctx.answerPreCheckoutQuery(true).catch(() => {});
 });
 
 // Успішна оплата зірками Telegram -> нараховуємо на внутрішній баланс.
 bot.on('message', async (ctx, next) => {
-  if (ctx.message && ctx.message.successful_payment) {
-    const payment = ctx.message.successful_payment;
-    let payload = null;
-    try { payload = JSON.parse(payment.invoice_payload); } catch (e) { /* ignore */ }
+  if (!(ctx.message && ctx.message.successful_payment)) return next();
+  const payment = ctx.message.successful_payment;
+  const payload = parsePaymentPayload(payment.invoice_payload);
+  // Скільки людина РЕАЛЬНО заплатила. Саме цю суму й зараховуємо, а не
+  // число з payload: payload — лише наша позначка, гроші — ось тут.
+  const paid = payment.currency === 'XTR' ? Math.max(0, parseInt(payment.total_amount, 10) || 0) : 0;
+  const payer = String(ctx.from.id);
+  const uid = payload && payload.uid ? String(payload.uid) : payer;
 
-    // ЗАХИСТ ВІД ПОДВІЙНОГО НАРАХУВАННЯ.
-    // Telegram може передоставити апдейт: рестарт Railway під час оплати,
-    // повтор офсету при polling. Без цієї перевірки той самий платіж
-    // нараховувався б удруге разом із бонусом +10%.
-    const chargeId = payment.telegram_payment_charge_id || '';
-    if (chargeId && payload && payload.uid) {
-      const uPrev = db.getUser(payload.uid) || {};
-      const seen = uPrev.paidCharges || [];
-      if (seen.indexOf(chargeId) !== -1) {
-        console.log('Повторний апдейт платежу, пропускаю:', chargeId);
-        return;
-      }
-      // Тримаємо останні 50 — цього з запасом вистачає для дедуплікації.
-      db.upsertUser(payload.uid, { paidCharges: seen.concat([chargeId]).slice(-50) });
+  // ЗАХИСТ ВІД ПОДВІЙНОГО НАРАХУВАННЯ. Telegram може передоставити апдейт
+  // (рестарт під час оплати, повтор офсету при polling).
+  const chargeId = payment.telegram_payment_charge_id || '';
+  if (chargeId) {
+    const f = db.getFeatureFlags() || {};
+    const seenGlobal = f.paidCharges || [];
+    const uPrev = db.getUser(uid) || {};
+    const seen = uPrev.paidCharges || [];
+    if (seen.indexOf(chargeId) !== -1 || seenGlobal.indexOf(chargeId) !== -1) {
+      console.log('Повторний апдейт платежу, пропускаю:', chargeId);
+      return;
     }
-
-    if (payload && payload.uid && payload.type === 'pass_premium') {
-      // Платна лінія пасу, куплена за РЕАЛЬНІ Telegram Stars.
-      const u = db.getUser(payload.uid) || {};
-      const pp = pass.ensure(u, Date.now());
-      const r = pass.buy(pp, 0, 'xtr');
-      if (r.ok) {
-        db.upsertUser(payload.uid, { pass: pp });
-        // sendPhoto очікує дескриптор { source }, а не голий Buffer —
-        // з Buffer частина версій Telegraf мовчки шле файл без імені.
-        await bot.telegram.sendPhoto(payload.uid, media.photo('bear'), {
-          caption: `💎 <b>Платну лінію відкрито</b>\n\n` +
-            `Оплачено ${pass.PREMIUM_PRICE_XTR} Telegram Stars.\n` +
-            `Бонус за оплату зірками: <b>+2 рівні</b> (зараз ${r.level}).\n` +
-            (r.unlocked ? `Доступно нагород: <b>${r.unlocked}</b>.\n` : '') +
-            `Фінал на 30 рівні — Мішка, спін платного колеса і 30⭐.`,
-          parse_mode: 'HTML',
-          ...Markup.inlineKeyboard([[callbackBtn('🎁 Забрати нагороди', 'pass_claim_all', 'success', 'starIcon')]]),
-        }).catch(() => {});
-        if (ADMIN_CHAT_ID) {
-          bot.telegram.sendMessage(ADMIN_CHAT_ID,
-            `💎 Куплено пас за РЕАЛЬНІ зірки: ${pass.PREMIUM_PRICE_XTR}⭐\nЮзер: ${payload.uid}`
-          ).catch(() => {});
-        }
-      } else {
-        // Уже куплений пас оплатили вдруге — повертаємо внутрішнім балансом,
-        // бо інакше людина просто втратить гроші через подвійний тап.
-        const bal = Math.round(((u.starBalance || 0) + pass.PREMIUM_PRICE_XTR) * 100) / 100;
-        db.upsertUser(payload.uid, { starBalance: bal });
-        await bot.telegram.sendMessage(payload.uid,
-          `Платна лінія вже була відкрита, тому ${pass.PREMIUM_PRICE_XTR}⭐ зараховано на внутрішній баланс.\nБаланс: ${bal}⭐`
-        ).catch(() => {});
-      }
-    } else if (payload && payload.uid && payload.type === 'premium_spin') {
-      // Куплений спін преміум-колеса за реальні Telegram Stars.
-      const u = db.getUser(payload.uid);
-      const spins = ((u && u.premiumSpinsAvailable) || 0) + 1;
-      db.upsertUser(payload.uid, { premiumSpinsAvailable: spins });
-      await bot.telegram.sendMessage(
-        payload.uid,
-        `✅ Оплата пройшла! Доступно преміум-спінів: ${spins}\nВідкрий колесо й крути.`
-      ).catch(() => {});
-    } else if (payload && payload.uid && payload.starsAmount) {
-      const u = db.getUser(payload.uid);
-      // Бонус +10% на перші три поповнення — одразу після оплати.
-      const deposits = (u && u.depositCount) || 0;
-      awardPassXp(payload.uid, 'deposit', 'поповнення балансу');
-      const bonus = deposits < DEPOSIT_BONUS_TIMES
-        ? Math.round(payload.starsAmount * DEPOSIT_BONUS_PERCENT / 100 * 100) / 100
-        : 0;
-      const newBalance = Math.round((((u ? (u.starBalance || 0) : 0)) + payload.starsAmount + bonus) * 100) / 100;
-      db.upsertUser(payload.uid, { starBalance: newBalance, depositCount: deposits + 1 });
-      await bot.telegram.sendMessage(
-        payload.uid,
-        `✅ Поповнення успішне! +${payload.starsAmount}⭐` +
-        (bonus ? `\n🎁 Бонус новачка: +${bonus}⭐ (лишилось ${DEPOSIT_BONUS_TIMES - deposits - 1} з бонусом)` : '') +
-        `\nНовий баланс: ${newBalance}⭐`
-      ).catch(() => {});
-    }
-    return; // це не звичайне текстове повідомлення, далі не пропускаємо
+    db.upsertUser(uid, { paidCharges: seen.concat([chargeId]).slice(-50) });
+    db.setFeatureFlags({ paidCharges: seenGlobal.concat([chargeId]).slice(-500) });
   }
-  return next();
+  console.log(`💳 Оплата ${paid} XTR від ${payer} (${payload && payload.type || 'topup'}) charge=${chargeId}`);
+
+  if (!paid) {
+    if (ADMIN_CHAT_ID) bot.telegram.sendMessage(ADMIN_CHAT_ID, `⚠️ Дивний платіж без суми XTR від ${payer}: ${JSON.stringify(payment).slice(0, 500)}`).catch(() => {});
+    return;
+  }
+
+  const creditBalance = (why) => {
+    const u = db.getUser(uid) || {};
+    const bal = Math.round(((u.starBalance || 0) + paid) * 100) / 100;
+    db.upsertUser(uid, { starBalance: bal });
+    bot.telegram.sendMessage(uid, `${why}\n\n${paid}⭐ зараховано на внутрішній баланс.\nБаланс: ${fmtStars(bal)}⭐`).catch(() => {});
+    return bal;
+  };
+
+  if (payload && payload.type === 'pass_premium') {
+    // Платна лінія пасу, куплена за РЕАЛЬНІ Telegram Stars.
+    const u = db.getUser(uid) || {};
+    const pp = pass.ensure(u, Date.now());
+    const r = pass.buy(pp, 0, 'xtr');
+    if (r.ok) {
+      db.upsertUser(uid, { pass: pp });
+      const caption = `💎 <b>Платну лінію відкрито</b>\n\n` +
+        `Оплачено ${paid} Telegram Stars.\n` +
+        `Бонус за оплату зірками: <b>+${pass.XTR_BONUS_LEVELS} рівні</b> (зараз ${r.level}).\n` +
+        (r.unlocked ? `Доступно нагород: <b>${r.unlocked}</b>.\n` : '') +
+        `Фінал на 30 рівні — Мішка, спін платного колеса і 30⭐.`;
+      const kb = Markup.inlineKeyboard([[callbackBtn('🎁 Забрати нагороди', 'pass_claim_all', 'success', 'starIcon')]]);
+      const ph = media.photo('bear');
+      const sent = ph ? await bot.telegram.sendPhoto(uid, ph, { caption, parse_mode: 'HTML', ...kb }).catch(() => null) : null;
+      if (!sent) await bot.telegram.sendMessage(uid, caption, { parse_mode: 'HTML', ...kb }).catch(() => {});
+      if (ADMIN_CHAT_ID) {
+        bot.telegram.sendMessage(ADMIN_CHAT_ID, `💎 Куплено пас за РЕАЛЬНІ зірки: ${paid}⭐\nЮзер: ${uid}`).catch(() => {});
+      }
+    } else {
+      // Уже куплений пас оплатили вдруге — повертаємо внутрішнім балансом,
+      // бо інакше людина просто втратить гроші через подвійний тап.
+      creditBalance('Платна лінія вже була відкрита.');
+    }
+  } else if (payload && payload.type === 'premium_spin') {
+    if (WHEEL_CONFIGS.premium.disabled) {
+      // Колесо вимкнене — спін використати ніде. Гроші не мають зникнути.
+      creditBalance('Преміум-колесо зараз вимкнене, тому спін не нараховано.');
+    } else {
+      const u = db.getUser(uid);
+      const spins = ((u && u.premiumSpinsAvailable) || 0) + 1;
+      db.upsertUser(uid, { premiumSpinsAvailable: spins });
+      await bot.telegram.sendMessage(uid, `✅ Оплата пройшла! Доступно преміум-спінів: ${spins}\nВідкрий колесо й крути.`).catch(() => {});
+    }
+  } else {
+    // Поповнення балансу. Бонус +10% на перші три поповнення — одразу.
+    const u = db.getUser(uid) || {};
+    const deposits = u.depositCount || 0;
+    const bonus = depositBonusFor(uid, paid);
+    const newBalance = Math.round(((u.starBalance || 0) + paid + bonus) * 100) / 100;
+    db.upsertUser(uid, { starBalance: newBalance, depositCount: deposits + 1, depositedTotal: (u.depositedTotal || 0) + paid });
+    awardPassXp(uid, 'deposit', 'поповнення балансу');
+    await bot.telegram.sendMessage(uid,
+      `✅ Поповнення успішне! +${paid}⭐` +
+      (bonus ? `\n🎁 Бонус новачка: +${fmtStars(bonus)}⭐ (лишилось ${Math.max(0, DEPOSIT_BONUS_TIMES - deposits - 1)} з бонусом)` : '') +
+      `\nНовий баланс: ${fmtStars(newBalance)}⭐`
+    ).catch(() => {});
+    if (ADMIN_CHAT_ID && paid >= 50) {
+      bot.telegram.sendMessage(ADMIN_CHAT_ID, `💳 Поповнення ${paid}⭐ від ${u.username ? '@' + u.username : uid}`).catch(() => {});
+    }
+  }
+  // Це не звичайне текстове повідомлення — далі не пропускаємо.
 });
 
 bot.on('text', async (ctx, next) => {
@@ -1860,7 +1826,6 @@ bot.on('text', async (ctx, next) => {
   // сприймалась як відповідь на той запит і не спрацьовувала.
   if (ctx.message.text && ctx.message.text.startsWith('/')) {
     awaitingPromoCode.delete(uid);
-    awaitingWithdrawAmount.delete(uid);
     awaitingDiceBet.delete(uid);
     awaitingTopUpAmount.delete(uid);
     awaitingBankBet.delete(uid);
@@ -1873,7 +1838,7 @@ bot.on('text', async (ctx, next) => {
   // Своя ставка в спільний банк.
   if (awaitingBankBet.has(uid)) {
     awaitingBankBet.delete(uid);
-    const a = parseInt(String(ctx.message.text).trim().replace(/[^0-9]/g, ''), 10);
+    const a = parseInt(String(ctx.message.text).replace(/\s/g, ''), 10);
     if (!a || a < 1) { await ctx.reply('Це не схоже на суму. Напиши ціле число.'); return; }
     await placeBankBet(ctx, uid, a);
     return;
@@ -1882,12 +1847,7 @@ bot.on('text', async (ctx, next) => {
   // Своя сума поповнення.
   if (awaitingTopUpAmount.has(uid)) {
     awaitingTopUpAmount.delete(uid);
-    const a = parseInt(String(ctx.message.text).trim().replace(/[^0-9]/g, ''), 10);
-    if (!a || a < 1) {
-      await ctx.reply('Це не схоже на суму. Напиши ціле число, наприклад 75.');
-      return;
-    }
-    await sendTopUpInvoice(ctx, uid, a);
+    await sendTopUpInvoice(ctx, uid, String(ctx.message.text).trim());
     return;
   }
 
@@ -1903,7 +1863,7 @@ bot.on('text', async (ctx, next) => {
 
     if (!g) return;
     if (!Number.isFinite(bet) || bet < 1) {
-      await ctx.reply('Це не схоже на суму. Напиши ціле число від 1 до ' + DICE_BET_MAX + '.');
+      await ctx.reply('Це не схоже на суму. Напиши ціле число від 1.');
       return;
     }
     if (bet > bal) {
@@ -2000,55 +1960,6 @@ bot.on('text', async (ctx, next) => {
     return;
   }
 
-  // Введення суми для виводу зірок. Дозволено: рівно 15, рівно 25, або будь-яка сума від 50.
-  if (awaitingWithdrawAmount.has(uid)) {
-    awaitingWithdrawAmount.delete(uid);
-    const url = WEBAPP_URL ? WEBAPP_URL + (WEBAPP_URL.includes('?') ? '&' : '?') + 'tab=wallet' : null;
-    return ctx.reply('💸 Вивід тепер у застосунку 👇', url ? { reply_markup: { inline_keyboard: [[{ text: '💸 Відкрити гаманець', web_app: { url } }]] } } : {}).catch(() => {});
-    const expectedBalance = 0;
-
-    if (balanceLocks.has(uid)) {
-      await ctx.reply('⏳ Зачекай — попередня дія з балансом ще обробляється.');
-      return;
-    }
-    balanceLocks.add(uid);
-    try {
-      const raw = ctx.message.text.trim();
-      const amount = parseInt(raw, 10);
-      const u = db.getUser(uid);
-      const currentBalance = u.starBalance || 0;
-
-      const isAllowedAmount = isAllowedPayout(amount);
-
-      if (isNaN(amount) || !isAllowedAmount || amount > currentBalance) {
-        // Раніше повідомлення було загальним, і людина не розуміла, чому 20⭐
-        // не проходить. Тепер прямо перелічуємо, що саме можна ввести.
-        // Telegram переказує зірки лише певними номіналами, тому вводиться
-        // саме сума ДО ВИДАЧІ, а не сума списання.
-        let msg = '⚠️ Таку суму отримати не можна.\n\n';
-        msg += 'Доступні суми до видачі: ' + WITHDRAW_PAYOUTS.join('⭐, ') + '⭐\n';
-        msg += 'або будь-яка від ' + APP_WITHDRAW_MIN + '⭐.\n\n';
-        msg += 'Комісія ' + WITHDRAW_FEE_PERCENT + '% додається зверху:\n';
-        for (const p of WITHDRAW_PAYOUTS) {
-          const w = withdrawCost(p);
-          msg += `  отримати ${p}⭐ → спишеться ${w.cost}⭐\n`;
-        }
-        msg += `\nНа балансі зараз: ${currentBalance}⭐`;
-        await ctx.reply(msg);
-        return;
-      }
-      const w2 = withdrawCost(amount);
-      if (currentBalance < w2.cost) {
-        await ctx.reply(`Щоб отримати ${amount}⭐, потрібно ${w2.cost}⭐ (комісія ${w2.fee}⭐). На балансі: ${currentBalance}⭐`);
-        return;
-      }
-      await createStarPayout(uid, w2, currentBalance);
-      return;
-    } finally {
-      balanceLocks.delete(uid);
-    }
-  }
-
   // FOMO-челендж на пароль: перший, хто вгадає правильний пароль, забирає мішку.
   // Синхронна перевірка (без await всередині) — атомарно проти паралельних спроб.
   const uForChallenge = db.getUser(uid);
@@ -2061,6 +1972,11 @@ bot.on('text', async (ctx, next) => {
       const { text: pcEndText, entities: pcEndEntities } = buildText(['warn', ' Челендж уже завершено — стеж за наступним у каналі.']); await ctx.reply(pcEndText, { entities: pcEndEntities });
       return;
     }
+
+    // Перебір паролів ботом-автоклікером: одна спроба на 3 секунди.
+    const lastGuess = passwordGuessAt.get(uid) || 0;
+    if (Date.now() - lastGuess < 3000) { await ctx.reply('⏳ Не так швидко — одна спроба на 3 секунди.'); return; }
+    passwordGuessAt.set(uid, Date.now());
 
     if (guess === pc.password.trim().toLowerCase()) {
       // Хто перший — той і забрав. Синхронно позначаємо challenge неактивним
@@ -2134,19 +2050,28 @@ bot.on('text', async (ctx, next) => {
     app.status = 'rejected';
     app.decidedAt = Date.now();
     if (reason) app.reason = reason;
+    // Вивід і покупка в магазині оплачені зірками — при відмові їх треба
+    // повернути. Раніше заявка відхилялась, а зірки просто зникали.
+    const back = refundApplication(app);
     db.save();
 
     const tier = CFG.getTier(app.tierId);
     const T = t(app.uid);
     const { text, entities } = buildText(T.applicationRejected(tier.emojiKey, tierName(tier.id, getLang(app.uid)), reason, app.id));
     await bot.telegram.sendMessage(app.uid, text, { entities }).catch(() => {});
-    await ctx.reply(`❌ Заявку #${id} відхилено${reason ? ` (причина: ${reason})` : ' (без причини)'}.`);
+    if (back) {
+      await bot.telegram.sendMessage(app.uid, `↩️ ${fmtStars(back)}⭐ за заявку #${app.id} повернуто на баланс.`).catch(() => {});
+    }
+    await ctx.reply(`❌ Заявку #${id} відхилено${reason ? ` (причина: ${reason})` : ' (без причини)'}.` +
+      (back ? `\n↩️ Повернуто ${fmtStars(back)}⭐ на баланс.` : ''));
     return;
   }
 
   if (isAdmin(ctx) && awaitingUnlockPassword.has(chatId)) {
     const feature = awaitingUnlockPassword.get(chatId);
     awaitingUnlockPassword.delete(chatId);
+    // Пароль не має лишатись в історії чату.
+    ctx.deleteMessage().catch(() => {});
 
     if (ctx.message.text.trim() === CFG.ADVANCED_UNLOCK_PASSWORD) {
       const flags = db.getFeatureFlags();
@@ -2317,11 +2242,12 @@ async function finishEvent() {
 // моменту — +1 квиток (більше квитків = більше шансів). Можна вести кілька
 // паралельно (зараз: мішка + подарунок), незалежно від основної події.
 // ---------------------------------------------------------------------------
+// Сьогодні HH:MM за Києвом. Раніше зсув був жорстко +3 год, і взимку
+// (UTC+2) усі дедлайни розіграшів з'їжджали на годину.
 function kyivTodayAt(hour, minute) {
-  const KYIV_OFFSET_HOURS = 3;
-  const now = new Date();
-  const utcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return new Date(utcMidnight + (hour - KYIV_OFFSET_HOURS) * 3600000 + minute * 60000);
+  const day = league.dayKey(Date.now());
+  const t = league.parseKyiv(day + ' ' + String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0'));
+  return new Date(t || Date.now());
 }
 
 const LIVE_GIVEAWAYS = [
@@ -2519,6 +2445,7 @@ bot.command('giveaway_solo_start', async (ctx) => {
 // (не callback — гарантовано працює навіть для тих, хто ще не писав боту).
 // Клік відкриває бота, бот питає пароль, перший, хто вгадав — забирає мішку.
 const PASSWORD_CHALLENGE_PAYLOAD = 'freemishka';
+const passwordGuessAt = new Map();   // uid -> час останньої спроби
 
 // Мішка за реєстрацію в зовнішньому боті за реф-посиланням адміна (starscase тощо).
 // Без формального розіграшу/квитків — просто перевірка скріном і пряма заявка.
@@ -3070,15 +2997,22 @@ bot.action(/^ga_join_(ga_[a-z0-9_]+)$/, async (ctx) => {
 // ---------------------------------------------------------------------------
 // WebApp: колесо удачі — окремий HTTP-сервер поверх бота.
 // ---------------------------------------------------------------------------
-const crypto = require('crypto');
-
 // Перевірка Telegram.WebApp initData: HMAC-SHA256 підпис від бота.
 // https://core.telegram.org/bots/webapps#validating-data-received-via-the-web-app
+// Додатково: порівняння за сталий час (без витоку через таймінг) і термін
+// придатності — раніше один раз перехоплений initData діяв вічно.
+const WEBAPP_SECRET = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
+const INITDATA_MAX_AGE_SEC = (function () {
+  const v = parseInt(process.env.INITDATA_MAX_AGE_SEC, 10);
+  return Number.isFinite(v) && v >= 0 ? v : 7 * 86400;   // 0 — без обмеження
+})();
+
 function verifyInitData(initData) {
   try {
+    if (!initData || typeof initData !== 'string' || initData.length > 8192) return null;
     const params = new URLSearchParams(initData);
     const hash = params.get('hash');
-    if (!hash) return null;
+    if (!hash || !/^[0-9a-f]{64}$/i.test(hash)) return null;
     params.delete('hash');
 
     const pairs = [];
@@ -3086,14 +3020,19 @@ function verifyInitData(initData) {
     pairs.sort();
     const dataCheckString = pairs.join('\n');
 
-    const secretKey = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
-    const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+    const computed = crypto.createHmac('sha256', WEBAPP_SECRET).update(dataCheckString).digest();
+    const given = Buffer.from(hash, 'hex');
+    if (given.length !== computed.length || !crypto.timingSafeEqual(given, computed)) return null;
 
-    if (computedHash !== hash) return null;
+    if (INITDATA_MAX_AGE_SEC) {
+      const authDate = parseInt(params.get('auth_date'), 10) || 0;
+      if (!authDate || Date.now() / 1000 - authDate > INITDATA_MAX_AGE_SEC) return null;
+    }
 
     const userRaw = params.get('user');
     if (!userRaw) return null;
     const user = JSON.parse(userRaw);
+    if (!user || !user.id) return null;
     return String(user.id);
   } catch (e) {
     return null;
@@ -3201,16 +3140,63 @@ function weightedPickServer(weights) {
 }
 
 const app = express();
-app.use(express.json({ limit: '10mb' }));
+app.disable('x-powered-by');
+app.set('trust proxy', 1);   // Railway стоїть за проксі — інакше req.ip у всіх однаковий
+
+// Стиснення: сторінка застосунку — сотні КБ тексту, gzip зменшує її в рази.
+try { app.use(require('compression')()); } catch (e) { console.warn('ℹ️ compression не встановлено — відповіді без стиснення'); }
+
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+  });
+  next();
+});
+
+// Великі тіла потрібні лише для скріна-доказу. Раніше будь-який запит міг
+// принести 10 МБ JSON — і сервер чесно парсив його в пам'ять.
+app.use('/api/task-proof', express.json({ limit: '8mb' }));
+app.use(express.json({ limit: '64kb' }));
+
+// Грубий захист від флуду: не більше API_RATE запитів на хвилину з однієї
+// адреси. Звичайний гравець робить кілька десятків — ліміт із великим запасом.
+const API_RATE = Math.max(60, parseInt(process.env.API_RATE_PER_MIN, 10) || 600);
+const apiHits = new Map();   // ip -> { n, at }
+setInterval(() => { const now = Date.now(); for (const [k, v] of apiHits) if (now - v.at > 60000) apiHits.delete(k); }, 60000).unref();
+app.use('/api/', (req, res, next) => {
+  const ip = req.ip || 'x';
+  const now = Date.now();
+  let h = apiHits.get(ip);
+  if (!h || now - h.at > 60000) { h = { n: 0, at: now }; apiHits.set(ip, h); }
+  if (++h.n > API_RATE) return res.status(429).json({ error: 'rate_limited' });
+  next();
+});
+
+// Техроботи «full» блокують будь-які дії в застосунку і на сервері, а не лише
+// екраном у браузері: раніше спін чи ставку можна було зробити прямим запитом.
+app.use('/api/', (req, res, next) => {
+  if (req.method !== 'POST') return next();
+  const m = maintState();
+  if (m.mode !== 'full') return next();
+  const uid = verifyInitData((req.body || {}).initData);
+  if (uid && isAdminUid(uid)) return next();
+  return res.status(503).json({ error: 'maintenance', message: m.text });
+});
+
+app.get('/health', (req, res) => res.json({ ok: true, uptime: Math.round((Date.now() - BOOT_AT) / 1000), bot: !!BOT_USERNAME }));
+
+// Картинки призів — окремими файлами з кешем на тиждень.
+app.use('/img', express.static(path.join(__dirname, 'public', 'img'), { maxAge: '7d', fallthrough: false }));
 
 // Блокування одночасних дій з балансом одного юзера (закриває дірку: подав
 // заявку на вивід і одночасно крутить колесо — без цього можлива гонка,
 // де обидві дії читають "старий" баланс і одна перезаписує іншу).
 const balanceLocks = new Set();
 
-// Журнал відкриттів/спінів колеса — тепер у базі даних, а не в пам'яті,
-// тож переживає перезапуск сервера (раніше зловживання можна було
-// "замести" простим рестартом Railway).
+// Журнал спінів колеса — у базі даних, тож переживає перезапуск сервера.
+// Відкриття колеса більше НЕ пишемо: вони займали більшість із 500 місць
+// журналу й витісняли реальні спіни, за якими шукаються зловживання.
 function logWheelEvent(uid, wheel, kind, extra) {
   const u = db.getUser(uid);
   db.addWheelLogEvent({
@@ -3230,12 +3216,11 @@ try {
 
 app.get('/wheel.html', (req, res) => {
   // Telegram WebView кешує сторінку дуже агресивно — люди тижнями бачать
-  // стару версію після оновлення. Тому явно забороняємо кеш.
+  // стару версію після оновлення. Тому кеш дозволено лише з обов'язковою
+  // перевіркою: незмінена сторінка приходить як 304 без тіла, змінена — одразу нова.
   res.set({
-    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Cache-Control': 'no-cache, must-revalidate',
     'Pragma': 'no-cache',
-    'Expires': '0',
-    'Surrogate-Control': 'no-store',
   });
   res.sendFile(path.join(__dirname, 'wheel.html'));
 });
@@ -3270,23 +3255,23 @@ app.get('/api/wheel-status', async (req, res) => {
 
   const u = db.getUser(uid) || {};
   const refCount = (u.invitedIds || []).length;
-  const earnedRefSpins = Math.floor(refCount / WHEEL_CONFIGS.referral.unlockEvery);
-  const usedRefSpins = u.referralSpinsUsed || 0;
-  const availableRefSpins = Math.max(0, earnedRefSpins - usedRefSpins);
+  // Колесо «За білети» відкривають БІЛЕТИ (саме їх списує /api/spin), а не
+  // кількість друзів. Раніше застосунок рахував друзів і блокував кнопку
+  // людям, у яких білети були — з промокодів, чату чи банку.
+  const tickets = ticketsOf(u);
+  const availableRefSpins = Math.floor(tickets / TICKETS_PER_SPIN);
   const referralUnlocked = availableRefSpins > 0;
   const lang = u.lang || 'uk';
 
   const canSpinFreeToday = !u.lastDailySpinAt || (Date.now() - u.lastDailySpinAt >= 86400000);
   const nextDailySpinAt = canSpinFreeToday ? null : (u.lastDailySpinAt + 86400000);
 
-  // Реальна особиста історія (не вигадана, не з локального стану браузера,
-  // яка зникала при кожному перевідкритті WebApp) — з журналу на сервері.
-  const myHistory = db.getWheelLog()
-    .filter(ev => ev.uid === uid && ev.kind === 'spin')
+  // Особиста історія — з запису гравця, а не з загального журналу на 500
+  // подій, звідки її витісняли чужі спіни.
+  const myHistory = (u.spinHistory || [])
+    .filter(h => h.w && h.w !== 'risk')
     .slice(-6)
-    .map(ev => ({ outcomeId: ev.extra.outcomeId, isSpecial: ev.extra.isSpecial }));
-
-  logWheelEvent(uid, null, 'open');
+    .map(h => ({ outcomeId: h.id, isSpecial: !!h.sp }));
 
   res.json({
     build: APP_BUILD,
@@ -3294,7 +3279,7 @@ app.get('/api/wheel-status', async (req, res) => {
     chatLevel: (function () { try { return chat.levelInfo(u.chatPts || 0); } catch (e) { return null; } })(),
     balance: u.starBalance || 0,
     lang,
-    referral: { unlocked: referralUnlocked, progress: refCount % WHEEL_CONFIGS.referral.unlockEvery, need: WHEEL_CONFIGS.referral.unlockEvery, available: availableRefSpins, refCount: refCount },
+    referral: { unlocked: referralUnlocked, progress: tickets % TICKETS_PER_SPIN, need: TICKETS_PER_SPIN, available: availableRefSpins, refCount: refCount, tickets },
     dailyStreak: u.dailyStreak || 0,
     paidSpinsTotal: u.paidSpinsTotal || 0,
     paidSpinsGifted: u.paidSpinsGifted || 0,
@@ -3356,14 +3341,17 @@ app.get('/api/wheel-status', async (req, res) => {
 // Мінімальний інтервал між спінами одного юзера — захист від автокліку
 // і від паралельних запитів, які прослизали повз balanceLocks.
 const lastSpinAt = new Map();
-const MIN_SPIN_GAP_MS = 1500;
+const MIN_SPIN_GAP_MS = (function () {
+  const v = parseInt(process.env.SPIN_MIN_GAP_MS, 10);
+  return Number.isFinite(v) && v >= 0 ? v : 1500;
+})();
 
 app.post('/api/spin', async (req, res) => {
   const { initData, wheel } = req.body || {};
   const uid = verifyInitData(initData);
   if (!uid) return res.status(401).json({ error: 'invalid initData' });
 
-  const cfg = WHEEL_CONFIGS[wheel];
+  const cfg = Object.prototype.hasOwnProperty.call(WHEEL_CONFIGS, wheel) ? WHEEL_CONFIGS[wheel] : null;
   if (!cfg) return res.status(400).json({ error: 'unknown wheel' });
   if (cfg.disabled) return res.status(410).json({ error: 'wheel_disabled' });
 
@@ -3377,115 +3365,138 @@ app.post('/api/spin', async (req, res) => {
   if (Date.now() - prevSpin < MIN_SPIN_GAP_MS) {
     return res.status(429).json({ error: 'too_fast' });
   }
-  lastSpinAt.set(uid, Date.now());
 
   // Дірка: паралельні запити (вивід + спін одночасно) могли гонити баланс.
   if (balanceLocks.has(uid)) return res.status(429).json({ error: 'busy' });
   balanceLocks.add(uid);
+  lastSpinAt.set(uid, Date.now());
 
   try {
     const u = db.getUser(uid);
     if (!u) return res.status(400).json({ error: 'user not found — /start бота спочатку' });
 
-    if (wheel === 'premium') {
-      // Спін оплачується РЕАЛЬНИМИ Telegram Stars заздалегідь (інвойс),
-      // тут лише списуємо вже куплений спін.
-      const avail = u.premiumSpinsAvailable || 0;
-      if (avail <= 0) return res.status(402).json({ error: 'no_premium_spins', realStarsCost: WHEEL_CONFIGS.premium.realStarsCost });
-      db.upsertUser(uid, { premiumSpinsAvailable: avail - 1 });
-    }
+    // ── 1. ПЕРЕВІРКИ. Нічого не списуємо, доки не впевнені, що спін буде.
+    // Раніше списання (білети, кулдаун) йшло впереміш із перевірками, і
+    // невдала перевірка посередині лишала людину без ресурсу й без спіну.
+    const now = Date.now();
+    const balance = u.starBalance || 0;
+    const spinCost = Math.max(0, cfg.cost || 0);
+    const gifted = u.paidSpinsGifted || 0;
+    const useGift = wheel === 'paid' && gifted > 0;
+    let useFreeSpin = false;
 
+    if (wheel === 'premium' && (u.premiumSpinsAvailable || 0) <= 0) {
+      return res.status(402).json({ error: 'no_premium_spins', realStarsCost: WHEEL_CONFIGS.premium.realStarsCost });
+    }
     if (wheel === 'referral') {
-      // Тепер це колесо БІЛЕТІВ: 5 білетів за спін, звідки б вони не
-      // прийшли — друзі, промокод чи нагорода пасу.
+      // Колесо БІЛЕТІВ: 5 білетів за спін, звідки б вони не прийшли.
       const have = ticketsOf(u);
-      if (have < TICKETS_PER_SPIN) {
-        return res.status(403).json({ error: 'not_enough_tickets', have, need: TICKETS_PER_SPIN });
+      if (have < TICKETS_PER_SPIN) return res.status(403).json({ error: 'not_enough_tickets', have, need: TICKETS_PER_SPIN });
+    }
+    if (wheel === 'daily') {
+      const canSpinFree = !u.lastDailySpinAt || (now - u.lastDailySpinAt >= 86400000);
+      if (!canSpinFree) {
+        // Бонусні безкоштовні спіни обходять добовий кулдаун, але серію не рухають.
+        if ((u.freeSpins || 0) > 0) useFreeSpin = true;
+        else return res.status(429).json({ error: 'daily_cooldown', nextSpinAt: u.lastDailySpinAt + 86400000 });
       }
-      db.upsertUser(uid, { ticketsUsed: (u.ticketsUsed || 0) + TICKETS_PER_SPIN });
+    }
+    if (!useGift && spinCost > balance) {
+      return res.status(402).json({ error: 'not enough stars', balance, cost: spinCost });
     }
 
-    // Дірка: щоденне колесо не мало ЖОДНОГО обмеження — можна було крутити
-    // нескінченно. Тепер: рівно раз на 24 год.
+    // ── 2. СПИСАННЯ.
+    const patch = {};
     let streakBonus = 0;
-    let usedBonusSpin = false;
     let currentStreak = u.dailyStreak || 0;
+    if (wheel === 'premium') patch.premiumSpinsAvailable = (u.premiumSpinsAvailable || 0) - 1;
+    if (wheel === 'referral') patch.ticketsUsed = (u.ticketsUsed || 0) + TICKETS_PER_SPIN;
+    if (useGift) patch.paidSpinsGifted = gifted - 1;
     if (wheel === 'daily') {
-      const canSpinFree = !u.lastDailySpinAt || (Date.now() - u.lastDailySpinAt >= 86400000);
-      // Бонусні безкоштовні спіни обходять добовий кулдаун. Серію вони НЕ
-      // рухають — інакше серію можна було б накрутити.
-      const freeSpins = u.freeSpins || 0;
-      if (!canSpinFree && freeSpins > 0) {
-        db.upsertUser(uid, { freeSpins: freeSpins - 1 });
-        usedBonusSpin = true;
-      } else if (!canSpinFree) {
-        const nextSpinAt = u.lastDailySpinAt + 86400000;
-        return res.status(429).json({ error: 'daily_cooldown', nextSpinAt });
-      }
-      if (!usedBonusSpin) {
-        // Невелика серія: якщо попередній спін був 24-48г тому — це "наступний
-        // день поспіль", серія росте. Якщо пропустив день — скидається.
-        const gapOk = u.lastDailySpinAt && (Date.now() - u.lastDailySpinAt < 172800000);
+      if (useFreeSpin) {
+        patch.freeSpins = (u.freeSpins || 0) - 1;
+      } else {
+        // Серія: попередній спін 24–48 год тому — «наступний день поспіль».
+        const gapOk = u.lastDailySpinAt && (now - u.lastDailySpinAt < 172800000);
         currentStreak = gapOk ? (u.dailyStreak || 0) + 1 : 1;
-        db.upsertUser(uid, { lastDailySpinAt: Date.now(), dailyStreak: currentStreak });
-        awardPassXp(uid, 'streak', 'щоденний спін');
-        // Скромний бонус: +2⭐ щоразу, коли серія кратна 3 (не забагато, як і просили).
-        // Сходинкові нагороди за серію — що довше заходиш поспіль, то більший
-        // бонус. Це головний стимул повертатись щодня.
+        patch.lastDailySpinAt = now;
+        patch.dailyStreak = currentStreak;
+        // Сходинкові нагороди за серію — головний стимул повертатись щодня.
         if (currentStreak % 30 === 0) streakBonus = 10;
         else if (currentStreak % 14 === 0) streakBonus = 5;
         else if (currentStreak % 7 === 0) streakBonus = 3;
         else if (currentStreak % 3 === 0) streakBonus = 1;
       }
     }
+    const paidStars = useGift ? 0 : spinCost;
 
-    const balance = u.starBalance || 0;
-    // Подаровані спіни колеса «За зірки» витрачаються замість балансу.
-    const gifted = u.paidSpinsGifted || 0;
-    const useGift = wheel === 'paid' && gifted > 0;
-
-    const spinCost = Math.max(0, cfg.cost || 0);
-
-    if (!useGift && spinCost > balance) {
-      return res.status(402).json({ error: 'not enough stars', balance, cost: spinCost });
-    }
-    if (useGift) db.upsertUser(uid, { paidSpinsGifted: gifted - 1 });
-
-    const newBalanceAfterCost = useGift ? balance : balance - spinCost;
-
-    // Лічильники гарантій для цього конкретного колеса.
+    // ── 3. РЕЗУЛЬТАТ. Лічильники гарантій для цього колеса.
     const pityCfg = PITY[wheel] || { gift: null, nft: null };
     const pityGift = (u.pityGift && u.pityGift[wheel]) || 0;
     const pityNft = (u.pityNft && u.pityNft[wheel]) || 0;
 
     let outcomeId;
     if (pityCfg.nft && pityNft + 1 >= pityCfg.nft) {
-      outcomeId = WHEEL_NFT_IDS[Math.floor(Math.random() * WHEEL_NFT_IDS.length)];
+      outcomeId = WHEEL_NFT_IDS[crypto.randomInt(WHEEL_NFT_IDS.length)];
     } else if (pityCfg.gift && pityGift + 1 >= pityCfg.gift) {
-      outcomeId = GIFT_TIER_IDS[Math.floor(Math.random() * GIFT_TIER_IDS.length)];
+      outcomeId = GIFT_TIER_IDS[crypto.randomInt(GIFT_TIER_IDS.length)];
     } else {
       outcomeId = weightedPickServer(applyHappyHour(cfg.weights));
     }
 
     const isSpecial = SPECIAL_OUTCOME_IDS.includes(outcomeId);
-    const amount = isSpecial ? 0 : parseInt(outcomeId.replace('star', ''), 10);
+    const isTix = isTixId(outcomeId);
+    // ТУТ БУВ БАГ, ЧЕРЕЗ ЯКИЙ ВИСІЛО ~27% ЩОДЕННИХ СПІНІВ: amount була const,
+    // а білетна гілка робила amount = 0 → TypeError уже ПІСЛЯ списання
+    // кулдауну. Людина втрачала спін, застосунок не отримував відповіді,
+    // а статистика й гарантії не оновлювались.
+    const amount = (isSpecial || isTix) ? 0 : (parseInt(String(outcomeId).replace('star', ''), 10) || 0);
+    const wonTickets = isTix ? (parseInt(String(outcomeId).slice(3), 10) || 1) : 0;
 
-    let finalBalance = newBalanceAfterCost;
     let appId = null;
-    let wonTickets = 0;
+    const finalBalance = Math.round((balance - paidStars + amount + streakBonus) * 100) / 100;
+    patch.starBalance = finalBalance;
+
+    // Гарантії: обнуляємо той лічильник, приз якого щойно випав.
+    patch.pityGift = { ...(u.pityGift || {}), [wheel]: GIFT_TIER_IDS.includes(outcomeId) ? 0 : pityGift + 1 };
+    patch.pityNft = { ...(u.pityNft || {}), [wheel]: WHEEL_NFT_IDS.includes(outcomeId) ? 0 : pityNft + 1 };
+
+    // Ризикнути можна лише щойно виграними зірками.
+    const spinStartedAt = now;
+    patch.pendingRisk = (!isSpecial && amount > 0)
+      ? { amount, streak: 0, at: spinStartedAt, spinAt: spinStartedAt }
+      : null;
+
+    // Статистика для профілю.
+    const isPaid = wheel === 'paid' || wheel === 'premium';
+    const prizeValue = isSpecial ? (CFG.getTier(outcomeId).priceStars || 0) : amount;
+    const best = u.bestWin || { value: 0, outcomeId: null, at: 0 };
+    patch.paidSpinsTotal = (u.paidSpinsTotal || 0) + (isPaid ? 1 : 0);
+    patch.spinsTotal = (u.spinsTotal || 0) + 1;
+    patch.starsEarnedTotal = Math.round(((u.starsEarnedTotal || 0) + amount + streakBonus) * 100) / 100;
+    patch.starsSpentTotal = (u.starsSpentTotal || 0) + paidStars;
+    patch.ticketsWonTotal = (u.ticketsWonTotal || 0) + wonTickets;
+    patch.prizesWonTotal = (u.prizesWonTotal || 0) + (isSpecial ? 1 : 0);
+    patch.bestStreak = Math.max(u.bestStreak || 0, currentStreak || 0);
+    patch.bestWin = prizeValue > best.value ? { value: prizeValue, outcomeId, at: now } : best;
+    patch.firstSeenAt = u.firstSeenAt || now;
+    patch.spinHistory = (u.spinHistory || []).concat([{
+      id: outcomeId, sp: isSpecial ? 1 : 0, am: amount, tk: wonTickets || undefined, w: wheel, at: now,
+    }]).slice(-25);
+
+    // Один запис у базу замість дев'яти — атомарно і швидше.
+    db.upsertUser(uid, patch);
+    if (wonTickets) addTickets(uid, wonTickets, 'виграш у колесі', { silent: true });
 
     if (isSpecial) {
       const tier = CFG.getTier(outcomeId);
-      const app_ = db.addApplication({ uid, tierId: outcomeId, status: 'pending', createdAt: Date.now(), source: 'wheel_' + wheel });
-      // Великий виграш — у чат, щоб усі бачили, що тут реально дають.
-      setTimeout(() => {
-        const wt = CFG.getTier(outcomeId);
-        const wn = u.username ? '@' + u.username : (u.name || 'гравець');
-        chat.announce('🎉 <b>' + wn + '</b> щойно виграв <b>' + wt.emoji + ' ' + wt.name + '</b> на колесі!').catch(() => {});
-      }, 7000);
+      const app_ = db.addApplication({ uid, tierId: outcomeId, status: 'pending', createdAt: now, source: 'wheel_' + wheel });
       appId = app_.id;
-      finalBalance = finalBalance + streakBonus;
-      db.upsertUser(uid, { starBalance: finalBalance });
+      // Великий виграш — у чат, щоб усі бачили, що тут реально дають.
+      // Із затримкою: спершу людина має побачити приз сама.
+      setTimeout(() => {
+        chat.announce('🎉 <b>' + whoOf(u) + '</b> щойно виграв <b>' + tier.emoji + ' ' + esc(tier.name) + '</b> на колесі!').catch(() => {});
+      }, 7000);
       if (ADMIN_CHAT_ID) setTimeout(() => {
         bot.telegram.sendMessage(
           ADMIN_CHAT_ID,
@@ -3496,197 +3507,96 @@ app.post('/api/spin', async (req, res) => {
           ]])
         ).catch(() => {});
       }, 6500);
-    } else if (String(outcomeId).indexOf('tix') === 0) {
-      // Білетний результат: зірки не чіпаємо, нараховуємо білети.
-      const n = parseInt(String(outcomeId).replace('tix', ''), 10) || 1;
-      finalBalance = newBalanceAfterCost + streakBonus;
-      db.upsertUser(uid, { starBalance: finalBalance });
-      addTickets(uid, n, 'виграш у колесі');
-      amount = 0;
-      wonTickets = n;
-    } else {
-      finalBalance = newBalanceAfterCost + amount + streakBonus;
-      db.upsertUser(uid, { starBalance: finalBalance });
     }
 
-    // Оновлюємо лічильники гарантій: обнуляємо той, приз якого щойно випав,
-    // інакше додаємо одиницю.
-    {
-      const uNow = db.getUser(uid) || {};
-      const gMap = { ...(uNow.pityGift || {}) };
-      const nMap = { ...(uNow.pityNft || {}) };
-      gMap[wheel] = GIFT_TIER_IDS.includes(outcomeId) ? 0 : (gMap[wheel] || 0) + 1;
-      nMap[wheel] = WHEEL_NFT_IDS.includes(outcomeId) ? 0 : (nMap[wheel] || 0) + 1;
-      db.upsertUser(uid, { pityGift: gMap, pityNft: nMap });
-    }
+    // ── 4. ПОБІЧНЕ: пас, ліга, спільна ціль, журнал. Помилка тут не має
+    // зіпсувати вже зроблений спін.
+    try {
+      if (wheel === 'daily' && !useFreeSpin) awardPassXp(uid, 'streak', 'щоденний спін');
+      const up = db.getUser(uid) || {};
+      const pp = pass.ensure(up, now);
+      if (isPaid) {
+        // Платний спін качає пас: XP за кожну витрачену зірку.
+        const spent = wheel === 'premium' ? WHEEL_CONFIGS.premium.realStarsCost : paidStars;
+        if (spent) pass.addWagerXp(pp, spent, 'spin', now);
+      } else {
+        // Безкоштовний спін теж рухає пас — інакше гравець без грошей стоїть.
+        pass.addFreeXp(pp, pass.XP_DAILY_SPIN, 'daily', now);
+      }
+      db.upsertUser(uid, { pass: pp });
+    } catch (e) { console.error('pass onSpin failed:', e.message); }
 
-    // Дозволяємо ризикнути виграшем — тільки якщо випали зірки і сума > 0.
-    const spinStartedAt = Date.now();
-    if (!isSpecial && amount > 0) {
-      db.upsertUser(uid, { pendingRisk: { amount, streak: 0, at: spinStartedAt, spinAt: spinStartedAt } });
-    } else {
-      db.upsertUser(uid, { pendingRisk: null });
-    }
-
-    // Статистика для профілю і майбутнього лідерборду. Рахуємо все одразу,
-    // щоб на момент івенту вже була історія, а не порожні нулі.
-    {
-      const uu = db.getUser(uid) || {};
-      const isPaid = wheel === 'paid' || wheel === 'premium';
-      const prizeValue = isSpecial ? (CFG.getTier(outcomeId).priceStars || 0) : amount;
-      const best = uu.bestWin || { value: 0, outcomeId: null, at: 0 };
-
-      // Повна історія: тримаємо останні 50 записів.
-      const hist = (uu.spinHistory || []).concat([{
-        id: outcomeId, sp: isSpecial ? 1 : 0, am: amount, w: wheel, at: Date.now(),
-      }]).slice(-25);
-
-      db.upsertUser(uid, {
-        paidSpinsTotal: (uu.paidSpinsTotal || 0) + (isPaid ? 1 : 0),
-        spinsTotal: (uu.spinsTotal || 0) + 1,
-        starsEarnedTotal: (uu.starsEarnedTotal || 0) + amount,
-        starsSpentTotal: (uu.starsSpentTotal || 0) + spinCost,
-        prizesWonTotal: (uu.prizesWonTotal || 0) + (isSpecial ? 1 : 0),
-        bestStreak: Math.max(uu.bestStreak || 0, currentStreak || 0),
-        bestWin: prizeValue > best.value ? { value: prizeValue, outcomeId, at: Date.now() } : best,
-        firstSeenAt: uu.firstSeenAt || Date.now(),
-        spinHistory: hist,
-      });
-    }
-    // Платний спін теж качає пас: 3 XP за кожну витрачену зірку.
-    if (wheel === 'paid' || wheel === 'premium') {
-      try {
-        const uu3 = db.getUser(uid) || {};
-        const pp3 = pass.ensure(uu3, Date.now());
-        const spent = wheel === 'premium' ? WHEEL_CONFIGS.premium.realStarsCost : spinCost;
-        pass.addWagerXp(pp3, spent, 'spin', Date.now());
-        db.upsertUser(uid, { pass: pp3 });
-      } catch (e) { console.error('pass onSpin failed:', e.message); }
-    }
-
-    // Ліга тижня: витрати — за маржею, безкоштовні спіни — фіксовано зі стелею.
-    if (wheel === 'paid') leagueXp(uid, 'paid_star', spinCost);
+    if (wheel === 'paid' && paidStars) leagueXp(uid, 'paid_star', paidStars);
     if (wheel === 'daily') {
       leagueXp(uid, 'daily_spin', 1);
-      leagueXp(uid, 'streak_day', Math.min(currentStreak || 1, 7));
+      if (!useFreeSpin) leagueXp(uid, 'streak_day', Math.min(currentStreak || 1, 7));
     }
     if (wheel === 'referral') leagueXp(uid, 'ref_spin', 1);
 
-    // Безкоштовний спін теж рухає пас — інакше гравець без грошей стоїть.
-    if (wheel === 'daily' || wheel === 'referral') {
-      try {
-        const uf = db.getUser(uid) || {};
-        const pf = pass.ensure(uf, Date.now());
-        pass.addFreeXp(pf, pass.XP_DAILY_SPIN, 'daily', Date.now());
-        db.upsertUser(uid, { pass: pf });
-      } catch (e) {}
-    }
+    try { addGoalSpin(uid); } catch (e) { console.error('goal failed:', e.message); }
+    logWheelEvent(uid, wheel, 'spin', { outcomeId, isSpecial, streakBonus, bonus: useFreeSpin || undefined, gift: useGift || undefined });
 
-    addGoalSpin(uid);
-
-
-    logWheelEvent(uid, wheel, 'spin', { outcomeId, isSpecial, streakBonus });
-
-    // Сповіщення адміну про КОЖЕН спін (не лише виграш) — хто, яке колесо, що випало.
-    // Раніше адмін бачив результат раніше за самого гравця — колесо ще
-    // крутиться (~5с), а повідомлення вже прийшло. Тепер із затримкою.
-    // Сповіщення чекає, поки людина закінчить із ризиком ×2. Раніше воно
-    // летіло одразу "+2⭐", а людина потім зливала їх у ризику — і в тебе
-    // лишалась неправдива сума.
-    if (ADMIN_CHAT_ID && !isSpecial) setTimeout(() => {
-      const wheelNames = { daily: 'щоденне', referral: 'за рефералів', paid: 'за зірки', premium: 'ПРЕМІУМ' };
+    // Сповіщення адміну про спін — чекає, поки людина закінчить із ризиком ×2,
+    // інакше в чаті лишалась неправдива сума. Вимикається командою /spin_notify off.
+    if (ADMIN_CHAT_ID && !isSpecial && spinNotifyOn()) setTimeout(() => {
+      const wheelNames = { daily: 'щоденне', referral: 'за білети', paid: 'за зірки', premium: 'ПРЕМІУМ' };
       const uNow = db.getUser(uid) || {};
       const rr = uNow.lastRiskResult;
       const freshRisk = rr && rr.spinAt === spinStartedAt;
-
+      const what = isTix ? `+${wonTickets}🎫` : `+${amount}⭐`;
       let line;
       if (freshRisk) {
         line = rr.won
-          ? `🎰 Спін (${wheelNames[wheel] || wheel}): +${amount}⭐ → ризик ×2 виграв → підсумок +${rr.finalAmount}⭐`
-          : `🎰 Спін (${wheelNames[wheel] || wheel}): +${amount}⭐ → ризик ×2 ЗЛИВ → підсумок 0⭐`;
+          ? `🎰 Спін (${wheelNames[wheel] || wheel}): ${what} → ризик ×2 виграв → підсумок +${rr.finalAmount}⭐`
+          : `🎰 Спін (${wheelNames[wheel] || wheel}): ${what} → ризик ×2 ЗЛИВ → підсумок 0⭐`;
       } else {
-        line = `🎰 Спін (${wheelNames[wheel] || wheel}): +${amount}⭐${streakBonus ? ' (+' + streakBonus + '⭐ бонус серії)' : ''}`;
+        line = `🎰 Спін (${wheelNames[wheel] || wheel}): ${what}${streakBonus ? ' (+' + streakBonus + '⭐ бонус серії)' : ''}`;
       }
-
       bot.telegram.sendMessage(
         ADMIN_CHAT_ID,
-        line + `\nБаланс зараз: ${(uNow.starBalance || 0)}⭐\n` +
+        line + `\nБаланс зараз: ${fmtStars(uNow.starBalance || 0)}⭐\n` +
         `${u.name || '—'} (${u.username ? '@' + u.username : 'без юзернейму'}) · id ${uid}`
       ).catch(() => {});
     }, 45000); // час на кілька спроб ризику
 
-    res.json({ outcomeId, isSpecial, amount, wonTickets, balance: finalBalance, applicationId: appId, streakBonus, streak: currentStreak });
-  } finally {
-    balanceLocks.delete(uid);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Тапалка (clicker) — окрема вкладка від колеса. Енергія лічиться на
-// сервері (не довіряємо клієнту кількість тапів "на слово").
-// ---------------------------------------------------------------------------
-const TAP_ENERGY_MAX = 100;
-const TAP_ENERGY_REGEN_MS = 3000; // 1 енергія кожні 3с
-const TAP_STARS_PER_TAP = 0.2; // 5 тапів = 1⭐, щоб не було занадто щедро
-
-function getCurrentTapEnergy(u) {
-  const last = u.tapEnergyUpdatedAt || Date.now();
-  const elapsed = Math.max(0, Date.now() - last);
-  const regen = Math.floor(elapsed / TAP_ENERGY_REGEN_MS);
-  const base = u.tapEnergy != null ? u.tapEnergy : TAP_ENERGY_MAX;
-  return Math.min(TAP_ENERGY_MAX, base + regen);
-}
-
-app.get('/api/tap-status', async (req, res) => {
-  const uid = verifyInitData(req.query.initData);
-  if (!uid) return res.status(401).json({ error: 'invalid initData' });
-
-  const subscribed = await checkChannelSubscription(CFG.CHANNEL_USERNAME, uid);
-  if (subscribed !== true) return res.status(403).json({ error: 'not_subscribed', channel: CFG.CHANNEL_USERNAME, channelUrl: CFG.CHANNEL_URL });
-
-  const u = db.getUser(uid) || {};
-  const energy = getCurrentTapEnergy(u);
-  res.json({
-    energy, energyMax: TAP_ENERGY_MAX, regenMs: TAP_ENERGY_REGEN_MS,
-    balance: u.starBalance || 0, totalTaps: u.totalTaps || 0,
-  });
-});
-
-app.post('/api/tap', async (req, res) => {
-  const { initData, count } = req.body || {};
-  const uid = verifyInitData(initData);
-  if (!uid) return res.status(401).json({ error: 'invalid initData' });
-
-  const subscribed = await checkChannelSubscription(CFG.CHANNEL_USERNAME, uid);
-  if (subscribed !== true) return res.status(403).json({ error: 'not_subscribed', channel: CFG.CHANNEL_USERNAME, channelUrl: CFG.CHANNEL_URL });
-
-  if (balanceLocks.has(uid)) return res.status(429).json({ error: 'busy' });
-  balanceLocks.add(uid);
-
-  try {
-    const u = db.getUser(uid);
-    if (!u) return res.status(400).json({ error: 'user not found' });
-
-    const requested = Math.max(0, Math.min(500, parseInt(count, 10) || 0)); // якась розумна верхня межа за раз
-    const available = getCurrentTapEnergy(u);
-    const applied = Math.min(requested, available);
-
-    const newEnergy = available - applied;
-    const earnedStars = Math.round(applied * TAP_STARS_PER_TAP * 100) / 100;
-    const newBalance = (u.starBalance || 0) + earnedStars;
-
-    db.upsertUser(uid, {
-      tapEnergy: newEnergy,
-      tapEnergyUpdatedAt: Date.now(),
-      starBalance: newBalance,
-      totalTaps: (u.totalTaps || 0) + applied,
+    const after = db.getUser(uid) || {};
+    res.json({
+      outcomeId, isSpecial, amount, wonTickets, balance: finalBalance, applicationId: appId,
+      streakBonus, streak: currentStreak,
+      // Стан після спіну — щоб застосунок не вгадував, коли наступний спін.
+      usedFreeSpin: useFreeSpin, usedGift: useGift,
+      freeSpins: after.freeSpins || 0,
+      paidSpinsGifted: after.paidSpinsGifted || 0,
+      premiumSpins: after.premiumSpinsAvailable || 0,
+      tickets: ticketsOf(after),
+      nextDailySpinAt: after.lastDailySpinAt && (Date.now() - after.lastDailySpinAt < 86400000) ? after.lastDailySpinAt + 86400000 : null,
     });
-
-    res.json({ applied, earnedStars, energy: newEnergy, balance: newBalance });
+  } catch (e) {
+    console.error('spin failed:', e && e.stack || e);
+    if (!res.headersSent) res.status(500).json({ error: 'spin_failed' });
   } finally {
     balanceLocks.delete(uid);
   }
 });
+
+// Адмінські сповіщення про кожен спін: /spin_notify on|off
+function spinNotifyOn() { return !(db.getFeatureFlags() || {}).spinNotifyOff; }
+bot.command('spin_notify', async (ctx) => {
+  if (!isAdmin(ctx)) return;
+  const arg = (ctx.message.text.split(/\s+/)[1] || '').toLowerCase();
+  if (arg === 'on' || arg === 'off') db.setFeatureFlags({ spinNotifyOff: arg === 'off' });
+  await ctx.reply('🎰 Сповіщення про кожен спін: ' + (spinNotifyOn() ? 'УВІМКНЕНО' : 'вимкнено') +
+    '\n\nЗмінити: /spin_notify on · /spin_notify off\n(Виграші призів приходять завжди.)');
+});
+
+// ---------------------------------------------------------------------------
+// Тапалка ВИМКНЕНА. У застосунку її давно немає, але API лишався живим:
+// 0.2⭐ за тап і відновлення енергії давали до ~5700⭐ на добу прямими
+// запитами, без жодного інтерфейсу. Ендпоінти лишаються, щоб старі
+// клієнти отримували зрозумілу відповідь, а не 404.
+// ---------------------------------------------------------------------------
+app.get('/api/tap-status', (req, res) => res.status(410).json({ error: 'tap_disabled' }));
+app.post('/api/tap', (req, res) => res.status(410).json({ error: 'tap_disabled' }));
 
 // Реальне поповнення через Telegram Stars (валюта XTR — токен провайдера
 // не потрібен, це вбудована валюта Telegram).
@@ -3877,13 +3787,19 @@ app.post('/api/task-proof', async (req, res) => {
   const { initData, taskId, photoBase64 } = req.body || {};
   const uid = verifyInitData(initData);
   if (!uid) return res.status(401).json({ error: 'invalid initData' });
-  const t = PARTNER_TASKS[taskId];
-  if (!t || !t.proof) return res.status(400).json({ error: 'unknown_task' });
-  if (!photoBase64) return res.status(400).json({ error: 'no_photo' });
+  const t = Object.prototype.hasOwnProperty.call(PARTNER_TASKS, taskId) ? PARTNER_TASKS[taskId] : null;
+  // Сховані завдання не приймаємо: раніше скрін на вимкнене завдання
+  // можна було надіслати прямим запитом.
+  if (!t || !t.proof || t.hidden) return res.status(400).json({ error: 'unknown_task' });
+  if (!photoBase64 || typeof photoBase64 !== 'string') return res.status(400).json({ error: 'no_photo' });
   if (!ADMIN_CHAT_ID) return res.status(500).json({ error: 'no_admin' });
 
   const u = db.getUser(uid) || {};
   if ((u.taskDone || {})[taskId]) return res.status(429).json({ error: 'already_done' });
+  // Не більше одного скріна на 10 хвилин — інакше адмінський чат можна
+  // засипати фотографіями.
+  if (Date.now() - (u.taskProofAt || 0) < 10 * 60000) return res.status(429).json({ error: 'wait', wait: '10 хв' });
+  db.upsertUser(uid, { taskProofAt: Date.now() });
 
   try {
     const buf = Buffer.from(String(photoBase64).replace(/^data:image\/\w+;base64,/, ''), 'base64');
@@ -3952,7 +3868,9 @@ bot.action(/^tproof_ok_(\w+)_(\d+)$/, async (ctx) => {
   done[taskId] = Date.now();
   const nb = Math.round(((u.starBalance || 0) + t.reward) * 100) / 100;
   const patch = { starBalance: nb, taskDone: done };
-  if (t.bonusSpin) patch.lastDailySpinAt = null;
+  // Бонусний спін — окремим лічильником. Раніше обнулявся кулдаун щоденного
+  // спіну, і разом з ним ламалась серія днів поспіль.
+  if (t.bonusSpin) patch.freeSpins = (u.freeSpins || 0) + 1;
   db.upsertUser(uid, patch);
 
   // Мішки видаються заявками — по одній на кожну, щоб видача була звична.
@@ -3966,7 +3884,7 @@ bot.action(/^tproof_ok_(\w+)_(\d+)$/, async (ctx) => {
     `✅ ${t.label} — зараховано!\n\n` +
     (t.bears ? `🧸 ${t.bears} мішки твої! Заявки: ${apps.join(', ')}\n` : '') +
     (t.reward ? `⭐ +${t.reward} (баланс: ${nb}⭐)\n` : '') +
-    (t.bonusSpin ? '🎰 Щоденний спін знову доступний!\n' : '')
+    (t.bonusSpin ? '🎰 +1 бонусний спін щоденного колеса!\n' : '')
   ).catch(() => {});
   await ctx.reply(`✅ ${u.username ? '@' + u.username : uid}: ${t.bears ? t.bears + ' мішки (' + apps.join(', ') + ')' : t.reward + '⭐'}`);
 });
@@ -3983,8 +3901,8 @@ app.post('/api/task-claim', async (req, res) => {
   const uid = verifyInitData(initData);
   if (!uid) return res.status(401).json({ error: 'invalid initData' });
 
-  const t = PARTNER_TASKS[taskId];
-  if (!t) return res.status(400).json({ error: 'unknown_task' });
+  const t = Object.prototype.hasOwnProperty.call(PARTNER_TASKS, taskId) ? PARTNER_TASKS[taskId] : null;
+  if (!t || t.hidden) return res.status(400).json({ error: 'unknown_task' });
 
   if (balanceLocks.has(uid)) return res.status(429).json({ error: 'busy' });
   balanceLocks.add(uid);
@@ -4093,7 +4011,9 @@ bot.command('accept', async (ctx) => {
   const nb = Math.round(((u.starBalance || 0) + (t.reward || 0)) * 100) / 100;
   const patch = { taskDone: done };
   if (t.reward) patch.starBalance = nb;
-  if (t.bonusSpin) patch.lastDailySpinAt = null;
+  // Бонусний спін — окремим лічильником. Раніше обнулявся кулдаун щоденного
+  // спіну, і разом з ним ламалась серія днів поспіль.
+  if (t.bonusSpin) patch.freeSpins = (u.freeSpins || 0) + 1;
   db.upsertUser(uid, patch);
 
   const apps = [];
@@ -4106,7 +4026,7 @@ bot.command('accept', async (ctx) => {
     `✅ <b>${t.label}</b> — підтверджено!\n\n` +
     (t.bears ? `🧸 ${t.bears} мішки твої! Заявки: ${apps.join(', ')}\n` : '') +
     (t.reward ? `⭐ +${t.reward} (баланс: ${nb}⭐)\n` : '') +
-    (t.bonusSpin ? '🎰 Щоденний спін знову доступний!\n' : '') +
+    (t.bonusSpin ? '🎰 +1 бонусний спін щоденного колеса!\n' : '') +
     '\nДякую 🙌',
     { parse_mode: 'HTML' }
   ).catch(() => {});
@@ -4160,9 +4080,10 @@ const QUIZ = [
   { q: 'Через скільки годин оновлюється безкоштовний спін?', a: ['12', '24', '48'], ok: 1 },
   { q: 'Скільки друзів треба запросити для виводу зірок?', a: ['1', '3', '5'], ok: 1 },
   { q: 'Яка комісія на вивід зірок?', a: ['5%', '10%', '15%'], ok: 0 },
-  { q: 'Що дає найбільші шанси на NFT?', a: ['Щоденне', 'За зірки', 'ПРЕМІУМ'], ok: 2 },
+  { q: 'Скільки білетів коштує спін колеса «За білети»?', a: ['3', '5', '10'], ok: 1 },
   { q: 'Скільки разів поспіль можна подвоїти виграш?', a: ['2', '3', '5'], ok: 1 },
-  { q: 'Який приз найдорожчий у боті?', a: ['Evil Eye', 'Telegram Premium', 'Трофей'], ok: 1 },
+  { q: 'Який приз найдорожчий у боті?', a: ['Evil Eye', 'Diamond Ring', 'Трофей'], ok: 1 },
+  { q: 'Скільки білетів дають 2⭐ при обміні?', a: ['5', '10', '20'], ok: 1 },
   { q: 'Де подивитись свою статистику?', a: ['Колесо', 'Гаманець', 'Профіль'], ok: 2 },
 ];
 
@@ -4205,8 +4126,9 @@ app.post('/api/quiz-answer', (req, res) => {
   const right = Number(choice) === q.ok;
   const patch = { quizDay: todayKey(), quizRight: right };
 
-  // Правильна відповідь скидає кулдаун щоденного спіна.
-  if (right) patch.lastDailySpinAt = null;
+  // Правильна відповідь — бонусний спін щоденного колеса. Окремим
+  // лічильником, а не скиданням кулдауну: так не ламається серія днів.
+  if (right) patch.freeSpins = (u.freeSpins || 0) + 1;
   db.upsertUser(uid, patch);
 
   res.json({ right, correctIndex: q.ok, reward: right ? 'spin' : null });
@@ -4245,17 +4167,14 @@ app.get('/api/profile', (req, res) => {
     bestWin: bestName,
     bestWinValue: best ? best.value : 0,
     firstSeenAt: u.firstSeenAt || null,
+    tickets: ticketsOf(u),
     history: (u.spinHistory || []).slice().reverse().map(h => {
-      if (h.id === 'risk_win') {
-        return { id: 'risk_win', kind: 'risk', won: true, mult: h.mult || 2,
-                 name: '×' + (h.mult || 2) + ' — виграв ' + h.am + '⭐', at: h.at };
+      if (h.id === 'risk_win' || h.id === 'risk_lose') {
+        return { id: h.id, kind: 'risk', won: h.id === 'risk_win', mult: h.mult || (h.id === 'risk_win' ? 2 : 1),
+                 name: historyName(h), at: h.at };
       }
-      if (h.id === 'risk_lose') {
-        return { id: 'risk_lose', kind: 'risk', won: false, mult: h.mult || 1,
-                 name: 'ризик ×2 — втратив ' + h.am + '⭐', at: h.at };
-      }
-      return { id: h.id, kind: 'spin',
-               name: h.sp ? CFG.getTier(h.id).name : '+' + h.am + '⭐',
+      const tix = !!(h.tk || isTixId(h.id));
+      return { id: h.id, kind: tix ? 'tix' : 'spin', name: historyName(h),
                special: !!h.sp, wheel: h.w, at: h.at };
     }),
   });
@@ -4303,9 +4222,10 @@ app.post('/api/shop-buy', async (req, res) => {
     const balance = u.starBalance || 0;
     if (balance < price) return res.status(402).json({ error: 'not_enough', balance, price });
 
-    const newBalance = balance - price;
+    const newBalance = Math.round((balance - price) * 100) / 100;
     db.upsertUser(uid, { starBalance: newBalance });
-    const app_ = db.addApplication({ uid, tierId: itemId, status: 'pending', createdAt: Date.now(), source: 'shop' });
+    // spentStars — щоб при відхиленні чи скасуванні повернути рівно сплачене.
+    const app_ = db.addApplication({ uid, tierId: itemId, status: 'pending', createdAt: Date.now(), source: 'shop', spentStars: price });
 
     if (ADMIN_CHAT_ID) {
       bot.telegram.sendMessage(
@@ -4375,6 +4295,27 @@ function awardPassXp(uid, kind, note) {
 // ==========================================================================
 const TICKETS_PER_SPIN = 5;
 
+// Скільки зірок повернути, якщо заявку відхилено чи скасовано: за вивід і
+// покупку в магазині людина заплатила, а послугу не отримала. Виграші
+// (колесо, розіграші, сходи) нічого не коштували — там повертати нічого.
+function refundableStars(a) {
+  if (!a || a.refunded) return 0;
+  if (a.spentStars) return a.spentStars;
+  if (a.source === 'shop') return shopPrice(CFG.getTier(a.tierId));   // старі покупки без spentStars
+  return 0;
+}
+function refundApplication(a) {
+  const back = refundableStars(a);
+  if (back > 0) {
+    const u = db.getUser(a.uid);
+    if (u) {
+      db.upsertUser(a.uid, { starBalance: (u.starBalance || 0) + back });
+      a.refunded = back;
+    }
+  }
+  return a.refunded === back ? back : 0;
+}
+
 function ticketsOf(u) {
   if (!u) return 0;
   // Старі акаунти: кожен реферал перетворюється на білет один до одного,
@@ -4401,6 +4342,24 @@ function addTickets(uid, n, why, opts) {
 function getBank() { return (db.getFeatureFlags() || {}).bank || null; }
 function saveBank(b) { db.setFeatureFlags({ bank: b }); return b; }
 
+// Повернення всіх ставок банку (скасування адміном). Стара схема без
+// betStars/betTickets — там уся вага була зірками.
+function refundBank(b, why) {
+  let stars = 0, tickets = 0, players = 0;
+  for (const uid of b.order || []) {
+    const s = b.betStars ? ((b.betStars[uid]) || 0) : ((b.bets || {})[uid] || 0);
+    const t = b.betTickets ? ((b.betTickets[uid]) || 0) : 0;
+    const u = db.getUser(uid);
+    if (!u || (!s && !t)) continue;
+    if (s) db.upsertUser(uid, { starBalance: Math.round(((u.starBalance || 0) + s) * 100) / 100 });
+    if (t) addTickets(uid, t, 'повернення за скасований банк', { silent: true });
+    stars += s; tickets += t; players++;
+    bot.telegram.sendMessage(uid, `🏦 ${why}\n\nСтавку повернуто: ` +
+      (s ? s + '⭐' : '') + (s && t ? ' + ' : '') + (t ? t + '🎫' : '')).catch(() => {});
+  }
+  return { stars: Math.round(stars * 100) / 100, tickets, players };
+}
+
 function bankText(uid) {
   const b = getBank();
   if (!b) return { text: '🏦 <b>Спільний банк</b>\n\nЗараз розіграшу немає. Наступний оголосимо в каналі.', rows: [] };
@@ -4412,8 +4371,8 @@ function bankText(uid) {
   if (b.status === 'drawn') {
     const win = db.getUser(b.winner) || {};
     return {
-      text: `🏦 <b>Банк розіграно</b>\n\nПереможець: <b>${win.username ? '@' + win.username : b.winner}</b>\n` +
-        `Забрав: <b>${pot}⭐</b>\n\n` + (mine ? `Твоя ставка була ${mine}⭐.\n\n` : '') +
+      text: `🏦 <b>Банк розіграно</b>\n\nПереможець: <b>${b.winner ? whoOf(win, 'гравець') : '—'}</b>\n` +
+        `Забрав: <b>${fmtStars(b.wonStars != null ? b.wonStars : pot)}⭐${b.tickets ? ' + ' + b.tickets + '🎫' : ''}</b>\n\n` + (mine ? `Твоя ставка мала вагу ${mine}.\n\n` : '') +
         `Перевірити чесність: /bank_verify`,
       rows: [],
     };
@@ -4422,7 +4381,8 @@ function bankText(uid) {
   const lines = bank.sectors(b).slice(0, 8).map((sc, i) => {
     const su = db.getUser(sc.uid) || {};
     const who = String(sc.uid) === String(uid) ? '<b>ти</b>' : (su.username ? '@' + su.username : 'гравець');
-    return `${i + 1}. ${who} — ${sc.amount}⭐ (${sc.percent}%)`;
+    const bet = (sc.stars ? sc.stars + '⭐' : '') + (sc.stars && sc.tickets ? ' + ' : '') + (sc.tickets ? sc.tickets + '🎫' : '');
+    return `${i + 1}. ${who} — ${bet || sc.amount} (${sc.percent}%)`;
   });
 
   const rows = [];
@@ -4435,9 +4395,9 @@ function bankText(uid) {
   rows.push([callbackBtn('Назад', 'back_to_menu', undefined, 'back')]);
 
   return {
-    text: `🏦 <b>СПІЛЬНИЙ БАНК</b>\n\nУ банку: <b>${pot}⭐</b>\nУчасників: <b>${b.order.length}</b>\n` +
-      `До розіграшу: <b>${bank.humanLeft(bank.timeLeft(b))}</b>\n(${new Date(b.drawAt).toLocaleString('uk-UA')})\n\n` +
-      (mine ? `Твоя ставка: <b>${mine}⭐</b> → шанс <b>${bank.chance(b, uid)}%</b>\n\n`
+    text: `🏦 <b>СПІЛЬНИЙ БАНК</b>\n\nУ банку: <b>${fmtStars(b.stars != null ? b.stars : pot)}⭐</b>${b.tickets ? ` + <b>${b.tickets}🎫</b>` : ''}\nУчасників: <b>${b.order.length}</b>\n` +
+      `До розіграшу: <b>${bank.humanLeft(bank.timeLeft(b))}</b>\n(${new Date(b.drawAt).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' })})\n\n` +
+      (mine ? `Твоя ставка: <b>${(b.betStars || {})[uid] || 0}⭐${(b.betTickets || {})[uid] ? ' + ' + b.betTickets[uid] + '🎫' : ''}</b> → шанс <b>${bank.chance(b, uid)}%</b>\n\n`
             : `Ти ще не в грі. Що більше поставиш — то більший твій сектор.\n\n`) +
       (lines.length ? `<b>Сектори:</b>\n${lines.join('\n')}\n\n` : '') +
       `Колесо крутиться один раз, переможець забирає <b>весь банк</b>. Бот не бере нічого.\n` +
@@ -4504,14 +4464,23 @@ async function bankTick() {
   if (!res.ok) { if (res.error === 'empty') saveBank(Object.assign(b, { status: 'drawn', winner: null })); return; }
   saveBank(b);
 
-  const win = db.getUser(res.winner) || {};
+  const winU = db.getUser(res.winner);
+  const win = winU || {};
   // Переможець забирає вміст банку ПЛЮС бонус за пройдені віхи.
+  // ТУТ БУВ БАГ: (b.stars || res.pot) — якщо в банку були лише білети,
+  // b.stars = 0, і переможцю нараховувалась уся ВАГА як зірки (кожен білет
+  // перетворювався на 5⭐ — у 25 разів вигідніше за обмін).
   const ms = bank.milestones(b);
-  const wonStars = Math.round(((b.stars || res.pot) + ms.bonusUnlocked) * 100) / 100;
+  const wonStars = Math.round(((b.stars != null ? b.stars : res.pot) + ms.bonusUnlocked) * 100) / 100;
   const wonTickets = b.tickets || 0;
-  db.upsertUser(res.winner, { starBalance: Math.round(((win.starBalance || 0) + wonStars) * 100) / 100 });
-  if (wonTickets) addTickets(res.winner, wonTickets, 'виграш у банку');
-  const name = win.username ? '@' + win.username : 'гравець ' + res.winner;
+  b.wonStars = wonStars;
+  saveBank(b);
+  // Тестові учасники (/test bank) у базі не існують — їм нічого не створюємо.
+  if (winU) {
+    db.upsertUser(res.winner, { starBalance: Math.round(((win.starBalance || 0) + wonStars) * 100) / 100 });
+    if (wonTickets) addTickets(res.winner, wonTickets, 'виграш у банку', { silent: true });
+  }
+  const name = winU ? whoOf(win) : 'гравець ' + esc(res.winner);
   const prize = `${wonStars}⭐` + (wonTickets ? ` + ${wonTickets}🎫` : '') +
     (ms.bonusUnlocked ? ` (з них ${ms.bonusUnlocked}⭐ бонус за віхи)` : '');
 
@@ -4519,10 +4488,11 @@ async function bankTick() {
   for (const pid of b.order) {
     if (String(pid) === String(res.winner)) continue;
     const cons = bank.consolationFor(b, pid);
-    if (cons > 0) addTickets(pid, cons, 'утішні за банк');
+    if (cons > 0) addTickets(pid, cons, 'утішні за банк', { silent: true });
   }
   const msg = `🏦 <b>БАНК РОЗІГРАНО</b>\n\nПереможець: <b>${name}</b>\nЗабирає: <b>${prize}</b>\n\nПеревірка чесності: /bank_verify`;
   for (const uid of b.order) {
+    if (!db.getUser(uid)) continue;
     bot.telegram.sendMessage(uid,
       String(uid) === String(res.winner)
         ? `🎉 <b>ТИ ЗАБРАВ БАНК!</b>\n\n+${prize} уже на балансі.\n\nПеревірити розіграш: /bank_verify`
@@ -4559,26 +4529,27 @@ bot.command('bank_verify', async (ctx) => {
 bot.command('bank_start', async (ctx) => {
   if (!isAdmin(ctx)) return;
   const arg = ctx.message.text.trim().split(/\s+/).slice(1).join(' ');
-  const d = arg ? new Date(arg.replace(' ', 'T') + ':00+03:00') : null;
-  if (!d || isNaN(d.getTime())) return ctx.reply('Формат: <code>/bank_start 2026-09-30 17:00</code>', { parse_mode: 'HTML' });
+  const ts = arg ? league.parseKyiv(arg) : null;
+  const d = ts ? new Date(ts) : null;
+  if (!d || isNaN(d.getTime())) return ctx.reply('Формат: <code>/bank_start 2026-09-30 17:00</code> (час за Києвом)', { parse_mode: 'HTML' });
+  if (d.getTime() <= Date.now()) return ctx.reply('Цей час уже минув.');
+  const cur = getBank();
+  if (cur && cur.status === 'open') return ctx.reply('Уже є відкритий банк. Спершу /bank_cancel — ставки повернуться людям.');
   const b = bank.create(d.getTime());
   saveBank(b);
-  await ctx.reply(`🏦 Банк відкрито.\nРозіграш: ${d.toLocaleString('uk-UA')}\n\nSeed-hash для публікації:\n<code>${b.seedHash}</code>\n\nОпублікуй його в каналі ДО ставок — це і є доказ чесності.`, { parse_mode: 'HTML' });
+  await ctx.reply(`🏦 Банк відкрито.\nРозіграш: ${d.toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' })}\n\nSeed-hash для публікації:\n<code>${b.seedHash}</code>\n\nОпублікуй його в каналі ДО ставок — це і є доказ чесності.`, { parse_mode: 'HTML' });
 });
 
 bot.command('bank_cancel', async (ctx) => {
   if (!isAdmin(ctx)) return;
   const b = getBank();
   if (!b || b.status !== 'open') return ctx.reply('Активного банку немає.');
-  let back = 0;
-  for (const uid of b.order) {
-    const u = db.getUser(uid) || {};
-    db.upsertUser(uid, { starBalance: Math.round(((u.starBalance || 0) + b.bets[uid]) * 100) / 100 });
-    back += b.bets[uid];
-    bot.telegram.sendMessage(uid, `Розіграш банку скасовано. ${b.bets[uid]}⭐ повернулись на баланс.`).catch(() => {});
-  }
+  // Повертаємо рівно те, що людина поставила: зірки — зірками, білети —
+  // білетами. Раніше поверталась ВАГА ставки у зірках, і білет, поставлений
+  // у банк, при скасуванні перетворювався на 5⭐.
+  const r = refundBank(b, 'Розіграш банку скасовано.');
   db.setFeatureFlags({ bank: null });
-  await ctx.reply(`Скасовано, повернуто ${Math.round(back * 100) / 100}⭐ на ${b.order.length} балансів.`);
+  await ctx.reply(`Скасовано, повернуто ${fmtStars(r.stars)}⭐ і ${r.tickets}🎫 для ${r.players} гравців.`);
 });
 
 // ==========================================================================
@@ -4976,8 +4947,8 @@ function inactiveApps(days) {
     const seen = u.lastActiveAt || u.firstSeenAt || 0;
     if (seen && seen >= cutoff) continue;
     hit.push({ app: a, user: u, seen });
-    // Вивід оплачувався зірками — при скасуванні їх треба повернути.
-    if (a.source === 'app_withdrawal') refund += a.spentStars || 0;
+    // Вивід і магазин оплачувались зірками — при скасуванні їх треба повернути.
+    refund += refundableStars(a);
   }
   return { hit, refund };
 }
@@ -5037,14 +5008,13 @@ bot.command('cancel_inactive_yes', async (ctx) => {
     a.status = 'cancelled';
     a.cancelledAt = Date.now();
     a.cancelReason = `неактивний ${days}+ днів`;
-    // Зірки за вивід повертаємо: людина за них заплатила, а послугу не отримала.
-    if (a.source === 'app_withdrawal' && a.spentStars) {
-      const u = db.getUser(a.uid) || {};
-      db.upsertUser(a.uid, { starBalance: (u.starBalance || 0) + a.spentStars });
-      refunded += a.spentStars;
+    // Зірки за вивід і магазин повертаємо: людина заплатила, а послугу не отримала.
+    const back = refundApplication(a);
+    if (back) {
+      refunded += back;
       bot.telegram.sendMessage(a.uid,
         `Твою заявку #${a.id} скасовано, бо ти давно не заходив.\n` +
-        `${a.spentStars}⭐ повернулись на баланс — можеш подати заново.`
+        `${fmtStars(back)}⭐ повернулись на баланс — можеш подати заново.`
       ).catch(() => {});
     }
     cancelled++;
@@ -5212,8 +5182,8 @@ app.post('/api/withdraw', async (req, res) => {
   const subscribed = await checkChannelSubscription(CFG.CHANNEL_USERNAME, uid);
   if (subscribed !== true) return res.status(403).json({ error: 'not_subscribed', channel: CFG.CHANNEL_USERNAME, channelUrl: CFG.CHANNEL_URL });
 
-  const want = parseInt(amount, 10);
-  if (isNaN(want) || !isAllowedPayout(want)) {
+  const want = Number(amount);
+  if (!isAllowedPayout(want)) {
     return res.status(400).json({ error: 'bad_amount', min: WITHDRAW_MIN_ANY, message: `Мінімум ${WITHDRAW_MIN_ANY}⭐, далі будь-яка сума.` });
   }
 
@@ -5223,13 +5193,11 @@ app.post('/api/withdraw', async (req, res) => {
     const u = db.getUser(uid);
     if (!u) return res.status(400).json({ error: 'user not found' });
 
-    const balance = u.starBalance || 0;
     const w = withdrawCost(want);
-    if (balance < w.cost) return res.status(402).json({ error: 'not_enough', balance, cost: w.cost, payout: w.payout });
-
-    const app_ = await createStarPayout(uid, w, balance);
-    if (!app_) return res.status(400).json({ error: 'need_username' });
-    res.json({ ok: true, balance: balance - w.cost, payout: w.payout, fee: w.fee, cost: w.cost, applicationId: app_.id });
+    const r = await createStarPayout(uid, w);
+    if (r.error === 'not_enough') return res.status(402).json(r);
+    if (r.error) return res.status(400).json(r);
+    res.json({ ok: true, balance: r.balance, payout: w.payout, fee: w.fee, cost: w.cost, applicationId: r.app.id });
   } finally {
     balanceLocks.delete(uid);
   }
@@ -5258,8 +5226,16 @@ app.post('/api/risk', async (req, res) => {
     }
     if (pr.streak >= RISK_MAX_STREAK) return res.status(400).json({ error: 'max_streak' });
 
-    const won = Math.random() < RISK_WIN_CHANCE;
     const balance = u.starBalance || 0;
+    // Ризикувати можна лише зірками, які ще на балансі. Раніше можна було
+    // витратити виграш (вивести, поставити), а тоді «ризикнути» ним: виграш
+    // додавав зірки, а програш упирався в нуль — тобто грали безкоштовно.
+    if (balance + 1e-9 < pr.amount) {
+      db.upsertUser(uid, { pendingRisk: null });
+      return res.status(400).json({ error: 'spent', balance });
+    }
+
+    const won = crypto.randomInt(1000000) < RISK_WIN_CHANCE * 1000000;
 
     if (won) {
       const newBalance = balance + pr.amount;
@@ -5281,7 +5257,7 @@ app.post('/api/risk', async (req, res) => {
       return res.json({ won: true, amount: newAmount, balance: newBalance, streak: newStreak, canRiskAgain: newStreak < RISK_MAX_STREAK });
     }
 
-    const newBalance = Math.max(0, balance - pr.amount);
+    const newBalance = balance - pr.amount;
     const histL = (u.spinHistory || []).concat([{
       id: 'risk_lose', sp: 0, am: pr.amount, w: 'risk',
       mult: Math.pow(2, pr.streak || 0), at: Date.now(),
@@ -5302,6 +5278,9 @@ app.post('/api/risk', async (req, res) => {
 app.post('/api/create-spin-invoice', async (req, res) => {
   const uid = verifyInitData((req.body || {}).initData);
   if (!uid) return res.status(401).json({ error: 'invalid initData' });
+  // Колесо вимкнене — продавати на нього спіни не можна: раніше рахунок
+  // створювався, людина платила реальні зірки, а крутити було нічого.
+  if (WHEEL_CONFIGS.premium.disabled) return res.status(410).json({ error: 'wheel_disabled' });
 
   const cost = WHEEL_CONFIGS.premium.realStarsCost;
   try {
@@ -5349,8 +5328,9 @@ app.post('/api/create-invoice', async (req, res) => {
   const uid = verifyInitData(initData);
   if (!uid) return res.status(401).json({ error: 'invalid initData' });
 
-  const starsAmount = Math.max(1, Math.min(100000, parseInt(amount, 10) || 0));
-  if (!starsAmount) return res.status(400).json({ error: 'invalid amount' });
+  const p = parseTopUpAmount(amount);
+  if (p.error) return res.status(400).json({ error: 'invalid amount', message: p.error, max: TOPUP_MAX });
+  const starsAmount = p.amount;
 
   try {
     const link = await bot.telegram.createInvoiceLink({
@@ -5402,7 +5382,7 @@ function checkLaunchBonus(uid, xp) {
     db.setFeatureFlags({ leagueLaunchBonus: { ...lb, winners } });
 
     const left = lb.count - winners.length;
-    chat.announce('🧸 <b>' + (u.username ? '@' + u.username : (u.name || 'гравець')) + '</b> першим набрав ' + lb.minXp +
+    chat.announce('🧸 <b>' + whoOf(u) + '</b> першим набрав ' + lb.minXp +
       ' XP і забрав стартову мішку! ' + (left > 0 ? 'Лишилось ' + left + ' 🔥' : 'Мішки закінчились 🏁')).catch(() => {});
     bot.telegram.sendMessage(uid,
       `🧸 <b>МІШКА ТВОЯ!</b>\n\nТи ${place}-й, хто набрав ${lb.minXp} XP у лізі.\n` +
@@ -5431,7 +5411,7 @@ function leagueRankEvents(uid, oldXp, newXp) {
     const me = rows.find(r => String(r.uid) === String(uid));
     if (!me) return;
     const oldRank = 1 + rows.filter(r => String(r.uid) !== String(uid) && r.xp > oldXp).length;
-    const myName = me.u && me.u.username ? '@' + me.u.username : ((me.u && me.u.name) || 'хтось');
+    const myName = whoOf(me.u, 'хтось');
 
     if (oldRank > 3 && me.rank <= 3) {
       chat.announce('🔥 <b>' + myName + '</b> увірвався в топ-3 ліги тижня — тепер #' + me.rank + '!').catch(() => {});
@@ -5625,18 +5605,12 @@ bot.command('reset_requests', async (ctx) => {
 
   if (arg !== 'так') {
     let sum = 0;
-    for (const a of pending) {
-      if (a.source === 'app_withdrawal') sum += a.spentStars || 0;
-      else if (a.source === 'shop') { const t = CFG.getTier(a.tierId); sum += Math.ceil(t.priceStars * 1.1); }
-    }
+    for (const a of pending) sum += refundableStars(a);
     const uidsPreview = [...new Set(pending.map(a => a.uid))];
     let bonusTotal = 0;
     for (const uid of uidsPreview) {
       let back = 0;
-      for (const a of pending.filter(x => x.uid === uid)) {
-        if (a.source === 'app_withdrawal') back += a.spentStars || 0;
-        else if (a.source === 'shop') { const t = CFG.getTier(a.tierId); back += Math.ceil(t.priceStars * 1.1); }
-      }
+      for (const a of pending.filter(x => x.uid === uid)) back += refundableStars(a);
       bonusTotal += resetBonusFor(back);
     }
     return ctx.reply(
@@ -5650,17 +5624,14 @@ bot.command('reset_requests', async (ctx) => {
   }
 
   let refunded = 0, refundedStars = 0, cancelled = 0, notified = 0, bonusPaid = 0;
+  const backByUid = {};
   for (const a of pending) {
-    let back = 0;
-    if (a.source === 'app_withdrawal') back = a.spentStars || 0;
-    else if (a.source === 'shop') { const t = CFG.getTier(a.tierId); back = Math.ceil(t.priceStars * 1.1); }
-
+    // Раніше покупки з магазину поверталися як ціна +10% — хоча комісії в
+    // магазині давно немає, тобто скидання черги ще й доплачувало людям.
+    const back = refundApplication(a);
     if (back > 0) {
-      const u = db.getUser(a.uid);
-      if (u) {
-        db.upsertUser(a.uid, { starBalance: (u.starBalance || 0) + back });
-        refunded++; refundedStars += back;
-      }
+      refunded++; refundedStars += back;
+      backByUid[a.uid] = (backByUid[a.uid] || 0) + back;
     } else cancelled++;
 
     a.status = 'rejected';
@@ -5673,11 +5644,7 @@ bot.command('reset_requests', async (ctx) => {
   const uids = [...new Set(pending.map(a => a.uid))];
   for (const uid of uids) {
     const mine = pending.filter(a => a.uid === uid);
-    let back = 0;
-    for (const a of mine) {
-      if (a.source === 'app_withdrawal') back += a.spentStars || 0;
-      else if (a.source === 'shop') { const t = CFG.getTier(a.tierId); back += Math.ceil(t.priceStars * 1.1); }
-    }
+    const back = backByUid[uid] || 0;
     const bonus = resetBonusFor(back);
     const uu = db.getUser(uid);
     if (uu) db.upsertUser(uid, { starBalance: (uu.starBalance || 0) + bonus });
@@ -5693,7 +5660,7 @@ bot.command('reset_requests', async (ctx) => {
     const opts = canRestore
       ? Markup.inlineKeyboard([[callbackBtn('↩️ Подати заявку на вивід заново', `restore_withdraw_${uid}`, 'success', 'starIcon')]])
       : {};
-    await bot.telegram.sendMessage(uid, txt, opts).catch(() => {});
+    await safeSend(uid, () => bot.telegram.sendMessage(uid, txt, opts));
     notified++;
     await new Promise(r => setTimeout(r, 120));
   }
@@ -5711,69 +5678,13 @@ bot.command('reset_requests', async (ctx) => {
 
 // Повторна подача виводу після скидання черги — одним натисканням,
 // на ту саму суму, що була (якщо балансу вистачає).
+// Повторна подача виводу після скидання черги — через той самий гаманець
+// у застосунку, що й звичайний вивід (одні умови й одна комісія). Раніше
+// тут була окрема логіка з іншою формулою комісії.
 bot.action(/^restore_withdraw_(\d+)$/, async (ctx) => {
   const uid = String(ctx.from.id);
   if (ctx.match[1] !== uid) return ctx.answerCbQuery('Ця кнопка не для тебе.');
-  await ctx.answerCbQuery();
-
-  const u = db.getUser(uid);
-  if (!u) return;
-
-  // Шукаємо останню скасовану заявку на вивід, щоб підставити ту саму суму.
-  const lastCancelled = db.listApplications('rejected')
-    .filter(a => a.uid === uid && a.source === 'app_withdrawal')
-    .sort((a, b) => (b.decidedAt || 0) - (a.decidedAt || 0))[0];
-
-  const want = lastCancelled ? (lastCancelled.spentStars || 0) : 0;
-  const balance = u.starBalance || 0;
-
-  if (!want) {
-    return ctx.reply('Не знайшов попередню заявку. Відкрий колесо кнопкою меню — там блок «Вивід зірок».');
-  }
-  if (balance < want) {
-    return ctx.reply(
-      `На балансі ${balance}⭐, а попередня заявка була на ${want}⭐.\n` +
-      'Відкрий колесо кнопкою меню — там можна вивести будь-яку доступну суму.'
-    );
-  }
-  if (!u.username) {
-    return ctx.reply('Спочатку встанови юзернейм у налаштуваннях Telegram — без нього не вийде надіслати зірки.');
-  }
-
-  // Техроботи блокують вивід і в боті, а не лише у застосунку. Раніше
-  // застосунок показував заглушку, а через чат заявку все одно подавали.
-  {
-    const m = maintState();
-    if (m.mode !== 'off') {
-      return ctx.reply(`🛠 <b>Технічні роботи</b>\n\n${m.text}\n\nПідтримка: ${MAINT_SUPPORT}`, { parse_mode: 'HTML' });
-    }
-  }
-
-  if (balanceLocks.has(uid)) return ctx.reply('⏳ Зачекай, попередня дія ще обробляється.');
-  balanceLocks.add(uid);
-  try {
-    const fee = Math.ceil(want * APP_WITHDRAW_FEE_PERCENT / 100);
-    const payout = want - fee;
-    db.upsertUser(uid, { starBalance: balance - want });
-    const app_ = db.addApplication({
-      uid, tierId: 'stars_payout', status: 'pending', createdAt: Date.now(),
-      source: 'app_withdrawal', payoutStars: payout, spentStars: want, fee,
-    });
-
-    if (ADMIN_CHAT_ID) {
-      bot.telegram.sendMessage(
-        ADMIN_CHAT_ID,
-        `💸 ВИВІД (повторна подача) Заявка #${app_.id}\nСписано: ${want}⭐ (комісія ${fee}⭐)\nДо видачі: ${payout}⭐\n${u.name || '—'} · @${u.username} · id ${uid}`,
-        Markup.inlineKeyboard([[
-          callbackBtn('Підтвердити', `admin_approve_${app_.id}`, 'success', 'check'),
-          callbackBtn('Відхилити', `admin_reject_${app_.id}`, 'danger', 'redCircle'),
-        ]])
-      ).catch(() => {});
-    }
-    await ctx.reply(`✅ Заявку #${app_.id} подано заново.\nДо видачі: ${payout}⭐. Обробимо найближчим часом.`);
-  } finally {
-    balanceLocks.delete(uid);
-  }
+  return redirectWithdraw(ctx);
 });
 
 // Діагностика: показує, що саме лишилось у черзі й чому воно могло
@@ -5822,10 +5733,15 @@ bot.command('reject', async (ctx) => {
     if (app_.status !== 'pending') { skip.push(`#${id} — вже ${app_.status}`); continue; }
     app_.status = 'rejected';
     app_.decidedAt = Date.now();
+    const back = refundApplication(app_);
     db.save();
-    done.push(`#${id}`);
+    if (back) {
+      // Про повернення зірок людині варто знати — інакше це виглядає як зникнення.
+      bot.telegram.sendMessage(app_.uid, `❌ Заявку #${id} відхилено.\n↩️ ${fmtStars(back)}⭐ повернуто на баланс.`).catch(() => {});
+    }
+    done.push(`#${id}` + (back ? ` (↩️ ${fmtStars(back)}⭐)` : ''));
   }
-  await ctx.reply(`❌ Відхилено: ${done.join(', ') || '—'}${skip.length ? '\n⏭ ' + skip.join(', ') : ''}\n\n(людям не писали)`);
+  await ctx.reply(`❌ Відхилено: ${done.join(', ') || '—'}${skip.length ? '\n⏭ ' + skip.join(', ') : ''}\n\n(писали лише тим, кому повернули зірки)`);
 });
 
 // Прибрати ВСІ власні заявки адміна — тестові сміття.
@@ -5932,7 +5848,7 @@ bot.command('winback', async (ctx) => {
     return ctx.reply(
       `Повернення сплячих\n\n` +
       `Не заходили понад ${DAYS} дн.: ${targets.length}\n` +
-      `Кожному: скинутий щоденний спін + ${WINBACK_STARS}⭐\n` +
+      `Кожному: бонусний спін + ${WINBACK_STARS}⭐\n` +
       `Орієнтовна вартість: ~${Math.round(targets.length * (1.72 + WINBACK_STARS))}⭐\n\n` +
       `Запустити: /winback так`
     );
@@ -5946,14 +5862,14 @@ bot.command('winback', async (ctx) => {
       // Коштує ~5⭐ на людину замість ~21⭐ за преміум-спін, а привід
       // повернутись такий самий.
       db.upsertUser(uid, {
-        lastDailySpinAt: null,
+        freeSpins: (u.freeSpins || 0) + 1,
         starBalance: (u.starBalance || 0) + WINBACK_STARS,
       });
       const opts = { parse_mode: 'HTML' };
       if (WEBAPP_URL) opts.reply_markup = { inline_keyboard: [[{ text: '🎰 Крутити', web_app: { url: WEBAPP_URL } }]] };
       await bot.telegram.sendMessage(uid,
         '🎁 <b>Твій спін знову доступний</b>\n\n' +
-        `Давно не бачились — скинули тобі щоденний спін і поклали <b>+${WINBACK_STARS}⭐</b> на баланс.\n\n` +
+        `Давно не бачились — даруємо бонусний спін і <b>+${WINBACK_STARS}⭐</b> на баланс.\n\n` +
         'Поки тебе не було, у боті зʼявились: подвоєння ×2, магазин без рандому і спільна ціль.\n\n' +
         '<i>Заходь, крути 🎰</i>', opts);
       sent++;
@@ -6248,64 +6164,76 @@ bot.action(/^dice_g_(\w+)$/, async (ctx) => {
 // або кидала кубик не тієї гри, або лишала g === undefined у тексті.
 bot.action(/^dice_b_(\w+)_(\d+)$/, async (ctx) => {
   const uid = String(ctx.from.id);
-  await ctx.answerCbQuery();
+  await ctx.answerCbQuery().catch(() => {});
 
   const gameId = ctx.match[1];
-  const g = DICE_GAMES[gameId];
+  const g = Object.prototype.hasOwnProperty.call(DICE_GAMES, gameId) ? DICE_GAMES[gameId] : null;
   if (!g) return ctx.reply('Ця гра недоступна. Обери іншу в меню ігор.');
+  if (!(await requireSubscribed(ctx, uid))) return;
   diceState.set(uid, { game: gameId });
   const bet = Math.min(DICE_BET_MAX, Math.max(1, parseInt(ctx.match[2], 10) || 0));
 
   if (balanceLocks.has(uid)) return ctx.reply('⏳ Зачекай, попередня гра ще йде.');
   balanceLocks.add(uid);
+  let result = null;
   try {
     const u = db.getUser(uid);
+    if (!u) return ctx.reply('Спершу натисни /start.');
     const bal = u.starBalance || 0;
-    if (bal < bet) return ctx.reply(`Замало зірок: ставка ${bet}⭐, у тебе ${Math.round(bal * 100) / 100}⭐.`);
+    if (bal < bet) return ctx.reply(`Замало зірок: ставка ${bet}⭐, у тебе ${fmtStars(bal)}⭐.`);
 
     // Списуємо одразу, щоб не можна було грати «в кредит» паралельно.
     db.upsertUser(uid, { starBalance: Math.round((bal - bet) * 100) / 100 });
 
-    // Оборот качає сезонний пас. Нараховуємо ДО кидка: XP дається за
-    // саму ставку, а не за виграш — інакше вигідно було б не грати взагалі.
-    const pp = pass.ensure(u, Date.now());
-    const xpRes = pass.addWagerXp(pp, bet, 'bet', Date.now());
-    db.upsertUser(uid, { pass: pp });
-
-    const msg = await ctx.replyWithDice({ emoji: g.emoji });
+    let msg = null;
+    try { msg = await ctx.replyWithDice({ emoji: g.emoji }); } catch (e) { msg = null; }
+    if (!msg || !msg.dice) {
+      // Кубик не надіслався (мережа, ліміт Telegram) — ставка не має згоріти.
+      const ur = db.getUser(uid) || {};
+      db.upsertUser(uid, { starBalance: Math.round(((ur.starBalance || 0) + bet) * 100) / 100 });
+      return ctx.reply('⚠️ Telegram не прийняв кидок. Ставку повернуто — спробуй ще раз.').catch(() => {});
+    }
     const value = msg.dice.value;
     const won = g.win.includes(value);
-    leagueXp(uid, 'dice_star', bet);
     const payout = won ? Math.round(bet * g.k * 100) / 100 : 0;
 
+    // Виграш зараховуємо ОДРАЗУ. Раніше він нараховувався в setTimeout через
+    // ~4 с — і перезапуск сервера в цей момент з'їдав виграш повністю.
+    const u2 = db.getUser(uid) || {};
+    const nb = Math.round(((u2.starBalance || 0) + payout) * 100) / 100;
+    if (payout) db.upsertUser(uid, { starBalance: nb });
+    db.upsertUser(uid, {
+      diceGames: ((db.getUser(uid) || {}).diceGames || 0) + 1,
+      diceWagered: Math.round((((db.getUser(uid) || {}).diceWagered || 0) + bet) * 100) / 100,
+    });
 
-    // Чекаємо, поки анімація кубика догра́є.
-    setTimeout(async () => {
-      const u2 = db.getUser(uid) || {};
-      const nb = Math.round(((u2.starBalance || 0) + payout) * 100) / 100;
-      if (payout) db.upsertUser(uid, { starBalance: nb });
-
-      const xpLine = '';   // пасу в застосунку більше немає — рядок про його XP лише плутав
-
-      const rows = [
-        [callbackBtn('Ще раз', `dice_b_${gameId}_${bet}`, 'success', 'starIcon')],
-        // Раніше тут було st.game — такої змінної тут немає, бот падав перед
-        // відправкою результату, і людина не бачила, чим закінчилась гра.
-        [callbackBtn('✏️ Змінити ставку', `dice_own_${gameId}`, 'primary', 'starIcon')],
-        [callbackBtn('Інша гра', 'dice_menu', 'primary', 'starIcon')],
-      ];
-      // Пас живе у застосунку — в чаті його кнопок більше немає.
-
-      await ctx.reply(
-        (won
-          ? `🎉 <b>Виграш!</b> ${g.emoji} ${diceResultText(g.emoji, value)}\n\n+${payout}⭐ (ставка ${bet}⭐ × ${g.k})\nБаланс: <b>${nb}⭐</b>`
-          : `😔 Не пощастило. ${g.emoji} ${diceResultText(g.emoji, value)}\n\nСтавка ${bet}⭐ згоріла.\nБаланс: <b>${nb}⭐</b>`) + xpLine,
-        { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) }
-      ).catch(() => {});
-    }, ({ '🎰': 3600, '🎲': 4300, '🎯': 4300, '🎳': 4600, '🏀': 4900, '⚽': 4900 })[g.emoji] || 4500);   // чекаємо, поки кубик зупиниться
+    // Оборот качає сезонний пас: XP за саму ставку, а не за виграш.
+    try {
+      const up = db.getUser(uid) || {};
+      const pp = pass.ensure(up, Date.now());
+      pass.addWagerXp(pp, bet, 'bet', Date.now());
+      db.upsertUser(uid, { pass: pp });
+    } catch (e) { console.error('dice pass xp:', e.message); }
+    leagueXp(uid, 'dice_star', bet);
+    result = { won, value, payout, nb };
   } finally {
     balanceLocks.delete(uid);
   }
+  if (!result) return;
+
+  // Показуємо результат, коли анімація кубика догра́є. Гроші вже на балансі.
+  await sleep(({ '🎰': 3600, '🎲': 4300, '🎯': 4300, '🎳': 4600, '🏀': 4900, '⚽': 4900 })[g.emoji] || 4500);
+  const rows = [
+    [callbackBtn('Ще раз', `dice_b_${gameId}_${bet}`, 'success', 'starIcon')],
+    [callbackBtn('✏️ Змінити ставку', `dice_own_${gameId}`, 'primary', 'starIcon')],
+    [callbackBtn('Інша гра', 'dice_menu', 'primary', 'starIcon')],
+  ];
+  await ctx.reply(
+    result.won
+      ? `🎉 <b>Виграш!</b> ${g.emoji} ${diceResultText(g.emoji, result.value)}\n\n+${fmtStars(result.payout)}⭐ (ставка ${bet}⭐ × ${g.k})\nБаланс: <b>${fmtStars(result.nb)}⭐</b>`
+      : `😔 Не пощастило. ${g.emoji} ${diceResultText(g.emoji, result.value)}\n\nСтавка ${bet}⭐ згоріла.\nБаланс: <b>${fmtStars(result.nb)}⭐</b>`,
+    { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) }
+  ).catch(() => {});
 });
 
 // ==========================================================================
@@ -6849,7 +6777,7 @@ function activeEvents() {
   }
 
   const pc = db.getPasswordChallenge();
-  if (pc && pc.active) out.push({ key: 'password', label: '🔑 Виклик з паролем', info: 'слово: ' + (pc.word || '—') });
+  if (pc && pc.active) out.push({ key: 'password', label: '🔑 Виклик з паролем', info: 'слово: ' + (pc.password || '—') });
 
   const b = getBank();
   if (b && b.status === 'open') {
@@ -6863,7 +6791,7 @@ function activeEvents() {
     out.push({ key: 'goal', label: '🎯 Спільна ціль', info: 'прогрес ' + (f.goalCount || 0) });
   }
 
-  if (!f.leaguePaused) {
+  if (LEAGUE_ENABLED && !f.leaguePaused) {
     const rowsE = league.standings(leagueUsers(), now);
     out.push({ key: 'league', label: '🏆 Ліга тижня',
       info: 'учасників ' + rowsE.length + ', підсумки ' + new Date(league.weekEnd(now)).toLocaleString('uk-UA') });
@@ -6873,7 +6801,7 @@ function activeEvents() {
   for (const [gid, g] of Object.entries(gs)) {
     if (g && g.active && (!g.endsAt || g.endsAt > now)) {
       out.push({ key: 'giveaway:' + gid, label: '🎁 Розіграш #' + gid,
-        info: 'учасників ' + ((g.participants || []).length) });
+        info: 'учасників ' + Object.keys(g.participants || {}).length });
     }
   }
   return out;
@@ -6919,26 +6847,10 @@ bot.command('event_stop', async (ctx) => {
       // Банк зупиняємо з поверненням ставок — інакше люди втратять вкладене.
       const b = getBank();
       if (b && b.status === 'open') {
-        let back = 0;
-        for (const uid of b.order) {
-          const s = (b.betStars || {})[uid] || 0;
-          const t2 = (b.betTickets || {})[uid] || 0;
-          if (s) {
-            const uu = db.getUser(uid) || {};
-            db.upsertUser(uid, { starBalance: Math.round(((uu.starBalance || 0) + s) * 100) / 100 });
-          }
-          if (t2) addTickets(uid, t2, 'повернення за скасований банк');
-          if (s || t2) {
-            back++;
-            bot.telegram.sendMessage(uid,
-              '🏦 Банк скасовано адміністратором.\n\nСтавку повернуто: ' +
-              (s ? s + '⭐' : '') + (s && t2 ? ' + ' : '') + (t2 ? t2 + '🎫' : '')
-            ).catch(() => {});
-          }
-        }
+        const r = refundBank(b, 'Банк скасовано адміністратором.');
         b.status = 'cancelled';
         saveBank(b);
-        stopped.push('банк (повернуто ' + back + ' ставок)');
+        stopped.push('банк (повернуто ' + r.players + ' ставок)');
       }
     } else if (k === 'league') {
       db.setFeatureFlags({ leaguePaused: true });
@@ -7472,7 +7384,7 @@ bot.action(/^pk_ok_(\d+)$/, async (ctx) => {
   await bot.telegram.sendMessage(uid,
     '🔓 <b>Секретне завдання виконано!</b>\n\n' + (mult > 1 ? '🔥 Ти серед перших — усе <b>×2</b>!\n\n' : '') +
     '⭐ +' + stars + ' зірок\n🎫 +' + tickets + ' білетів\n👑 +' + pts + ' очок чату — ти тепер <b>' + L.e + ' ' + L.t + '</b>', { parse_mode: 'HTML' }).catch(() => {});
-  const nm = u.username ? '@' + u.username : (u.name || 'гравець');
+  const nm = whoOf(u);
   chat.announce('🔓 <b>' + nm + '</b> розгадав секретне завдання: <b>+' + stars + '⭐ +' + tickets + '🎫 +' + pts + ' очок</b>' +
     (mult > 1 ? ' (×2 для перших!)' : '')).catch(() => {});
   await ctx.reply('✅ ' + nm + ': +' + stars + '⭐ +' + tickets + '🎫 +' + pts + ' очок' + (mult > 1 ? ' (×2)' : '') +
@@ -7540,7 +7452,12 @@ app.get('/api/today', (req, res) => {
 
   // 1. Безкоштовний спін — найпростіше й завжди перше.
   const canFree = !u.lastDailySpinAt || (Date.now() - u.lastDailySpinAt >= 86400000);
-  if (canFree) {
+  if (!canFree && (u.freeSpins || 0) > 0) {
+    acts.push({
+      id: 'bonus', icon: '🎁', title: 'Бонусних спінів: ' + u.freeSpins,
+      sub: 'Крути щоденне колесо без очікування', go: 'screenSpin', tab: 'daily', priority: 100,
+    });
+  } else if (canFree) {
     acts.push({
       id: 'daily', icon: '🎰', title: 'Крутни безкоштовний спін',
       sub: 'Від 2⭐, білети або NFT', go: 'screenSpin', tab: 'daily', priority: 100,
@@ -7569,11 +7486,28 @@ app.get('/api/today', (req, res) => {
     });
   }
 
+  // 3. Білети: вистачає на спін колеса «За білети».
+  const tk = ticketsOf(u);
+  if (tk >= TICKETS_PER_SPIN) {
+    acts.push({
+      id: 'tix', icon: '🎫', title: 'Білетів: ' + tk + ' — вистачає на ' + Math.floor(tk / TICKETS_PER_SPIN) + ' спін.',
+      sub: TICKETS_PER_SPIN + '🎫 за спін колеса «За білети»', go: 'screenSpin', tab: 'referral', priority: 70,
+    });
+  }
+
+  // 4. Питання дня — ще один бонусний спін.
+  if (u.quizDay !== todayKey()) {
+    acts.push({
+      id: 'quiz', icon: '🧠', title: 'Питання дня',
+      sub: 'Правильна відповідь — бонусний спін', go: 'screenSpin', tab: 'daily', scroll: 'quizBlock', priority: 60,
+    });
+  }
+
   // 5. Реферали — найдорожчий квест, тому окремо.
   if ((u.invitedIds || []).length === 0) {
     acts.push({
       id: 'invite', icon: '👥', title: 'Запроси друга',
-      sub: '+10🎫 за першого', go: 'screenProfile', priority: 55,
+      sub: '+1🎫 за кожного друга · 5🎫 = спін', go: 'screenProfile', priority: 55,
     });
   }
 
@@ -7762,50 +7696,89 @@ bot.command('send_reminders', async (ctx) => {
   await ctx.reply('Готово.');
 });
 
-app.listen(process.env.PORT || 3000, () => {
+const server = app.listen(process.env.PORT || 3000, () => {
   console.log('✅ WebApp сервер запущено на порту ' + (process.env.PORT || 3000));
 });
 
 // ---------------------------------------------------------------------------
 // Запуск
 // ---------------------------------------------------------------------------
-bot.telegram.getMe()
-  .then(async (me) => {
+// Меню команд і кнопка застосунку. Раніше в особистих не було ні підказок
+// команд, ні кнопки «Відкрити колеса» біля поля вводу.
+async function setupBotUi() {
+  await bot.telegram.setMyCommands([
+    { command: 'start', description: '🏠 Головне меню' },
+    { command: 'topup', description: '⭐ Поповнити баланс' },
+    { command: 'bank', description: '🏦 Спільний банк' },
+    { command: 'pass', description: '🎟 Сезонний пас' },
+  ], { scope: { type: 'all_private_chats' } }).catch(e => console.error('setMyCommands:', e.message));
+  if (ADMIN_CHAT_ID) {
+    await bot.telegram.setMyCommands([
+      { command: 'help_admin', description: 'Адмін-команди' },
+      { command: 'apps', description: 'Черга заявок' },
+      { command: 'requests', description: 'Список заявок' },
+      { command: 'event_status', description: 'Що зараз запущено' },
+      { command: 'maint', description: 'Техроботи' },
+      { command: 'spin_notify', description: 'Сповіщення про спіни' },
+      { command: 'chat_status', description: 'Стан чату' },
+      { command: 'dbstats', description: 'Зріз бази' },
+      { command: 'broadcast', description: 'Розсилка (відповіддю на повідомлення)' },
+      { command: 'test', description: 'Тестовий режим' },
+    ], { scope: { type: 'chat', chat_id: Number(ADMIN_CHAT_ID) } }).catch(e => console.error('setMyCommands(admin):', e.message));
+  }
+  if (WEBAPP_URL) {
+    await bot.telegram.setChatMenuButton({
+      menuButton: { type: 'web_app', text: '🎰 Колеса', web_app: { url: WEBAPP_URL } },
+    }).catch(e => console.error('setChatMenuButton:', e.message));
+  }
+}
+
+if (CFG.ADVANCED_UNLOCK_PASSWORD_IS_DEFAULT) {
+  console.warn('⚠️ ADVANCED_UNLOCK_PASSWORD не задано — використовується стандартний пароль. Задай свій у змінних оточення.');
+}
+if (!WEBAPP_URL) console.warn('ℹ️ WEBAPP_URL не задано — кнопок відкриття застосунку в боті не буде.');
+
+let launching = false;
+async function startBot(attempt) {
+  if (launching) return;
+  launching = true;
+  try {
+    const me = await bot.telegram.getMe();
     BOT_USERNAME = me.username;
     console.log('✅ Бот запущено як @' + BOT_USERNAME);
 
-    // Відновлення таймерів не повинно блокувати старт бота, якщо там раптом
-    // помилка (напр. пошкоджені старі дані) — краще запустити бота без
-    // відновлених таймерів, ніж не запустити його взагалі.
+    // Відновлення таймерів не повинно блокувати старт бота.
     try { scheduleAllGiveawayChecks(); } catch (e) { console.error('⚠️ scheduleAllGiveawayChecks:', e.message); }
     try { scheduleEventCheck(); } catch (e) { console.error('⚠️ scheduleEventCheck:', e.message); }
+    setupBotUi().catch(() => {});
 
-    await bot.launch();
-    console.log('✅ Long polling активний');
-  })
-  .catch(err => {
-    console.error('❌ Не вдалось запустити бота:', err.message);
+    // У Telegraf 4.16+ launch() завершується лише ПІСЛЯ зупинки бота, тому
+    // не чекаємо його: про старт повідомляє колбек, а про падіння — catch.
+    bot.launch({}, () => console.log('✅ Long polling активний'))
+      .then(() => { launching = false; })
+      .catch((e) => {
+        launching = false;
+        // 409 — зазвичай старий інстанс ще не зупинився після деплою.
+        console.error('❌ Polling зупинився:', e.message, '— перезапуск через 30с');
+        setTimeout(() => startBot((attempt || 0) + 1), 30000);
+      });
+  } catch (err) {
+    launching = false;
     // НЕ вбиваємо процес: express уже слухає порт, і застосунок (колесо)
-    // має лишатись доступним, навіть якщо long polling не піднявся.
-    // Інакше Railway показував "Application failed to respond" для всіх.
-    console.error('⚠️ Бот не запущений, але WebApp працює. Пробую перезапустити бота через 30с...');
-    setTimeout(function retryLaunch() {
-      bot.launch()
-        .then(() => console.log('✅ Бот таки запустився з другої спроби'))
-        .catch(e => {
-          console.error('❌ Повторний запуск бота не вдався:', e.message);
-          setTimeout(retryLaunch, 60000);
-        });
-    }, 30000);
-  });
+    // має лишатись доступним, навіть якщо Telegram тимчасово не відповідає.
+    const wait = Math.min(120000, 30000 * ((attempt || 0) + 1));
+    console.error('❌ Не вдалось запустити бота:', err.message, `— повтор через ${Math.round(wait / 1000)}с`);
+    setTimeout(() => startBot((attempt || 0) + 1), wait);
+  }
+}
+startBot(0);
 
-process.once('SIGINT', () => {
-  console.log('Отримано SIGINT — зупиняюсь.');
-  try { bot.stop('SIGINT'); } catch (e) {}
-  process.exit(0);
-});
-process.once('SIGTERM', () => {
-  console.log('Отримано SIGTERM — коректно зупиняюсь.');
-  try { bot.stop('SIGTERM'); } catch (e) {}
-  process.exit(0);
-});
+function shutdown(sig) {
+  console.log(`Отримано ${sig} — коректно зупиняюсь.`);
+  try { bot.stop(sig); } catch (e) {}
+  try { server.close(); } catch (e) {}
+  try { db.flush(); } catch (e) { console.error('db flush:', e.message); }
+  setTimeout(() => process.exit(0), 300).unref();
+}
+process.once('SIGINT', () => shutdown('SIGINT'));
+process.once('SIGTERM', () => shutdown('SIGTERM'));
