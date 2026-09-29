@@ -14,13 +14,17 @@ const maintenance = require('./maintenance');
 const { round2, fmtStars } = require('../lib/util');
 
 // ─── Вивід ──────────────────────────────────────────────────────────────
+// Комісія виводу залежить від рівня гравця: що вищий рівень — то менша.
+const feeOf = (u) => progress.perksOf(u).withdrawFee;
+
 function withdrawInfo(u) {
   const refs = (u.invitedIds || []).length;
   const bal = users.stars(u);
-  let max = Math.floor(bal / (1 + E.WITHDRAW.feePercent / 100));
-  while (max > 0 && E.withdrawCost(max).cost > bal) max--;
+  const fee = feeOf(u);
+  let max = Math.floor(bal / (1 + fee / 100));
+  while (max > 0 && E.withdrawCost(max, fee).cost > bal) max--;
   return {
-    min: E.WITHDRAW.min, feePercent: E.WITHDRAW.feePercent,
+    min: E.WITHDRAW.min, feePercent: fee, baseFeePercent: E.WITHDRAW.feePercent,
     needRefs: E.WITHDRAW.minReferrals, haveRefs: refs, hasUsername: !!u.username,
     maxPayout: Math.max(0, max), blocked: maintenance.state().mode !== 'off',
   };
@@ -37,7 +41,7 @@ async function withdraw(uid, amount) {
     const refs = (u.invitedIds || []).length;
     if (!users.isAdmin(uid) && refs < E.WITHDRAW.minReferrals) return { ok: false, status: 400, error: 'need_referrals', need: E.WITHDRAW.minReferrals, have: refs };
     if (!u.username) return { ok: false, status: 400, error: 'need_username' };
-    const w = E.withdrawCost(payout);
+    const w = E.withdrawCost(payout, feeOf(u));
     const r = users.move(uid, { stars: -w.cost }, 'withdraw', { payout: w.payout });
     if (!r.ok) return { ok: false, status: 402, error: 'not_enough', balance: users.stars(u), cost: w.cost, payout: w.payout };
     const a = applications.create(uid, 'stars_payout', 'app_withdrawal', { payoutStars: w.payout, spentStars: w.cost, fee: w.fee });
@@ -84,14 +88,20 @@ async function shopBuy(uid, itemId) {
 }
 
 // ─── Поповнення ─────────────────────────────────────────────────────────
+// Бонус до поповнення: +10% на перші три, а з рівня 7 — постійний бонус рівня
+// до кожного поповнення. Не сумуються: береться більший.
+function depositBonusPercent(u) {
+  const first = ((u && u.depositCount) || 0) < E.DEPOSIT.bonusTimes ? E.DEPOSIT.bonusPercent : 0;
+  return Math.max(first, progress.perksOf(u || {}).topupBonus);
+}
 function depositBonus(u, amount) {
-  if (((u && u.depositCount) || 0) >= E.DEPOSIT.bonusTimes) return 0;
-  return Math.round(amount * E.DEPOSIT.bonusPercent) / 100;
+  return Math.round(amount * depositBonusPercent(u)) / 100;
 }
 function topupInfo(u) {
   return {
     presets: E.DEPOSIT.presets, max: config.TOPUP_MAX,
     bonusPercent: E.DEPOSIT.bonusPercent, bonusLeft: Math.max(0, E.DEPOSIT.bonusTimes - ((u && u.depositCount) || 0)),
+    levelBonusPercent: progress.perksOf(u || {}).topupBonus,
   };
 }
 function parseAmount(raw) {
@@ -184,7 +194,7 @@ async function processPayment(payment, fromId, fromUser) {
     else users.patch(uid, { premiumSpinsAvailable: (u.premiumSpinsAvailable || 0) + 1 });
     return { ok: true, type: 'premium_spin' };
   }
-  // Поповнення (+10% на перші три).
+  // Поповнення (+10% на перші три або постійний бонус рівня).
   const bonus = depositBonus(u, paid);
   users.move(uid, { stars: paid }, 'topup', { charge });
   if (bonus) users.move(uid, { stars: bonus }, 'topup_bonus', { charge });

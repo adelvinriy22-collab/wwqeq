@@ -86,7 +86,12 @@ function topup(nav) {
     const upd = () => {
       amount = Math.floor(Number(input.value) || 0);
       bonus.textContent = '';
-      bonus.append(el('span', null, info.bonusLeft ? t('topup.bonus', { p: info.bonusPercent, n: info.bonusLeft }) : ''), el('span', null, info.bonusLeft && amount ? '+' + fmt(amount * info.bonusPercent / 100) + '⭐' : ''));
+      // +10% на перші поповнення або постійний бонус рівня — діє більший.
+      const lvl = info.levelBonusPercent || 0;
+      const first = info.bonusLeft ? info.bonusPercent : 0;
+      const pct = Math.max(first, lvl);
+      bonus.append(el('span', null, !pct ? '' : first >= lvl ? t('topup.bonus', { p: first, n: info.bonusLeft }) : t('topup.levelBonus', { p: lvl })),
+        el('span', null, pct && amount ? '+' + fmt(Math.round(amount * pct) / 100) + '⭐' : ''));
       presets.querySelectorAll('.preset').forEach(b => b.classList.toggle('on', Number(b.dataset.v) === amount));
     };
     const presets = el('div', { class: 'presets' }, info.presets.map(n => el('button', { class: 'preset', type: 'button', dataset: { v: n }, onclick: () => { input.value = String(n); upd(); } }, n + '⭐')));
@@ -136,6 +141,7 @@ function withdraw(nav, body) {
       el('h3', null, t('wd.title')),
       w.blocked ? el('div', { class: 'banner red' }, el('div', { class: 'bi' }, '🛠'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wd.blocked')))) : null,
       el('p', null, t('wd.lead', { f: w.feePercent })),
+      w.baseFeePercent != null && w.feePercent < w.baseFeePercent ? el('div', { class: 'banner green' }, el('div', { class: 'bi' }, '🏅'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wd.levelFee', { f: w.feePercent, b: w.baseFeePercent })))) : null,
       reqs,
       el('div', { class: 'label' }, t('wd.amount')),
       el('div', { class: 'field' }, input, el('span', { class: 'unit' }, '⭐')),

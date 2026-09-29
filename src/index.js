@@ -32,13 +32,14 @@ try { bank.restoreRemoved(); } catch (e) { console.error('bank.restoreRemoved:',
 try { bank.ensureInitial(); } catch (e) { console.error('bank.ensureInitial:', e.message); }
 try { promo.ensureDefaults(); } catch (e) { console.error('promo.ensureDefaults:', e.message); }
 
-// Новий рівень — особисте повідомлення (з чату рівень оголошує сам чат).
+// Новий рівень — особисте повідомлення: нагорода, що відкрилось, що далі.
+// Надсилаємо й тоді, коли рівень набрано в чаті: там лише коротке оголошення.
 progress.hooks.onLevelUp.push((uid, info, rw, opts) => {
-  if (opts.silent || opts.chat) return;
+  if (opts.silent) return;
   const u = users.get(uid);
   if (!u || !u.lang) return;
-  notify.dm(uid, i18n.t(u.lang, 'level.up', { e: info.e, t: info.t, n: info.n, tickets: rw.tickets || 0 }),
-    notify.appKeyboard(i18n.t(u.lang, 'btn.open'), 'profile'));
+  notify.dm(uid, require('./bot/levels').levelUpText(u.lang, info, rw),
+    notify.appKeyboard(i18n.t(u.lang, 'btn.open'), 'progress', [[{ text: i18n.t(u.lang, 'btn.levels'), callback_data: 'my_level' }]]));
 });
 
 const app = createApp();

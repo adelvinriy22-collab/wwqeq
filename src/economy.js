@@ -161,7 +161,12 @@ const GAME_BET = { min: 1, max: 1000, presets: [1, 5, 10, 25, 50, 100] };
 // ─── Білети, обмін, вивід, поповнення ───────────────────────────────────
 const TICKETS = { perFriend: 1, exchangeTickets: 10, exchangeStars: 2 };
 const WITHDRAW = { min: 15, feePercent: 5, minReferrals: 3 };
-const withdrawCost = (payout) => { const cost = Math.ceil(payout * (1 + WITHDRAW.feePercent / 100)); return { payout, cost, fee: cost - payout }; };
+// feePercent — комісія гравця (залежить від рівня, див. LEVEL_PERKS); без неї — базова.
+const withdrawCost = (payout, feePercent) => {
+  const fee = feePercent == null ? WITHDRAW.feePercent : feePercent;
+  const cost = Math.ceil(payout * (1 + fee / 100));
+  return { payout, cost, fee: cost - payout };
+};
 const DEPOSIT = { bonusPercent: 10, bonusTimes: 3, presets: [15, 50, 100, 250, 500, 1000] };
 
 // Магазин: приз за зірки без рандому. Відкривається після першого платного спіну.
@@ -183,7 +188,7 @@ const XP = {
 const XP_RATES = { paidSpinPerStar: 3, gamePerStar: 2, bankPerStar: 1 };
 
 // Рівні гравця. Пороги перших десяти — ті самі, що були в чаті, тож
-// титули в людей не змінюються. Нагорода за рівень: стільки білетів, який рівень.
+// титули в людей не змінюються. Нагороди й привілеї рівнів — нижче.
 const LEVELS = [
   { at: 0,     e: '🌱', t: { uk: 'Новачок', en: 'Rookie', ru: 'Новичок' } },
   { at: 25,    e: '🙂', t: { uk: 'Свій', en: 'Regular', ru: 'Свой' } },
@@ -201,7 +206,49 @@ const LEVELS = [
   { at: 10000, e: '♾️', t: { uk: 'Безсмертний', en: 'Immortal', ru: 'Бессмертный' } },
   { at: 14000, e: '🍀', t: { uk: 'Бог удачі', en: 'God of Luck', ru: 'Бог удачи' } },
 ];
-const levelReward = (index) => ({ tickets: index });   // рівень 3 → +3🎫 (index від 0)
+// Нагорода за НОВИЙ рівень (index від 0: рівень 2 → index 1). Що вище рівень —
+// то більша; з 6-го через рівень додаються зірки. Видається один раз.
+const LEVEL_REWARDS = [
+  {},                          //  1 🌱
+  { tickets: 2 },              //  2 🙂
+  { tickets: 3 },              //  3 💬
+  { tickets: 5 },              //  4 ⚡
+  { tickets: 7 },              //  5 🔥
+  { tickets: 10, stars: 2 },   //  6 🛡
+  { tickets: 12 },             //  7 ⭐
+  { tickets: 15, stars: 5 },   //  8 💎
+  { tickets: 20 },             //  9 👑
+  { tickets: 25, stars: 10 },  // 10 🌌
+  { tickets: 30 },             // 11 🗿
+  { tickets: 35, stars: 20 },  // 12 🏆
+  { tickets: 40 },             // 13 🎖
+  { tickets: 50, stars: 35 },  // 14 ♾️
+  { tickets: 100, stars: 75 }, // 15 🍀
+];
+const levelReward = (index) => LEVEL_REWARDS[index] || {};
+
+// Привілеї рівня — діють постійно, щойно рівень досягнуто.
+// [з якого рівня (номер, від 1), значення]
+const LEVEL_PERKS = {
+  withdrawFee: [[1, 5], [6, 4], [8, 3], [10, 2], [12, 1], [14, 0]],     // % комісії виводу
+  topupBonus:  [[1, 0], [7, 2], [9, 3], [11, 5], [13, 7], [15, 10]],    // % бонусу до КОЖНОГО поповнення
+  chatBonus:   [[1, 0], [4, 1], [7, 2], [10, 3], [13, 5]],             // +🎫 до щоденного /bonus у чаті
+};
+function perkAt(key, n) {
+  let v = LEVEL_PERKS[key][0][1];
+  for (const [from, x] of LEVEL_PERKS[key]) if (n >= from) v = x;
+  return v;
+}
+const levelPerks = (n) => ({ withdrawFee: perkAt('withdrawFee', n), topupBonus: perkAt('topupBonus', n), chatBonus: perkAt('chatBonus', n) });
+// Що саме змінилось на рівні n (для «новий рівень!» і сходинок).
+function perksUnlockedAt(n) {
+  const out = {};
+  for (const key of Object.keys(LEVEL_PERKS)) {
+    const hit = LEVEL_PERKS[key].find(([from]) => from === n && n > 1);
+    if (hit) out[key] = hit[1];
+  }
+  return out;
+}
 
 // ─── Сезонний пас (XP за сезон) ─────────────────────────────────────────
 const PASS = {
@@ -250,5 +297,5 @@ module.exports = {
   WHEELS, PITY, GIFT_IDS, NFT_IDS, PRIZE_IDS, HAPPY_HOUR, streakBonus,
   RISK, GAMES, SLOT_SYMBOLS, slotResult, GAME_BET,
   TICKETS, WITHDRAW, withdrawCost, DEPOSIT, SHOP, shopPrice,
-  XP, XP_RATES, LEVELS, levelReward, PASS, LEAGUE, leagueRewardFor, GOAL,
+  XP, XP_RATES, LEVELS, levelReward, LEVEL_PERKS, levelPerks, perksUnlockedAt, PASS, LEAGUE, leagueRewardFor, GOAL,
 };

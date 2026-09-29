@@ -34,7 +34,7 @@ const T = {
     bkTitle: '🏦 <b>Спільний банк</b>', bkNone: 'Зараз банку немає — новий відкриється скоро.', bk: 'У банку: <b>{p}⭐</b>{tx} · учасників: <b>{n}</b>\nРозіграш: <b>{when}</b> (через {left})\n\n{mine}\n{top}\nКолесо крутиться один раз — переможець забирає весь банк. Кожен учасник отримує втішні білети.',
     bkMine: 'Твоя ставка: <b>{w}</b> → шанс <b>{c}%</b>', bkNotIn: 'Ти ще не в грі — що більша ставка, то більший твій сектор.', bkTop: '<b>Сектори:</b>', bkOwn: '✏️ Своя ставка', bkApp: '🎡 Колесо банку в застосунку',
     bkAsk: 'Напиши ставку зірками числом. Баланс: <b>{b}⭐</b>', bkOk: '✅ Поставлено <b>{s}⭐</b>. Шанс: <b>{c}%</b>. Банк: <b>{p}⭐</b>', bkErr: { no_bank: 'Зараз розіграшу немає.', too_late: 'Прийом ставок закрито — колесо ось-ось крутиться.', not_enough_stars: 'Замало зірок.', bad_amount: 'Вкажи ставку числом.' },
-    tpTitle: '⭐ <b>Поповнення</b>\n\nБаланс: <b>{b}⭐</b>\nОплата — реальними Telegram Stars.{bonus}\n\nОбери суму:', tpBonus: '\n🎁 Бонус <b>+{p}%</b> ще на {n} поповнення.', tpOwn: '✏️ Своя сума',
+    tpTitle: '⭐ <b>Поповнення</b>\n\nБаланс: <b>{b}⭐</b>\nОплата — реальними Telegram Stars.{bonus}\n\nОбери суму:', tpBonus: '\n🎁 Бонус <b>+{p}%</b> ще на {n} поповнення.', tpLvl: '\n🏅 Бонус твого рівня: <b>+{p}%</b> до кожного поповнення.', tpOwn: '✏️ Своя сума',
     tpAsk: 'Напиши суму числом, наприклад <code>75</code>.', tpPay: '💳 Оплатити {a}⭐', tpReady: '⭐ Рахунок на <b>{a}⭐</b> готовий:', tpErr: 'Не вдалось створити рахунок, спробуй ще раз.',
     evTitle: '🏆 <b>Подія: запроси друзів</b>', ev: 'До {when}.\nТвоїх нових друзів: <b>{mine}</b>\n\n{top}\n\nТоп-3 отримають 🚀 Ракету, 🎁 Подарунок і 🧸 Мішку.',
   },
@@ -54,7 +54,7 @@ const T = {
     bkTitle: '🏦 <b>Shared bank</b>', bkNone: 'No bank right now — a new one opens soon.', bk: 'In the bank: <b>{p}⭐</b>{tx} · players: <b>{n}</b>\nDraw: <b>{when}</b> (in {left})\n\n{mine}\n{top}\nThe wheel spins once — the winner takes the whole bank. Every player gets consolation tickets.',
     bkMine: 'Your bet: <b>{w}</b> → chance <b>{c}%</b>', bkNotIn: 'You’re not in yet — a bigger bet means a bigger sector.', bkTop: '<b>Sectors:</b>', bkOwn: '✏️ Custom bet', bkApp: '🎡 Bank wheel in the app',
     bkAsk: 'Send your bet in stars as a number. Balance: <b>{b}⭐</b>', bkOk: '✅ Bet <b>{s}⭐</b> placed. Chance: <b>{c}%</b>. Bank: <b>{p}⭐</b>', bkErr: { no_bank: 'No draw right now.', too_late: 'Bets are closed — the wheel is about to spin.', not_enough_stars: 'Not enough stars.', bad_amount: 'Send the bet as a number.' },
-    tpTitle: '⭐ <b>Top up</b>\n\nBalance: <b>{b}⭐</b>\nPaid with real Telegram Stars.{bonus}\n\nPick an amount:', tpBonus: '\n🎁 <b>+{p}%</b> bonus for {n} more top-ups.', tpOwn: '✏️ Custom amount',
+    tpTitle: '⭐ <b>Top up</b>\n\nBalance: <b>{b}⭐</b>\nPaid with real Telegram Stars.{bonus}\n\nPick an amount:', tpBonus: '\n🎁 <b>+{p}%</b> bonus for {n} more top-ups.', tpLvl: '\n🏅 Your level bonus: <b>+{p}%</b> on every top-up.', tpOwn: '✏️ Custom amount',
     tpAsk: 'Send the amount as a number, e.g. <code>75</code>.', tpPay: '💳 Pay {a}⭐', tpReady: '⭐ Invoice for <b>{a}⭐</b> is ready:', tpErr: 'Couldn’t create the invoice, please try again.',
     evTitle: '🏆 <b>Event: invite friends</b>', ev: 'Until {when}.\nYour new friends: <b>{mine}</b>\n\n{top}\n\nTop 3 get a 🚀 Rocket, 🎁 Gift and 🧸 Teddy.',
   },
@@ -74,7 +74,7 @@ const T = {
     bkTitle: '🏦 <b>Общий банк</b>', bkNone: 'Сейчас банка нет — новый откроется скоро.', bk: 'В банке: <b>{p}⭐</b>{tx} · участников: <b>{n}</b>\nРозыгрыш: <b>{when}</b> (через {left})\n\n{mine}\n{top}\nКолесо крутится один раз — победитель забирает весь банк. Каждый участник получает утешительные билеты.',
     bkMine: 'Твоя ставка: <b>{w}</b> → шанс <b>{c}%</b>', bkNotIn: 'Ты ещё не в игре — чем больше ставка, тем больше твой сектор.', bkTop: '<b>Секторы:</b>', bkOwn: '✏️ Своя ставка', bkApp: '🎡 Колесо банка в приложении',
     bkAsk: 'Напиши ставку звёздами числом. Баланс: <b>{b}⭐</b>', bkOk: '✅ Поставлено <b>{s}⭐</b>. Шанс: <b>{c}%</b>. Банк: <b>{p}⭐</b>', bkErr: { no_bank: 'Сейчас розыгрыша нет.', too_late: 'Приём ставок закрыт — колесо вот-вот крутится.', not_enough_stars: 'Мало звёзд.', bad_amount: 'Укажи ставку числом.' },
-    tpTitle: '⭐ <b>Пополнение</b>\n\nБаланс: <b>{b}⭐</b>\nОплата — реальными Telegram Stars.{bonus}\n\nВыбери сумму:', tpBonus: '\n🎁 Бонус <b>+{p}%</b> ещё на {n} пополнения.', tpOwn: '✏️ Своя сумма',
+    tpTitle: '⭐ <b>Пополнение</b>\n\nБаланс: <b>{b}⭐</b>\nОплата — реальными Telegram Stars.{bonus}\n\nВыбери сумму:', tpBonus: '\n🎁 Бонус <b>+{p}%</b> ещё на {n} пополнения.', tpLvl: '\n🏅 Бонус твоего уровня: <b>+{p}%</b> к каждому пополнению.', tpOwn: '✏️ Своя сумма',
     tpAsk: 'Напиши сумму числом, например <code>75</code>.', tpPay: '💳 Оплатить {a}⭐', tpReady: '⭐ Счёт на <b>{a}⭐</b> готов:', tpErr: 'Не удалось создать счёт, попробуй ещё раз.',
     evTitle: '🏆 <b>Событие: пригласи друзей</b>', ev: 'До {when}.\nТвоих новых друзей: <b>{mine}</b>\n\n{top}\n\nТоп-3 получат 🚀 Ракету, 🎁 Подарок и 🧸 Мишку.',
   },
@@ -101,6 +101,7 @@ function mainMenu(uid) {
     [ui.cb(tt(lang, 'games'), 'dice_menu', 'danger')],
     bankOpen ? [ui.cb(tt(lang, 'bank', { p: fmtStars(bank.prizeOf(b).stars) }), 'bank_show', 'danger')] : null,
     [ui.cb(tt(lang, 'topup'), 'topup_menu', 'success')],
+    [require('./levels').menuButton(u)],
     [ui.cb(tt(lang, 'profile'), 'my_profile', 'primary'), ui.cb(tt(lang, 'promo'), 'promo_code_start', 'success')],
     [ui.app(tt(lang, 'withdraw'), 'withdraw')],
   ].filter(Boolean);
@@ -152,7 +153,7 @@ function profileView(uid) {
     lines.push('', tt(lang, 'lastWins'));
     for (const h of p.history.slice(0, 8)) lines.push('  ' + esc(h.title) + ' · ' + time.fmtKyiv(h.at, { day: 'numeric', month: 'short' }));
   }
-  return { text: lines.join('\n'), extra: { parse_mode: 'HTML', ...ui.kb([[ui.cb(tt(lang, 'apps'), 'my_applications', 'primary')], backRow(lang)]) } };
+  return { text: lines.join('\n'), extra: { parse_mode: 'HTML', ...ui.kb([[require('./levels').menuButton(u)], [ui.cb(tt(lang, 'apps'), 'my_applications', 'primary')], backRow(lang)]) } };
 }
 function appsView(uid, filter) {
   const lang = L(uid);
@@ -225,7 +226,11 @@ function topupView(uid) {
   const ps = info.presets;
   for (let i = 0; i < ps.length; i += 3) rows.push(ps.slice(i, i + 3).map(n => ui.cb(n + '⭐', 'topup_' + n, 'success')));
   rows.push([ui.cb(tt(lang, 'tpOwn'), 'topup_own', 'primary')], backRow(lang));
-  return { text: tt(lang, 'tpTitle', { b: fmtStars(users.stars(u)), bonus: info.bonusLeft ? tt(lang, 'tpBonus', { p: info.bonusPercent, n: info.bonusLeft }) : '' }), extra: { parse_mode: 'HTML', ...ui.kb(rows) } };
+  // +10% на перші поповнення або постійний бонус рівня — діє більший.
+  const lvl = info.levelBonusPercent || 0;
+  const bonus = info.bonusLeft && info.bonusPercent >= lvl ? tt(lang, 'tpBonus', { p: info.bonusPercent, n: info.bonusLeft })
+    : lvl ? tt(lang, 'tpLvl', { p: lvl }) : '';
+  return { text: tt(lang, 'tpTitle', { b: fmtStars(users.stars(u)), bonus }), extra: { parse_mode: 'HTML', ...ui.kb(rows) } };
 }
 async function sendInvoice(ctx, uid, amount) {
   const lang = L(uid);

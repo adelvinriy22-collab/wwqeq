@@ -218,6 +218,15 @@ button.row:active, a.row:active { background: var(--tint); }
 .bank-legend .bl { display: inline-flex; align-items: center; gap: 5px; color: var(--sub); max-width: 100%; overflow-wrap: anywhere; }
 .bank-legend .bl.me { color: var(--text); font-weight: 600; }
 .bank-legend .bl i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.bank-teaser:not(:empty) { margin-bottom: 14px; }
+/* Ігри на зірки: видно в застосунку, грати — у боті */
+.game-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 16px; }
+.gtile { position: relative; min-width: 0; border: 0; border-radius: var(--radius); background: var(--section); padding: 12px 4px 10px; cursor: pointer; text-align: center; color: var(--text); }
+.gtile .gt-e { font-size: 30px; line-height: 1.1; }
+.gtile .gt-t { margin-top: 6px; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gtile .gt-x { font-size: 12px; color: var(--hint); }
+.gtile .gt-lock { margin: 6px auto 0; display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: var(--tint); color: var(--link); white-space: nowrap; }
+.gtile:active { opacity: .7; }
 .bank-mine { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--tint); font-size: 14px; line-height: 1.5; }
 
 /* Результат */

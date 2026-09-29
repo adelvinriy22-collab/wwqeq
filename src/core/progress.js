@@ -54,8 +54,9 @@ function levelInfo(total, lang) {
   const L = E.LEVELS[i], nx = E.LEVELS[i + 1];
   const lg = lang || 'uk';
   return {
-    index: i, n: i + 1, e: L.e, t: L.t[lg] || L.t.uk, xp: tot, at: L.at,
-    next: nx ? { n: i + 2, e: nx.e, t: nx.t[lg] || nx.t.uk, at: nx.at, left: nx.at - tot } : null,
+    index: i, n: i + 1, e: L.e, t: L.t[lg] || L.t.uk, xp: tot, at: L.at, max: E.LEVELS.length,
+    perks: E.levelPerks(i + 1),
+    next: nx ? { n: i + 2, e: nx.e, t: nx.t[lg] || nx.t.uk, at: nx.at, left: nx.at - tot, reward: E.levelReward(i + 1), unlocks: E.perksUnlockedAt(i + 2) } : null,
     pct: nx ? Math.max(0, Math.min(100, Math.round((tot - L.at) / (nx.at - L.at) * 100))) : 100,
   };
 }
@@ -85,7 +86,7 @@ function addXp(uid, src, amount, opts) {
   if (after > before) {
     for (let i = before + 1; i <= after; i++) {
       const rw = E.levelReward(i);
-      if (rw.tickets) users.move(uid, { tickets: rw.tickets }, 'level', { level: i + 1 });
+      if (rw.tickets || rw.stars) users.move(uid, { tickets: rw.tickets || 0, stars: rw.stars || 0 }, 'level', { level: i + 1 });
       const info = levelInfo(E.LEVELS[i].at, u.lang);
       for (const h of hooks.onLevelUp) {
         try { h(uid, info, rw, opts || {}); } catch (e) { console.error('onLevelUp hook:', e.message); }
@@ -120,7 +121,20 @@ function seasonXp(u, now) {
   return x && x.season && x.season.id === sid ? (x.season.xp || 0) : 0;
 }
 
+// Привілеї гравця за його рівнем (комісія виводу, бонус до поповнень, бонус у чаті).
+function perksOf(u) { return E.levelPerks(levelIndex(xpOf(u).total) + 1); }
+
+// Усі сходинки: пороги, нагороди, що відкривається, досягнуто чи ні.
+function ladder(u, lang) {
+  const tot = xpOf(u).total;
+  const lg = lang || 'uk';
+  return E.LEVELS.map((L, i) => ({
+    n: i + 1, e: L.e, t: L.t[lg] || L.t.uk, at: L.at, reached: tot >= L.at,
+    reward: E.levelReward(i), unlocks: E.perksUnlockedAt(i + 1),
+  }));
+}
+
 module.exports = {
-  hooks, addXp, view, levelInfo, levelIndex, xpOf,
+  hooks, addXp, view, levelInfo, levelIndex, xpOf, perksOf, ladder,
   seasonId, seasonEndsAt, weekXp, seasonXp,
 };

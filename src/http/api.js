@@ -179,7 +179,7 @@ router.post('/shop/buy', notInMaintenance, subscribed, h(async (req) => wallet.s
 router.get('/progress', h(async (req) => {
   const u = users.get(req.uid);
   return {
-    ok: true, xp: progress.view(u, req.lang), levels: E.LEVELS.map((L, i) => ({ n: i + 1, at: L.at, e: L.e, t: L.t[req.lang] || L.t.uk, reward: E.levelReward(i).tickets })),
+    ok: true, xp: progress.view(u, req.lang), levels: progress.ladder(u, req.lang),
     pass: pass.view(u, req.lang), league: league.view(req.uid, req.lang),
     daily: quests.dailyView(u, req.lang), quiz: quests.quizView(u, req.lang),
     tasks: quests.tasksView(u), partner: quests.partnerView(u),

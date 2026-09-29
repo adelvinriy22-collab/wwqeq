@@ -16,16 +16,27 @@ let wheelId = 'daily';
 export function render(nav, v) {
   if (v === 'bank') wheelId = 'bank';
   else if (v === 'wheels' && wheelId === 'bank') wheelId = 'daily';
-  return [el('div', { class: 'h1' }, t('games.title')), wheels(nav), diceCard()];
+  return [el('div', { class: 'h1' }, t('games.title')), wheelId === 'bank' ? null : bankTeaser(nav), wheels(nav), diceCard()];
 }
 
 // Ігри на зірки живуть у боті: Telegram сам кидає кубик з анімацією.
+// У застосунку їх видно, але кинути не можна — натискання пояснює, де грати.
+const DICE_TILES = [['dice', '🎲', '×5.2'], ['darts', '🎯', '×5.2'], ['basket', '🏀', '×2.3'], ['football', '⚽', '×2.3'], ['bowling', '🎳', '×5.2'], ['slots', '🎰', '×20']];
 function diceCard() {
+  const tiles = el('div', { class: 'game-tiles' }, DICE_TILES.map(([id, e, x]) =>
+    el('button', { class: 'gtile', type: 'button', onclick: () => { haptic('light'); botOnly(e); } },
+      el('div', { class: 'gt-e' }, e), el('div', { class: 'gt-t' }, t('dice.g.' + id)), el('div', { class: 'gt-x' }, t('dice.upTo', { x })),
+      el('div', { class: 'gt-lock' }, '🤖 ' + t('dice.inBotShort')))));
+  return [...section(t('games.dice'), tiles, t('dice.inBotSub'))];
+}
+function botOnly(emoji) {
   const bot = S.me.bot;
-  return [...section(t('games.dice'), list(row({
-    icon: '🎲', iconClass: 'c-orange', title: t('dice.inBot'), sub: t('dice.inBotSub'),
-    onClick: () => { if (bot) openLink('https://t.me/' + bot + '?start=games'); try { if (window.Telegram && Telegram.WebApp && Telegram.WebApp.close) setTimeout(() => Telegram.WebApp.close(), 300); } catch (e) {} },
-  })))];
+  sheet((s) => [
+    el('div', { class: 'result' }, el('div', { class: 'big' }, emoji), el('div', { class: 't' }, t('dice.onlyBot')), el('div', { class: 's' }, t('dice.onlyBotSub'))),
+    el('div', { class: 'stack mt12' },
+      bot ? button(t('dice.openBot'), () => { s.close(); openLink('https://t.me/' + bot + '?start=games'); }) : null,
+      button(t('common.ok'), () => s.close(), 'plain')),
+  ]);
 }
 
 // ─── Колеса ──────────────────────────────────────────────────────────────
@@ -55,8 +66,6 @@ export function wheelCard(nav, id, compact) {
   const hh = S.me.wheels.happyHour;
   const meta = el('div', { class: 'wheel-meta' });
   if (hh && hh.active) meta.appendChild(pill('🍀 ' + t('wheel.happy'), 'warn'));
-  if (w.pity && w.pity.giftLeft) meta.appendChild(pill('🎁 ' + t('wheel.pityGift', { n: w.pity.giftLeft }), 'grey'));
-  if (w.pity && w.pity.nftLeft) meta.appendChild(pill('💎 ' + t('wheel.pityNft', { n: w.pity.nftLeft }), 'grey'));
   if (id === 'daily' && S.me.wheels.daily.streak > 1 && S.me.wheels.daily.streakAlive) meta.appendChild(pill('🔥 ' + t('wheel.streak', { n: S.me.wheels.daily.streak })));
 
   const holder = el('div', { class: 'mt8' });
@@ -123,7 +132,7 @@ function showResult(nav, r) {
     const parts = [];
     if (r.kind === 'prize') {
       parts.push(el('div', { class: 'result' }, img(tierImg(r.outcome)), el('div', { class: 't' }, t('res.prize', { name: tierName(r.outcome) })),
-        el('div', { class: 's' }, t('res.app', { id: r.applicationId })), r.byPity ? el('div', { class: 's' }, t('res.pity')) : null));
+        el('div', { class: 's' }, t('res.app', { id: r.applicationId }))));
     } else if (r.kind === 'tickets') {
       parts.push(el('div', { class: 'result' }, el('div', { class: 'big' }, '+' + r.amount + '🎫'), el('div', { class: 's' }, t('res.tickets'))));
     } else {
@@ -209,9 +218,47 @@ function drawBank(nav, body, b) {
   }
   const open = b.status === 'open';
   const late = open && b.drawAt <= Date.now();
+  const parts = [bankCard(b, () => bankView(nav, body))];
+  if (open && !late) parts.push(...section(t('bank.bet'), el('div', { class: 'card pad' }, betForm(nav, body, b)), t('bank.betFoot', { w: b.ticketWeight, c: b.consolePer })));
+
+  const ms = b.milestones;
+  if (ms && ms.list && ms.list.length) {
+    parts.push(...section(t('bank.milestones'), el('div', { class: 'card pad' },
+      ms.next ? [el('div', { class: 'kv', style: { marginTop: 0 } }, el('span', null, t('bank.toNext', { n: fmt(ms.toNext), label: ms.next.label })), el('span', null, ms.nextPercent + '%')), el('div', { class: 'mt8' }, bar(ms.nextPercent, 'gold'))] : el('div', { class: 'ok-text' }, t('bank.allMs')),
+      el('div', { class: 'gap8 mt12' }, ms.list.map(m => pill((m.reached ? '✓ ' : '') + m.at + ' → +' + m.bonus + '⭐', m.reached ? 'ok' : 'grey'))))));
+  }
+  if (b.feed && b.feed.length && open) {
+    parts.push(...section(t('bank.feed'), list(b.feed.slice(0, 6).map(f => row({ icon: f.tickets && !f.stars ? '🎫' : '⭐', title: f.name, sub: when(f.at), value: '+' + (f.stars ? stars(f.stars) : '') + (f.stars && f.tickets ? ' ' : '') + (f.tickets ? tix(f.tickets) : '') })))));
+  }
+  const verify = b.verify;
+  parts.push(...section(t('fair.title'), list(
+    row({ icon: '🔒', title: t('bank.seedHash'), sub: el('span', { class: 'mono' }, String(b.seedHash || '')) }),
+    verify ? row({ icon: verify.seedOk && verify.hmacOk ? '✅' : '⚠️', title: verify.seedOk && verify.hmacOk ? t('bank.verified') : t('bank.verifyFail'), sub: el('span', { class: 'mono' }, 'seed: ' + verify.seed) }) : null),
+    t('bank.fairFoot')));
+  mount(body, parts);
+}
+
+// Банк стоїть над колесами, як у попередній версії: колесо з гравцями
+// видно одразу, без переходу у вкладку. Кнопка веде до ставки й деталей.
+function bankTeaser(nav) {
+  if (!(S.me.bank && S.me.bank.active)) return null;
+  const holder = el('div', { class: 'bank-teaser' });
+  api.get('/bank').then((b) => {
+    if (!b.active) return;
+    const open = b.status === 'open', late = open && b.drawAt <= Date.now();
+    const go = () => { wheelId = 'bank'; haptic('select'); nav.rerender(); };
+    mount(holder, bankCard(b, () => nav.rerender(),
+      button(open && !late ? t('bank.betNow') : t('bank.details'), go, open && !late ? '' : 'tinted')));
+  }).catch(() => {});
+  return holder;
+}
+
+function bankCard(b, onTimeUp, extra) {
+  const open = b.status === 'open';
+  const late = open && b.drawAt <= Date.now();
   const wheel = createBankWheel(b.sectors || [], b.id, t('common.you'));
   const status = el('div', { class: 'bank-live' + (open ? '' : ' done') },
-    open ? (late ? t('bank.drawing') : [t('bank.drawIn') + ' ', countdown(b.drawAt, clock, () => bankView(nav, body))]) : t('bank.drawn'));
+    open ? (late ? t('bank.drawing') : [t('bank.drawIn') + ' ', countdown(b.drawAt, clock, onTimeUp)]) : t('bank.drawn'));
   const legend = el('div', { class: 'bank-legend' }, (b.sectors || []).slice(0, 10).map((s, i) =>
     el('span', { class: 'bl' + (s.me ? ' me' : '') }, el('i', { style: { background: BANK_COLORS[i % BANK_COLORS.length] } }), (s.me ? t('common.you') : s.name) + ' ', el('b', null, s.percent + '%'))),
     (b.sectors || []).length > 10 ? el('span', { class: 'bl' }, t('bank.more', { n: b.sectors.length - 10 })) : null);
@@ -232,30 +279,14 @@ function drawBank(nav, body, b) {
       el('div', null, t('bank.mineLine', { s: fmt(b.mine.stars), t: b.mine.tickets, w: fmt(b.mine.weight) })),
       el('div', null, t('bank.chance') + ': ', el('b', null, b.mine.chance + '%')),
       b.consolation ? el('div', { class: 'muted' }, t('bank.consLine', { n: b.consolation })) : null) : null,
-    winnerBox);
-  const parts = [card];
+    winnerBox,
+    extra ? el('div', { class: 'mt12' }, extra) : null);
   // Розіграно: крутимо колесо до переможця (один раз), потім показуємо результат.
   if (!open && b.winner) {
     if (wheel.alreadySpun()) { wheel.spinToWinner(b.winner.uid); showWinner(); }
     else { bankSpinning = true; setTimeout(() => wheel.spinToWinner(b.winner.uid).then(() => { bankSpinning = false; haptic(b.winner.me ? 'success' : 'light'); showWinner(); refreshSoon(); }), 300); }
   }
-  if (open && !late) parts.push(...section(t('bank.bet'), el('div', { class: 'card pad' }, betForm(nav, body, b)), t('bank.betFoot', { w: b.ticketWeight, c: b.consolePer })));
-
-  const ms = b.milestones;
-  if (ms && ms.list && ms.list.length) {
-    parts.push(...section(t('bank.milestones'), el('div', { class: 'card pad' },
-      ms.next ? [el('div', { class: 'kv', style: { marginTop: 0 } }, el('span', null, t('bank.toNext', { n: fmt(ms.toNext), label: ms.next.label })), el('span', null, ms.nextPercent + '%')), el('div', { class: 'mt8' }, bar(ms.nextPercent, 'gold'))] : el('div', { class: 'ok-text' }, t('bank.allMs')),
-      el('div', { class: 'gap8 mt12' }, ms.list.map(m => pill((m.reached ? '✓ ' : '') + m.at + ' → +' + m.bonus + '⭐', m.reached ? 'ok' : 'grey'))))));
-  }
-  if (b.feed && b.feed.length && open) {
-    parts.push(...section(t('bank.feed'), list(b.feed.slice(0, 6).map(f => row({ icon: f.tickets && !f.stars ? '🎫' : '⭐', title: f.name, sub: when(f.at), value: '+' + (f.stars ? stars(f.stars) : '') + (f.stars && f.tickets ? ' ' : '') + (f.tickets ? tix(f.tickets) : '') })))));
-  }
-  const verify = b.verify;
-  parts.push(...section(t('fair.title'), list(
-    row({ icon: '🔒', title: t('bank.seedHash'), sub: el('span', { class: 'mono' }, String(b.seedHash || '')) }),
-    verify ? row({ icon: verify.seedOk && verify.hmacOk ? '✅' : '⚠️', title: verify.seedOk && verify.hmacOk ? t('bank.verified') : t('bank.verifyFail'), sub: el('span', { class: 'mono' }, 'seed: ' + verify.seed) }) : null),
-    t('bank.fairFoot')));
-  mount(body, parts);
+  return card;
 }
 
 function betForm(nav, body, b) {

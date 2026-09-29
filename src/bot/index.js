@@ -89,6 +89,7 @@ function createBot(token) {
   start.register(bot, hooks);
   require('./games').register(bot, hooks, start.gate);
   require('./menu').register(bot, hooks, start.gate);
+  require('./levels').register(bot);
   campaigns.register(bot, hooks);
   apps.register(bot, hooks);
   ops.register(bot);
@@ -121,6 +122,7 @@ async function setupUi(bot) {
     { command: 'bank', description: '🏦 Спільний банк' },
     { command: 'topup', description: '⭐ Поповнити баланс' },
     { command: 'games', description: '🎲 Ігри на зірки' },
+    { command: 'level', description: '🏅 Мій рівень і привілеї' },
     { command: 'friends', description: '👥 Запросити друзів' },
     { command: 'promo', description: '🎁 Ввести промокод' },
     { command: 'lang', description: '🌐 Мова' },

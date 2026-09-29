@@ -83,13 +83,32 @@ test('досвід: денна стеля й нагорода за рівень'
   for (let i = 0; i < 50; i++) got += progress.addXp('6', 'spin', 10);
   assert.strictEqual(got, E.XP.spin.dayCap, 'стеля XP за спіни');
   const before = users.tickets(users.get('6'));
+  const s0 = users.stars(users.get('6'));
   const i0 = progress.levelIndex(80);
   progress.addXp('6', 'admin', 1000);
   const lv = progress.view(users.get('6')).level;
   assert.strictEqual(lv.index, progress.levelIndex(1080));
-  let expected = 0;
-  for (let i = i0 + 1; i <= lv.index; i++) expected += E.levelReward(i).tickets;
+  let expected = 0, expStars = 0;
+  for (let i = i0 + 1; i <= lv.index; i++) { expected += E.levelReward(i).tickets || 0; expStars += E.levelReward(i).stars || 0; }
   assert.strictEqual(users.tickets(users.get('6')) - before, expected, 'білети за кожен новий рівень');
+  assert.strictEqual(users.stars(users.get('6')) - s0, expStars, 'зірки за рівні, де вони є');
+  assert.ok(expStars > 0, 'до 1080 XP є рівень із зірками');
+});
+
+test('привілеї рівня: нагороди ростуть, комісія виводу падає', () => {
+  for (let i = 2; i < E.LEVELS.length; i++) assert.ok((E.levelReward(i).tickets || 0) >= (E.levelReward(i - 1).tickets || 0), 'нагорода не зменшується');
+  assert.strictEqual(E.levelPerks(1).withdrawFee, E.WITHDRAW.feePercent, 'на старті — звичайна комісія');
+  assert.strictEqual(E.levelPerks(E.LEVELS.length).withdrawFee, 0, 'на останньому рівні — без комісії');
+  assert.strictEqual(E.levelPerks(6).withdrawFee, 4);
+  assert.deepStrictEqual(E.perksUnlockedAt(6), { withdrawFee: 4 });
+  assert.deepStrictEqual(E.perksUnlockedAt(1), {});
+  assert.deepStrictEqual(E.withdrawCost(100, 3), { payout: 100, cost: 103, fee: 3 });
+  assert.deepStrictEqual(E.withdrawCost(100), { payout: 100, cost: 105, fee: 5 });
+  users.ensure({ id: 8, first_name: 'Z' });
+  assert.strictEqual(progress.perksOf(users.get('8')).withdrawFee, 5);
+  progress.addXp('8', 'admin', E.LEVELS[7].at);          // рівень 8 → комісія 3%
+  assert.strictEqual(progress.perksOf(users.get('8')).withdrawFee, 3);
+  assert.strictEqual(progress.perksOf(users.get('8')).topupBonus, 2);
 });
 
 test('рухи балансу: ніколи в мінус, журнал пишеться', () => {

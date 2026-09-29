@@ -658,10 +658,20 @@ function createChat(bot, opts) {
     if (!n || !known(uid) || isAdminUid(uid)) return 0;
     return progress.addXp(uid, 'chat', n, { chat: true, msgId });
   }
+  // Новий рівень оголошуємо в чаті: завжди, якщо його набрали в чаті, і для
+  // великих рівнів (від 6-го) — звідки б не прийшов XP. Нехай бачать, що він вартий.
   progress.hooks.onLevelUp.push((uid, info, rw, o) => {
-    if (!o || !o.chat) return;
-    if (o.msgId) react(o.msgId, '🎉');
-    send(E('crown', '👑') + ' <b>' + whoName(uid) + '</b> тепер <b>' + info.e + ' ' + esc(info.t) + '</b> — рівень ' + info.n + '!' + (rw.tickets ? '  +' + rw.tickets + ' ' + TIX : ''));
+    const fromChat = !!(o && o.chat);
+    if (!fromChat && info.n < 6) return;
+    if (isAdminUid(uid)) return;
+    if (fromChat && o.msgId) react(o.msgId, '🎉');
+    const prize = [rw.tickets ? '+' + rw.tickets + ' ' + TIX : null, rw.stars ? '+' + rw.stars + ' ' + E('starIcon', '⭐') : null].filter(Boolean).join(' ');
+    const un = econ.perksUnlockedAt(info.n);
+    const perk = un.withdrawFee != null ? 'комісія виводу тепер ' + un.withdrawFee + '%'
+      : un.topupBonus != null ? '+' + un.topupBonus + '% до кожного поповнення'
+      : un.chatBonus != null ? '+' + un.chatBonus + ' ' + TIX + ' до щоденного бонусу' : '';
+    send(E('crown', '👑') + ' <b>' + whoName(uid) + '</b> тепер <b>' + info.e + ' ' + esc(info.t) + '</b> — рівень ' + info.n + '!' +
+      (prize ? '\n🎁 Нагорода: <b>' + prize + '</b>' : '') + (perk ? '\n✨ Новий привілей: <b>' + perk + '</b>' : ''));
   });
 
   async function onRankCmd(ctx) {
@@ -899,13 +909,18 @@ function createChat(bot, opts) {
     const give = CFG.bonusStars + extra;       // зірки: лише на кожен 7-й день
     db.upsertUser(uid, { chatBonusAt: Date.now(), chatBonusStreak: streak });
     if (give) addStars(uid, give, 'серія бонусів у чаті');
-    if (CFG.bonusTickets) addTickets(uid, CFG.bonusTickets, 'щоденний бонус у чаті');
+    // Привілей рівня: з 4-го рівня щоденний бонус більший.
+    const lvBonus = progress.perksOf(u).chatBonus || 0;
+    const tix = CFG.bonusTickets + lvBonus;
+    if (tix) addTickets(uid, tix, 'щоденний бонус у чаті');
     const nextBig = CFG.bonusStreakEvery - (streak % CFG.bonusStreakEvery);
     addChatPts(uid, CFG.bonusPts, ctx.message.message_id);
     questProg(uid, 'bonus', 1, ctx.message.message_id);
+    const lv = progress.levelInfo(progress.xpOf(u).total);
     await ctx.reply(card('starIcon', 'БОНУС ЗАБРАНО', [
       E('crown', '👑') + ' <b>' + nameOf(ctx.from) + '</b>',
-      E('check', '✅') + ' Отримав: <b>+' + CFG.bonusTickets + ' ' + TIX + ' +' + CFG.bonusPts + ' XP</b>' + (give ? '  і <b>+' + give + ' ' + E('starIcon', '⭐') + '</b> за серію!' : ''),
+      E('check', '✅') + ' Отримав: <b>+' + tix + ' ' + TIX + ' +' + CFG.bonusPts + ' XP</b>' + (give ? '  і <b>+' + give + ' ' + E('starIcon', '⭐') + '</b> за серію!' : ''),
+      lvBonus ? '🏅 З них <b>+' + lvBonus + ' ' + TIX + '</b> — привілей рівня ' + lv.e + ' ' + esc(lv.t) : '🏅 З 4-го рівня бонус більший — /level у боті',
       E('almost', '🔥') + ' Серія: <b>' + streak + ' дн.</b>' + (extra ? '' : ' · до ⭐ за серію ще ' + nextBig + ' дн.'),
     ], 'Наступний — через 24 год. Не пропусти, щоб не збити серію!'), rid).catch(() => {});
   }
@@ -1092,7 +1107,7 @@ function createChat(bot, opts) {
       sec('giftBox', 'ДРОПИ', 'Кілька разів на день з\'являється кнопка. <b>Хто перший натиснув — той забрав.</b> Один дроп на людину за день.', '2–6 ' + TIX + ' або 3 ' + S) + '\n' +
       sec('lightning', 'ВІКТОРИНИ', 'Питання з кнопками. <b>Перша правильна відповідь виграє.</b> Помилився — спроба згоріла.', '+' + CFG.quizPrize + ' ' + TIX) + '\n' +
       sec('redCircle', 'ДУЕЛІ', '<code>/duel 5</code> — виклик будь-кому. Відповіддю на повідомлення — конкретній людині. Бот кидає 🎲 за кожного, <b>у кого більше — забирає банк</b>.', 'банк мінус ' + CFG.duelBurnPercent + '%') + '\n' +
-      sec('starIcon', 'ЩОДЕННИЙ БОНУС', '<code>/bonus</code> раз на 24 год. Відкривається після ' + CFG.bonusNeedMsgs + ' повідомлень у чаті за день. Кожен ' + CFG.bonusStreakEvery + '-й день поспіль — ще +' + CFG.bonusStreakExtra + S + '.', prizeText({ tickets: CFG.bonusTickets, xp: CFG.bonusPts })) + '\n' +
+      sec('starIcon', 'ЩОДЕННИЙ БОНУС', '<code>/bonus</code> раз на 24 год. Відкривається після ' + CFG.bonusNeedMsgs + ' повідомлень у чаті за день. Кожен ' + CFG.bonusStreakEvery + '-й день поспіль — ще +' + CFG.bonusStreakExtra + S + '. З 4-го рівня бонус більший (до +5 ' + TIX + ').', prizeText({ tickets: CFG.bonusTickets, xp: CFG.bonusPts })) + '\n' +
       sec('crown', 'АКТИВІСТИ ДНЯ', 'О ' + CFG.activistHour + ':00 <b>троє, хто написав найбільше</b> (від ' + CFG.activistMinMsgs + ' повідомл.). О ' + CFG.activistTeaserHour + ':00 бот показує, хто лідирує.',
         '🥇 ' + prizeText(p[0], S) + ' · 🥈 ' + prizeText(p[1], S) + ' · 🥉 ' + prizeText(p[2], S)) + '\n' +
       sec('statsIcon', 'СПІЛЬНА ЦІЛЬ', 'Чат разом пише ' + CFG.goalTarget + ' повідомлень за день. <b>Кожен, хто написав ' + CFG.goalMinPer + '+, отримує бонус.</b> <code>/goal</code> — прогрес.', goalText()) + '\n' +

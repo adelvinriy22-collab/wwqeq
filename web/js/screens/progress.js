@@ -47,7 +47,47 @@ function levelCard() {
       el('button', { class: 'btn small tinted', type: 'button', onclick: xpHelp }, t('prog.howXp'))),
     el('div', { class: 'mt12' }, bar(lv.pct)),
     el('div', { class: 'kv' }, el('span', null, lv.next ? t('prog.toNext', { n: fmt(lv.next.left), t: lv.next.e + ' ' + lv.next.t }) : t('prog.max')),
-      lv.next ? el('span', null, t('prog.reward', { n: lv.next.n - 1 })) : null));
+      lv.next && rewardText(lv.next.reward) ? el('span', { class: 'ok-text', style: { fontWeight: 600 } }, rewardText(lv.next.reward)) : null),
+    lv.perks ? el('div', { class: 'gap8 mt8' }, perkPills(lv.perks)) : null,
+    el('div', { class: 'mt12' }, button(t('lvl.all'), levelsSheet, 'tinted')));
+}
+
+// Нагорода за рівень і що він відкриває — однаково в картці, сходинках і боті.
+export function rewardText(rw) {
+  if (!rw) return '';
+  return [rw.tickets ? '+' + rw.tickets + '🎫' : null, rw.stars ? '+' + rw.stars + '⭐' : null].filter(Boolean).join(' ');
+}
+function unlockText(u) {
+  if (!u) return '';
+  const out = [];
+  if (u.withdrawFee != null) out.push(t('perk.fee', { f: u.withdrawFee }));
+  if (u.topupBonus != null) out.push(t('perk.topup', { p: u.topupBonus }));
+  if (u.chatBonus != null) out.push(t('perk.chat', { n: u.chatBonus }));
+  return out.join(' · ');
+}
+function perkPills(p) {
+  return [
+    pill('💸 ' + t('perk.fee', { f: p.withdrawFee }), p.withdrawFee < 5 ? 'ok' : 'grey'),
+    p.topupBonus ? pill('⭐ ' + t('perk.topup', { p: p.topupBonus }), 'ok') : null,
+    p.chatBonus ? pill('🎁 ' + t('perk.chat', { n: p.chatBonus }), 'ok') : null,
+  ];
+}
+
+async function levelsSheet() {
+  let d = S.cache.progress && S.cache.progress.data;
+  if (!d || !d.levels) { try { d = await api.get('/progress'); S.cache.progress = { at: Date.now(), data: d }; } catch (e) { fail(e); return; } }
+  const cur = S.me.progress.level.n;
+  sheet(() => [
+    el('h3', null, t('lvl.title')),
+    el('p', null, t('lvl.lead')),
+    list(d.levels.map(L => row({
+      icon: L.e,
+      title: L.t + ' · ' + t('prog.levelN', { n: L.n }) + (L.n === cur ? ' · ' + t('lvl.you') : ''),
+      sub: [rewardText(L.reward), unlockText(L.unlocks)].filter(Boolean).join(' · ') || null,
+      value: L.reached ? '✅' : fmt(L.at) + ' XP',
+    }))),
+    el('p', { class: 'mt12 muted' }, t('lvl.foot')),
+  ]);
 }
 
 function xpHelp() {
@@ -66,7 +106,7 @@ function xpHelp() {
       row({ icon: '📋', title: t('xp.quest'), sub: t('xp.cap', { n: (src.quest || {}).dayCap || 300 }) }),
       row({ icon: '💬', title: t('xp.chat'), sub: t('xp.cap', { n: (src.chat || {}).dayCap || 200 }) })),
     el('p', { class: 'mt12' }, t('xp.where')),
-    d && d.levels ? list(d.levels.map(L => row({ icon: L.e, title: L.t + ' · ' + t('prog.levelN', { n: L.n }), value: fmt(L.at) + ' XP', sub: L.reward ? '+' + L.reward + '🎫' : null }))) : null,
+    button(t('lvl.all'), () => levelsSheet(), 'tinted'),
   ]);
 }
 

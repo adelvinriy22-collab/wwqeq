@@ -98,17 +98,12 @@ function view(u) {
   const now = Date.now();
   const d = dailyState(u, now);
   const hh = happyHour(now);
-  const pity = {};
-  for (const [w, p] of Object.entries(E.PITY)) {
-    const g = (u.pityGift && u.pityGift[w]) || 0;
-    const n = (u.pityNft && u.pityNft[w]) || 0;
-    pity[w] = { giftLeft: p.gift ? Math.max(1, p.gift - g) : null, nftLeft: p.nft ? Math.max(1, p.nft - n) : null };
-  }
   const tk = users.tickets(u);
   const wheels = {};
   for (const [id, w] of Object.entries(E.WHEELS)) {
     if (w.disabled) continue;
-    const st = { id, cost: w.cost, segments: segmentsView(id), pity: pity[id] };
+    // Гарантія подарунка/NFT діє, але скільки спінів до неї — гравцю не показуємо.
+    const st = { id, cost: w.cost, segments: segmentsView(id) };
     if (id === 'daily') Object.assign(st, { ready: d.ready || d.freeSpins > 0, nextAt: d.nextAt, freeSpins: d.freeSpins });
     if (id === 'referral') Object.assign(st, { ready: tk >= w.cost.tickets, spins: Math.floor(tk / w.cost.tickets) });
     if (id === 'paid') Object.assign(st, { ready: (u.paidSpinsGifted || 0) > 0 || users.stars(u) >= w.cost.stars, gifted: u.paidSpinsGifted || 0 });
@@ -240,7 +235,7 @@ async function spin(uid, wheel) {
     const after = users.get(uid);
     return {
       ok: true, wheel, outcome, kind, amount, streakBonus: streakStars, streak,
-      segment: segmentIndex(wheel, outcome), applicationId: appId, byPity,
+      segment: segmentIndex(wheel, outcome), applicationId: appId,
       usedFreeSpin: useFree, usedGift: useGift,
       proof: { nonce: roll.nonce, hash: roll.hash },
       riskAvailable: kind === 'stars' && amount > 0,
