@@ -20,7 +20,6 @@ const DAILY_POOL = {
   game:         { need: 3, t: { uk: 'Зіграй 3 гри', en: 'Play 3 games', ru: 'Сыграй 3 игры' }, go: 'games' },
   spin_tickets: { need: 1, t: { uk: 'Крутни колесо білетів', en: 'Spin the ticket wheel', ru: 'Крутни колесо билетов' }, go: 'wheel:referral' },
   spin_paid:    { need: 1, t: { uk: 'Крутни колесо «За зірки»', en: 'Spin the stars wheel', ru: 'Крутни колесо «За звёзды»' }, go: 'wheel:paid' },
-  bank:         { need: 1, t: { uk: 'Зроби ставку в банк', en: 'Bet in the bank', ru: 'Сделай ставку в банк' }, go: 'bank' },
   risk:         { need: 1, t: { uk: 'Ризикни ×2 після спіну', en: 'Try risk ×2 after a spin', ru: 'Рискни ×2 после спина' }, go: 'wheel:daily' },
 };
 const DAILY_REWARD = { tickets: 1, xp: 10 };
@@ -28,7 +27,7 @@ const DAILY_ALL = { tickets: 3, xp: 30 };
 
 function dailySet(day) {
   let h = 0; for (const ch of day) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  const extra = ['game', 'spin_tickets', 'bank', 'risk', 'spin_paid'];
+  const extra = ['game', 'spin_tickets', 'risk', 'spin_paid'];
   return ['spin_daily', 'quiz', extra[h % extra.length]];
 }
 function dailyState(u, day) {
@@ -79,7 +78,7 @@ const QUIZ = [
   { q: { uk: 'Який приз найдорожчий у боті?', en: 'Which prize is the most valuable?', ru: 'Какой приз самый дорогой?' }, a: ['Evil Eye', 'Diamond Ring', 'Трофей'], ok: 1 },
   { q: { uk: 'Скільки білетів дають 2⭐ при обміні?', en: 'How many tickets make 2⭐ in exchange?', ru: 'Сколько билетов дают 2⭐ при обмене?' }, a: ['5', '10', '20'], ok: 1 },
   { q: { uk: 'Що дає кожен запрошений друг?', en: 'What does each invited friend give?', ru: 'Что даёт каждый приглашённый друг?' }, a: ['1⭐', '1🎫', '5🎫'], ok: 1 },
-  { q: { uk: 'Що отримує кожен учасник банку, навіть програвши?', en: 'What does every bank player get, even when losing?', ru: 'Что получает каждый участник банка, даже проиграв?' }, a: ['Нічого', 'Утішні білети', 'Зірку'], ok: 1 },
+  { q: { uk: 'Що відкриває сезонний пас за XP?', en: 'What does the season pass unlock for XP?', ru: 'Что открывает сезонный пропуск за XP?' }, a: ['Нічого', 'Нагороди рівнів', 'Лише рамку'], ok: 1 },
 ];
 
 function quizToday() {

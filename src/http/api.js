@@ -13,7 +13,6 @@ const notify = require('../core/notify');
 const auth = require('./auth');
 const wheels = require('../features/wheels');
 const games = require('../features/games');
-const bank = require('../features/bank');
 const pass = require('../features/pass');
 const league = require('../features/league');
 const wallet = require('../features/wallet');
@@ -108,7 +107,6 @@ function maintView(uid) {
 function bootstrap(req) {
   const u = users.get(req.uid);
   const lang = u.lang || 'uk';
-  const b = bank.get();
   const pv = pass.view(u, lang);
   const lv = league.enabled() ? league.view(req.uid, lang) : null;
   const dq = quests.dailyView(u, lang);
@@ -120,8 +118,6 @@ function bootstrap(req) {
     progress: progress.view(u, lang),
     wheels: wheels.view(u),
     risk: games.riskState(u),
-    bank: b && b.status !== 'cancelled' ? { active: true, status: b.status, pot: bank.core.totalPot(b), stars: b.stars != null ? b.stars : bank.core.totalPot(b), tickets: b.tickets || 0,
-      drawAt: b.drawAt, players: b.order.length, mine: (b.bets || {})[req.uid] || 0, chance: bank.core.chance(b, req.uid) } : { active: false },
     pass: { level: pv.level, maxLevel: pv.maxLevel, xpInLevel: pv.xpInLevel, levelXp: pv.levelXp, claimable: pv.claimable, premium: pv.premium, endsAt: pv.endsAt },
     league: lv ? { enabled: true, rank: lv.me.rank, xp: lv.me.xp, players: lv.players, endsAt: lv.endsAt } : { enabled: false },
     quests: { done: dq.items.filter(i => i.done).length, total: dq.items.length, all: dq.all, quiz: u.quizDay !== quests.quizToday().day },
@@ -162,8 +158,6 @@ router.post('/risk', notInMaintenance, subscribed, h(async (req) => games.risk(r
 router.get('/games', h(async (req) => ({ ok: true, games: games.catalog(req.lang), bet: E.GAME_BET, balance: users.stars(users.get(req.uid)), fair: rng.view(req.uid) })));
 router.post('/games/play', notInMaintenance, subscribed, spinThrottle, h(async (req) => games.play(req.uid, String(req.body.game || ''), String(req.body.bet || ''), req.body.stake)));
 
-router.get('/bank', h(async (req) => ({ ok: true, ...bank.view(req.uid) })));
-router.post('/bank/bet', notInMaintenance, subscribed, h(async (req) => bank.bet(req.uid, req.body.stars, req.body.tickets)));
 
 router.get('/wallet', h(async (req) => {
   const u = users.get(req.uid);
@@ -235,13 +229,6 @@ A.post('/maint', h(async (req) => {
   if (mode && mode !== 'off') patch.until = mins > 0 ? Date.now() + mins * 60000 : 0;
   return { ok: true, state: maintenance.set(patch) };
 }));
-A.post('/bank/start', h(async (req) => {
-  const ts = time.parseKyiv(String(req.body.at || ''));
-  const r = bank.start(ts);
-  return r.ok ? { ok: true, seedHash: r.bank.seedHash, drawAt: r.bank.drawAt } : { ok: false, status: 400, error: r.error };
-}));
-A.post('/bank/cancel', h(async () => bank.cancel('')));
-A.post('/bank/auto', h(async (req) => ({ ok: true, auto: bank.setAuto({ enabled: !!req.body.enabled, hour: Math.max(0, Math.min(23, parseInt(req.body.hour, 10) || 21)), minute: 0, everyDays: 1 }) })));
 A.post('/league', h(async (req) => { league.setEnabled(!!req.body.on); return { ok: true, on: league.enabled() }; }));
 A.post('/spin-notify', h(async (req) => ({ ok: true, on: admin.setSpinNotify(!!req.body.on) })));
 router.use('/admin', A);

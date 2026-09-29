@@ -37,7 +37,7 @@ const config = {
   API_RATE_PER_MIN: int(env.API_RATE_PER_MIN, 600, 60),
   SPIN_MIN_GAP_MS: int(env.SPIN_MIN_GAP_MS, 1200, 0),
   TOPUP_MAX: int(env.TOPUP_MAX, 10000, 1),
-  // Вимкнути фонові розклади (нагадування, банк, ліга) — для тестів.
+  // Вимкнути фонові розклади (нагадування, ліга, чат) — для тестів.
   NO_SCHEDULERS: env.NO_SCHEDULERS === '1',
 
   LINKS: {

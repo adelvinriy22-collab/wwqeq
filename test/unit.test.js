@@ -9,7 +9,6 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-unit-'));
 process.env.BOT_TOKEN = '';
 const E = require('../src/economy');
 const time = require('../src/lib/time');
-const core = require('../src/features/bankcore');
 const wheels = require('../src/features/wheels');
 const rng = require('../src/core/rng');
 const users = require('../src/core/users');
@@ -48,21 +47,6 @@ test('час Києва: перехід на літній/зимовий час 
   assert.strictEqual(new Date(time.parseKyiv('2026-10-26 21:00')).toISOString(), '2026-10-26T19:00:00.000Z');
   assert.strictEqual(time.weekKey(time.parseKyiv('2026-09-28 00:30')), time.weekKey(time.parseKyiv('2026-10-04 23:30')), 'тиждень — з понеділка до неділі');
   assert.notStrictEqual(time.weekKey(time.parseKyiv('2026-09-27 23:30')), time.weekKey(time.parseKyiv('2026-09-28 00:30')));
-});
-
-test('банк: розіграш детермінований і перевірюваний', () => {
-  const mk = () => {
-    const b = core.create(Date.now() + 3600e3);
-    core.addBet(b, '1', 10, 0); core.addBet(b, '2', 0, 3); core.addBet(b, '3', 25, 1);
-    return b;
-  };
-  const a = mk(), b = { ...mk(), seed: a.seed, seedHash: a.seedHash };
-  assert.strictEqual(a.pot, 10 + 15 + 30);
-  const ra = core.draw(a), rb = core.draw(b);
-  assert.strictEqual(ra.winner, rb.winner, 'той самий seed і ставки → той самий переможець');
-  const v = core.verify(a);
-  assert.ok(v.seedOk && v.hmacOk);
-  assert.strictEqual(core.draw(a).ok, false, 'двічі не розігрується');
 });
 
 test('rng: перевірка збігається, розподіл рівномірний', () => {

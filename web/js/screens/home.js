@@ -27,13 +27,6 @@ export function render(nav) {
 
   // Що зараз актуально.
   const rows = [];
-  const b = me.bank;
-  rows.push(row({
-    icon: '🏦', iconClass: 'c-gold', title: b.active && b.status === 'open' ? t('home.bankToday') : t('home.bank'),
-    sub: b.active && b.status === 'open' ? [t('bank.drawIn') + ' ', countdown(b.drawAt, left)] : t('home.bankSoon'),
-    value: b.active && b.status === 'open' ? stars(b.stars) + (b.tickets ? ' + ' + tix(b.tickets) : '') : null, strong: true,
-    onClick: () => nav.go('games', 'bank'),
-  }));
   rows.push(row({
     icon: '🎫', iconClass: 'c-orange', title: t('home.tickets'), sub: t('home.ticketsSub', { n: me.wheels.wheels.referral ? me.wheels.wheels.referral.cost.tickets : 5 }),
     value: tix(me.balance.tickets), strong: true, onClick: () => nav.go('games', 'wheels'),

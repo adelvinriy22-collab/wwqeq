@@ -36,7 +36,6 @@ async function overview(nav, body) {
       row({ icon: '💸', title: 'До виплати зірками', value: stars(o.pendingPayout) }),
       ...Object.entries(o.pendingBySource).map(([k, n]) => row({ title: k, value: String(n) })))),
     ...section('Стан', list(
-      row({ icon: '🏦', title: 'Банк', sub: o.bank ? ['розіграш через ', countdown(o.bank.drawAt, left)] : (o.bankAuto.enabled ? 'авто щодня о ' + o.bankAuto.hour + ':00' : 'не запущено'), value: o.bank ? stars(o.bank.pot) + ' · ' + o.bank.players : null }),
       row({ icon: '🛠', title: 'Техроботи', value: { off: 'вимкнено', withdraw: 'лише вивід', full: 'повні' }[o.maintenance.mode] }),
       row({ icon: '🏆', title: 'Ліга', value: o.league ? 'увімкнена' : 'вимкнена' }),
       row({ icon: '🔔', title: 'Сповіщення про спіни', value: o.spinNotify ? 'так' : 'ні' }))));
@@ -153,23 +152,12 @@ async function ops(nav, body) {
   const setMaint = (mode) => async () => {
     try { await api.post('/admin/maint', { mode, text: mText.value, minutes: mMin.value }); toast('Техроботи: ' + mode); ops(nav, body); } catch (e) { fail(e); }
   };
-  const d = new Date(Date.now() + 3 * 3600000);
-  const pad = (n) => String(n).padStart(2, '0');
-  const at = el('input', { type: 'text', value: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' 21:00', placeholder: 'РРРР-ММ-ДД ГГ:ХХ (Київ)' });
-  const autoHour = el('input', { type: 'number', min: 0, max: 23, value: String(o.bankAuto.hour || 21) });
   mount(body,
     ...section('Техроботи · зараз: ' + m.mode, el('div', { class: 'card pad' },
       el('div', { class: 'field' }, mText), el('div', { class: 'field mt8' }, mMin),
       el('div', { class: 'btns mt12' }, button('Вимкнути', setMaint('off'), 'ok'), button('Вивід', setMaint('withdraw'), 'tinted'), button('Повні', setMaint('full'), 'danger')))),
-    ...section('Банк', el('div', { class: 'card pad' },
-      o.bank ? el('div', null, 'Відкрито: ' + stars(o.bank.pot) + ' · ' + o.bank.players + ' гравців · розіграш ' + when(o.bank.drawAt)) : el('div', { class: 'muted' }, 'Зараз банку немає'),
-      !o.bank ? el('div', null, el('div', { class: 'label' }, 'Час розіграшу (Київ)'), el('div', { class: 'field' }, at),
-        el('div', { class: 'mt8' }, button('Запустити банк', async () => { try { await api.post('/admin/bank/start', { at: at.value }); toast('Банк запущено'); ops(nav, body); } catch (e) { fail(e); } }))) :
-        el('div', { class: 'mt12' }, button('Скасувати банк (повернути ставки)', async () => { if (!(await confirm('Скасувати банк і повернути всі ставки?'))) return; try { await api.post('/admin/bank/cancel'); toast('Скасовано'); ops(nav, body); } catch (e) { fail(e); } }, 'danger')),
-      el('div', { class: 'label' }, 'Автобанк щодня о (год)'), el('div', { class: 'btns' }, el('div', { class: 'field' }, autoHour),
-        button(o.bankAuto.enabled ? 'Вимкнути авто' : 'Увімкнути авто', async () => { try { await api.post('/admin/bank/auto', { enabled: !o.bankAuto.enabled, hour: autoHour.value }); ops(nav, body); } catch (e) { fail(e); } }, 'tinted')))),
     ...section('Перемикачі', list(
       toggleRow('Ліга тижня', 'Коштує реальних призів щотижня', o.league, async (v) => { try { await api.post('/admin/league', { on: v }); toast(v ? 'Ліга увімкнена' : 'Ліга вимкнена'); } catch (e) { fail(e); } }),
       toggleRow('Сповіщення про спіни', 'Повідомлення адміну про кожен спін', o.spinNotify, async (v) => { try { await api.post('/admin/spin-notify', { on: v }); } catch (e) { fail(e); } }))),
-    el('div', { class: 'sec-foot' }, 'Розсилки, розіграші, чат і джекпот — командами в боті: /admin'));
+    el('div', { class: 'sec-foot' }, 'Баланс гравця — на вкладці «Гравець» або в боті: /stars @нік -10 · /tickets @нік 5. Розсилки, розіграші, чат і джекпот — командами в боті: /admin'));
 }

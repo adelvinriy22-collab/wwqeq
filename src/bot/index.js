@@ -129,6 +129,8 @@ async function setupUi(bot) {
       { command: 'event_status', description: 'Що зараз запущено' },
       { command: 'maint', description: 'Техроботи' },
       { command: 'dbstats', description: 'Зріз бази' },
+      { command: 'stars', description: 'Зірки гравцю: /stars @нік 10 або -10' },
+      { command: 'tickets', description: 'Білети гравцю: /tickets @нік 5 або -5' },
       { command: 'broadcast', description: 'Розсилка (відповіддю на повідомлення)' },
       { command: 'chat_status', description: 'Стан чату' },
       { command: 'version', description: 'Версія' },

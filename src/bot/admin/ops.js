@@ -1,4 +1,4 @@
-// Адмін-операції: статистика, гравці, промокоди, техроботи, банк, ліга,
+// Адмін-операції: статистика, гравці й баланси, промокоди, техроботи, ліга,
 // тестовий режим, роздачі.
 const config = require('../../config');
 const store = require('../../store');
@@ -8,7 +8,6 @@ const notify = require('../../core/notify');
 const E = require('../../economy');
 const time = require('../../lib/time');
 const admin = require('../../features/admin');
-const bank = require('../../features/bank');
 const league = require('../../features/league');
 const promo = require('../../features/promo');
 const maintenance = require('../../features/maintenance');
@@ -26,7 +25,7 @@ const HELP = `<b>Адмін</b> — найзручніше в застосунк
 <b>Зловживання</b>: /wheel_abuse_check · /wheel_abuse_punish так · /wheel_log 30
 <b>Промокоди</b>: /promo КОД 10з 3б 2с 50 · /promo_list · /promo_del КОД
 <b>Техроботи</b>: /maint · /maint withdraw|full|off · /maint 2г · /maint text …
-<b>Банк</b>: /bank_start 2026-10-01 21:00 · /bank_cancel · /bank_auto on 21 · /bank_verify
+<b>Баланс</b>: /stars @нік 10 · /stars @нік -10 · /tickets @нік 5 · /tickets @нік -5 (у кінці можна дописати причину)
 <b>Ліга</b>: /league on|off · /league_stats · /league_hide @нік · /league_unhide @нік · /league_finalize W2026-09-28
 <b>Розсилки</b>: /broadcast (відповіддю) · /post_all · /chat_say · /chat_post · /send_reminders · /winback так · /gift_all 1 мітка так
 <b>Події</b>: /event_status · /event_stop … · /giveaway_start · /giveaway_solo_start 21 00 · /joint_giveaway_start · /giveaway_stats · /deleteticket @нік 1 · /password_challenge_start · /external_ref_announce посилання · /unlock_event · /goal_reset · /goal_stats
@@ -48,7 +47,6 @@ function register(bot) {
       `📊 <b>Зріз</b>\n\nГравців: <b>${o.users}</b> (пройшли старт: ${o.registered})\nНових сьогодні: ${o.newToday}\nАктивні 24 год / 7 днів: ${o.active24} / ${o.active7}\n\n` +
       `На балансах: <b>${fmtStars(o.balances.stars)}⭐</b> · ${o.balances.tickets}🎫\nПоповнено за весь час: ${fmtStars(o.deposited)}⭐\n\n` +
       `Заявок у черзі: <b>${o.pending}</b> (до виплати ${o.pendingPayout}⭐)\n` +
-      `Банк: ${o.bank ? o.bank.pot + ' · ' + o.bank.players + ' гравців · ' + time.fmtKyiv(o.bank.drawAt) : 'немає'}\n` +
       `Ліга: ${o.league ? 'увімкнена' : 'вимкнена'} · Техроботи: ${o.maintenance.mode} · Спін-сповіщення: ${o.spinNotify ? 'так' : 'ні'}\n` +
       `Схема бази: v${(store.raw().meta || {}).schema} · Подія: ${f.eventUnlocked ? 'так' : 'ні'}`, { parse_mode: 'HTML' });
   });
@@ -87,6 +85,36 @@ function register(bot) {
     const r = admin.adjust(u.id, parseFloat(s) || 0, tickets, why);
     await ctx.reply(r.ok ? `✅ ${users.displayName(u)}: тепер ${fmtStars(r.stars)}⭐ · ${r.tickets}🎫` : '❌ ' + (r.error || 'помилка'));
   });
+  // Нарахувати або забрати зірки / білети: /stars @нік 10 · /stars @нік -10 [причина].
+  // Забрати більше, ніж є, не можна — тоді забирається все, що є.
+  const balanceCmd = (cur) => async (ctx) => {
+    if (!isAdminCtx(ctx)) return;
+    const cmd = cur === 'stars' ? '/stars' : '/tickets';
+    const unit = cur === 'stars' ? '⭐' : '🎫';
+    const [q, amt, ...note] = argsOf(ctx);
+    const u = users.findByUsernameOrId(q);
+    const raw = String(amt || '').replace(',', '.').replace(/^\+/, '');
+    const n = cur === 'stars' ? round2(parseFloat(raw)) : parseInt(raw, 10);
+    if (!q || !Number.isFinite(n) || !n || !/^-?\d+([.]\d+)?$/.test(raw)) {
+      return ctx.reply(`Формат:\n${cmd} @нік 10 — нарахувати\n${cmd} @нік -10 — забрати\n\nМожна дописати причину: ${cmd} @нік -10 помилкове нарахування\nЗамість ніка підійде id.`);
+    }
+    if (!u) return ctx.reply(`Не знайшов ${q}. Перевір нік або дай id.`);
+    const have = cur === 'stars' ? users.stars(u) : users.tickets(u);
+    const delta = n < 0 ? -Math.min(-n, have) : n;
+    if (!delta) return ctx.reply(`У ${users.displayName(u)} 0${unit} — нема чого забирати.`);
+    const why = note.join(' ').slice(0, 120);
+    const r = users.move(u.id, { [cur]: delta }, 'admin', { note: why || (delta > 0 ? 'нарахування адміном' : 'списання адміном'), by: String(ctx.from.id) });
+    if (!r.ok) return ctx.reply('❌ ' + (r.error || 'помилка'));
+    const f = (v) => cur === 'stars' ? fmtStars(v) : String(v);
+    const after = cur === 'stars' ? r.stars : r.tickets;
+    if (delta > 0) notify.dm(u.id, `🎁 Тобі нараховано <b>+${f(delta)}${unit}</b>` + (why ? '\n' + esc(why) : ''));
+    await ctx.reply(`✅ ${delta > 0 ? 'Нараховано' : 'Забрано'} ${users.displayName(u)}: ${delta > 0 ? '+' : '−'}${f(Math.abs(delta))}${unit}\n` +
+      `Було ${f(have)}${unit} → стало ${f(after)}${unit}` + (n < 0 && -n > have ? `\n⚠️ Було лише ${f(have)}${unit} — забрано все.` : '') +
+      (delta > 0 ? '\nГравцю надіслано повідомлення.' : ''));
+  };
+  bot.command('stars', balanceCmd('stars'));
+  bot.command('tickets', balanceCmd('tickets'));
+
   bot.command('spins', async (ctx) => {
     if (!isAdminCtx(ctx)) return;
     const [q, free, paid] = argsOf(ctx);
@@ -179,31 +207,6 @@ function register(bot) {
   });
 
   // ─── Банк ─────────────────────────────────────────────────────────────
-  bot.command('bank_start', async (ctx) => {
-    if (!isAdminCtx(ctx)) return;
-    const ts = time.parseKyiv(argsOf(ctx).join(' '));
-    const r = bank.start(ts);
-    if (!r.ok) return ctx.reply(r.error === 'already_open' ? 'Уже є відкритий банк. Спершу /bank_cancel.' : 'Формат: /bank_start 2026-10-01 21:00 (Київ, щонайменше за хвилину)');
-    await ctx.reply(`🏦 Банк відкрито. Розіграш: ${time.fmtKyiv(r.bank.drawAt)}\n\nВідбиток seed (опублікуй ДО ставок):\n<code>${r.bank.seedHash}</code>`, { parse_mode: 'HTML' });
-  });
-  bot.command('bank_cancel', async (ctx) => {
-    if (!isAdminCtx(ctx)) return;
-    const r = bank.cancel('');
-    await ctx.reply(r.ok ? `Скасовано. Повернуто ${fmtStars(r.stars)}⭐ і ${r.tickets}🎫 для ${r.players} гравців.` : 'Активного банку немає.');
-  });
-  bot.command('bank_auto', async (ctx) => {
-    if (!isAdminCtx(ctx)) return;
-    const [on, hour] = argsOf(ctx);
-    if (!on) { const a = bank.autoCfg(); return ctx.reply(`Автобанк: ${a.enabled ? 'щодня о ' + a.hour + ':00' : 'вимкнено'}\n/bank_auto on 21 · /bank_auto off`); }
-    const a = bank.setAuto({ enabled: on === 'on', hour: Math.max(0, Math.min(23, parseInt(hour, 10) || 21)), minute: 0, everyDays: 1 });
-    await ctx.reply(a.enabled ? `✅ Автобанк: щодня о ${a.hour}:00 (Київ). Після розіграшу одразу відкривається наступний.` : 'Автобанк вимкнено.');
-  });
-  bot.command('bank_verify', async (ctx) => {
-    const b = bank.get();
-    if (!b || b.status !== 'drawn') return ctx.reply('Розіграш ще не проводився.');
-    const v = bank.core.verify(b);
-    await ctx.reply(`🔍 <b>Перевірка банку</b>\n\nSeed:\n<code>${v.seed}</code>\nSHA-256 (показували до ставок):\n<code>${v.seedHash}</code> — ${v.seedOk ? 'збігається ✅' : 'НЕ збігається'}\n\nСтавки:\n<code>${esc(v.betLine.slice(0, 300))}</code>\nHMAC: <code>${v.hmac.slice(0, 32)}…</code>`, { parse_mode: 'HTML' });
-  });
 
   // ─── Ліга ─────────────────────────────────────────────────────────────
   bot.command('league', async (ctx) => {
@@ -299,7 +302,7 @@ function register(bot) {
     const [cmd, arg, arg2] = argsOf(ctx).map(s => s.toLowerCase());
     const f = store.getFeatureFlags() || {};
     const snap = f.testSnapshot;
-    const help = '🧪 <b>Тестовий режим</b>\n/test on — знімок твоїх даних\n/test off — відновити\n/test balance 100 · /test tickets 50 · /test spins 5 · /test paid 3 · /test refs 5 · /test xp 500 · /test cooldown\n/test bank 5 — тестовий банк · /test draw';
+    const help = '🧪 <b>Тестовий режим</b>\n/test on — знімок твоїх даних\n/test off — відновити\n/test balance 100 · /test tickets 50 · /test spins 5 · /test paid 3 · /test refs 5 · /test xp 500 · /test cooldown';
     if (!cmd) return ctx.reply(help, { parse_mode: 'HTML' });
     const u = users.get(uid) || users.ensure(ctx.from);
     if (cmd === 'on') {
@@ -322,20 +325,7 @@ function register(bot) {
     else if (cmd === 'refs') users.patch(uid, { invitedIds: Array.from({ length: Math.floor(n) }, (_, i) => 'test_ref_' + i) });
     else if (cmd === 'xp') progress.addXp(uid, 'admin', n, { silent: true });
     else if (cmd === 'cooldown') users.patch(uid, { lastDailySpinAt: null });
-    else if (cmd === 'bank') {
-      const cur = bank.get();
-      if (cur && cur.status === 'open' && !cur.isTest) return ctx.reply('Є реальний банк — спершу /bank_cancel.');
-      const b = bank.core.create(Date.now() + 3600000);
-      for (let i = 1; i <= Math.max(1, Math.min(20, Math.floor(n) || 5)); i++) bank.core.addBet(b, 'test_' + i, 10 * i, 0);
-      b.isTest = true; bank.save(b);
-      return ctx.reply(`🏦 Тестовий банк: ${bank.core.totalPot(b)}, гравців ${b.order.length}. Постав у застосунку й /test draw`);
-    } else if (cmd === 'draw') {
-      const b = bank.get();
-      if (!b || b.status !== 'open') return ctx.reply('Відкритого банку немає.');
-      b.drawAt = Date.now() - 1000; bank.save(b);
-      await bank.tick();
-      return ctx.reply('Розіграно. /bank_verify');
-    } else return ctx.reply(help, { parse_mode: 'HTML' });
+    else return ctx.reply(help, { parse_mode: 'HTML' });
     const v = users.get(uid);
     await ctx.reply(`🧪 ⭐ ${fmtStars(users.stars(v))} · 🎫 ${users.tickets(v)} · бонусних ${v.freeSpins || 0} · подарованих ${v.paidSpinsGifted || 0} · друзів ${(v.invitedIds || []).length}` + (arg2 ? '' : ''));
   });

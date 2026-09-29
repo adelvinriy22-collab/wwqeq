@@ -34,9 +34,15 @@ function seedV2() {
       // Для паралельних виводів: вистачає рівно на один.
       600: U('600', { starBalance: 25, invitedIds: ['b1', 'b2', 'b3'] }),
       700: U('700', { starBalance: 60 }),
+      // Мав ставку у відкритому банку — банк прибрано, ставка має повернутись.
+      900: U('900', { starBalance: 1, tickets: 0 }),
     },
     giveaways: {}, applications: [], nextApplicationId: 1,
-    featureFlags: { eventUnlocked: false, bank: null }, event: null,
+    featureFlags: {
+      eventUnlocked: false, event: null,
+      bank: { id: 'bank_old', status: 'open', drawAt: Date.now() + 3600e3, order: ['900'], bets: { 900: 15 }, betStars: { 900: 5 }, betTickets: { 900: 2 }, pot: 15, stars: 5, tickets: 2 },
+      bankAuto: { enabled: true, hour: 21 },
+    }, event: null,
     passwordChallenge: null, externalRefPool: null, wheelLog: [], promoCodes: {},
   };
   fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify(db));
@@ -237,20 +243,38 @@ test('чесність: результат гри перевіряється в�
   assert.notStrictEqual(rot.d.current.hash, f0.hash);
 });
 
-test('банк: адмін відкриває, гравець ставить, чужим адмінка закрита', async () => {
-  assert.strictEqual((await api('GET', '/admin/overview', null, '700')).status, 403);
-  const d = new Date(Date.now() + 2 * 86400000);
-  const at = d.toISOString().slice(0, 10) + ' 21:00';
-  await api('POST', '/admin/bank/cancel', {}, ADMIN);   // стартовий банк міг відкритись сам
-  const st = await api('POST', '/admin/bank/start', { at }, ADMIN);
-  assert.strictEqual(st.status, 200, JSON.stringify(st.d));
-  const b = await api('POST', '/bank/bet', { stars: 5, tickets: 1 }, '400');
-  assert.strictEqual(b.status, 200, JSON.stringify(b.d));
-  assert.strictEqual(b.d.pot, 10, '5⭐ + 1🎫×5');
-  const v = await api('GET', '/bank', null, '400');
-  assert.strictEqual(v.d.mine.chance, 100);
-  const cancel = await api('POST', '/admin/bank/cancel', {}, ADMIN);
-  assert.strictEqual(cancel.status, 200);
+test('банк прибрано: ставки з відкритого банку повернуто, API банку немає', async () => {
+  const db = readDb();
+  assert.strictEqual(db.users['900'].starBalance, 6, '1⭐ + повернуті 5⭐');
+  assert.strictEqual(db.users['900'].tickets, 2, 'повернуті 2🎫');
+  assert.strictEqual(db.featureFlags.bank.status, 'cancelled');
+  assert.strictEqual(db.featureFlags.bankAuto.enabled, false);
+  assert.strictEqual((await api('GET', '/bank', null, '900')).status, 404);
+  assert.strictEqual((await api('POST', '/admin/bank/start', { at: '2030-01-01 21:00' }, ADMIN)).status, 404);
+  assert.strictEqual((await api('GET', '/admin/overview', null, '700')).status, 403, 'чужим адмінка закрита');
+  const me = await api('GET', '/me', null, '900');
+  assert.strictEqual(me.d.bank, undefined);
+  let dm;
+  for (let i = 0; i < 20 && !dm; i++) { await sleep(150); dm = tg.calls.find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '900'); }
+  assert.ok(dm && /5⭐ \+ 2🎫/.test(dm.payload.text), 'гравцю повідомили про повернення');
+});
+
+test('адмін: /stars і /tickets нараховують і забирають', async () => {
+  const bal = () => readDb().users['900'];
+  const wait = async (pred) => { for (let i = 0; i < 30; i++) { await sleep(150); if (pred()) return true; } return false; };
+  adminCmd('/stars user900 -2 помилкове нарахування');
+  assert.ok(await wait(() => bal().starBalance === 4), 'забрано 2⭐');
+  adminCmd('/tickets 900 5');
+  assert.ok(await wait(() => bal().tickets === 7), 'нараховано 5🎫');
+  adminCmd('/stars @user900 -100');
+  assert.ok(await wait(() => bal().starBalance === 0), 'забрати більше, ніж є, — забирається все');
+  const tx = bal().tx.slice(-3);
+  assert.deepStrictEqual(tx.map(x => [x.s || 0, x.t || 0, x.r]), [[-2, 0, 'admin'], [0, 5, 'admin'], [-4, 0, 'admin']]);
+  assert.strictEqual(tx[0].m.note, 'помилкове нарахування');
+  // Не адмін — команда ігнорується.
+  tg.push({ message: { message_id: 991, date: Math.floor(Date.now() / 1000), chat: { id: 700, type: 'private' }, from: { id: 700, is_bot: false, first_name: 'U' }, text: '/stars 700 1000', entities: [{ type: 'bot_command', offset: 0, length: 6 }] } });
+  await sleep(700);
+  assert.strictEqual(readDb().users['700'].starBalance < 1000, true);
 });
 
 test('пас: закритий рівень не видається; промокод один раз', async () => {

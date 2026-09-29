@@ -26,7 +26,7 @@ function langFromTg(from) {
 function shareUrl(uid, lang) {
   const link = referrals.link(uid);
   if (!link) return null;
-  const txt = { uk: 'Заходь у StarForge — колеса удачі, банк і справжні Telegram-подарунки 🎁', en: 'Join StarForge — wheels of luck, a shared bank and real Telegram gifts 🎁', ru: 'Заходи в StarForge — колёса удачи, банк и настоящие Telegram-подарки 🎁' }[lang] || '';
+  const txt = { uk: 'Заходь у StarForge — колеса удачі, ігри й справжні Telegram-подарунки 🎁', en: 'Join StarForge — wheels of luck, games and real Telegram gifts 🎁', ru: 'Заходи в StarForge — колёса удачи, игры и настоящие Telegram-подарки 🎁' }[lang] || '';
   return 'https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent(txt);
 }
 
@@ -116,7 +116,6 @@ function register(bot, hooks) {
     await ctx.reply(i18n.t(lang, 'start.inApp'), ui.openApp(lang, tab)).catch(() => {});
   };
   bot.command('app', openTab(null));
-  bot.command('bank', openTab('bank'));
   bot.command('pass', openTab('pass'));
   bot.command('games', openTab('games'));
   bot.command('topup', openTab('wallet'));
@@ -197,7 +196,7 @@ function maintenanceGate() {
   };
 }
 
-// Старі кнопки зі старих повідомлень (меню, ігри, пас, банк, вивід…) —
+// Старі кнопки зі старих повідомлень (меню, ігри, пас, вивід…) —
 // ведемо в застосунок замість мовчання.
 function legacyCallbacks(bot) {
   bot.on('callback_query', async (ctx) => {
@@ -206,7 +205,7 @@ function legacyCallbacks(bot) {
     await ctx.answerCbQuery().catch(() => {});
     if (ctx.chat && ctx.chat.type !== 'private') return;
     const data = String((ctx.callbackQuery && ctx.callbackQuery.data) || '');
-    const tab = /wd_|withdraw|topup/.test(data) ? 'wallet' : /bank/.test(data) ? 'bank' : /pass/.test(data) ? 'pass'
+    const tab = /wd_|withdraw|topup/.test(data) ? 'wallet' : /bank/.test(data) ? 'wheel' : /pass/.test(data) ? 'pass'
       : /dice/.test(data) ? 'games' : /rewards|claim_/.test(data) ? 'friends' : null;
     await ctx.reply(i18n.t(lang, 'start.inApp'), ui.openApp(lang, tab)).catch(() => {});
   });
