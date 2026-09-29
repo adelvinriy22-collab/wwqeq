@@ -63,9 +63,11 @@ if (!fs.existsSync(DB_FILE)) {
     }
   }
 }
+// Старі бази (v2) не мають meta — позначаємо їх ДО підстановки типових полів,
+// інакше вони отримали б schema 3 і міграція не запустилась би.
+if (!cache.meta) cache.meta = { schema: 2 };
 const defaults = emptyDb();
 for (const key of Object.keys(defaults)) if (!(key in cache)) cache[key] = defaults[key];
-if (!cache.meta) cache.meta = { schema: 2 };
 if (cache.featureFlags && !('eventUnlocked' in cache.featureFlags)) cache.featureFlags.eventUnlocked = false;
 
 console.log('📁 База даних: ' + DB_FILE + (process.env.DATA_DIR ? '' : '  ⚠️ DATA_DIR не задано'));

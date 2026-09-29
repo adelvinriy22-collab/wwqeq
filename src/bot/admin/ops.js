@@ -29,8 +29,9 @@ const HELP = `<b>Адмін</b> — найзручніше в застосунк
 <b>Банк</b>: /bank_start 2026-10-01 21:00 · /bank_cancel · /bank_auto on 21 · /bank_verify
 <b>Ліга</b>: /league on|off · /league_stats · /league_hide @нік · /league_unhide @нік · /league_finalize W2026-09-28
 <b>Розсилки</b>: /broadcast (відповіддю) · /post_all · /chat_say · /chat_post · /send_reminders · /winback так · /gift_all 1 мітка так
-<b>Події</b>: /event_status · /event_stop … · /giveaway_start · /giveaway_solo_start 21 00 · /password_challenge_start · /unlock_event · /goal_reset · /goal_stats
-<b>Чат</b>: /chat_status · /chat_drop · /chat_quiz · /chat_word · /chat_contest 21:30 3 · /chat_pause · /chat_resume · /chat_debug · /jackpot (посилання)
+<b>Події</b>: /event_status · /event_stop … · /giveaway_start · /giveaway_solo_start 21 00 · /joint_giveaway_start · /giveaway_stats · /deleteticket @нік 1 · /password_challenge_start · /external_ref_announce посилання · /unlock_event · /goal_reset · /goal_stats
+<b>Завдання</b>: /accept @нік завдання · /task_check · /task_revoke @нік · /partner_stats · /partner_on · /partner_off · /partner_announce так · /top_refs
+<b>Чат</b>: /chat_status · /chats · /chat_drop · /chat_quiz · /chat_word · /chat_top · /chat_contest 21:30 3 · /chat_contest_status · /chat_contest_end · /chat_pause · /chat_resume · /chat_debug · /jackpot (посилання)
 <b>Інше</b>: /spin_notify on|off · /autowithdraw 73 · /test · /version · /season`;
 
 function register(bot) {

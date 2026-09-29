@@ -101,7 +101,7 @@ async function claimLadder(uid, tierId) {
 function friendsList(u) {
   return (u.invitedIds || []).slice(-50).reverse().map(id => {
     const f = users.get(id);
-    return { name: f ? users.displayName(f) : 'гравець', joinedAt: f ? (f.referredAt || f.joinedAt || null) : null, active: !!(f && f.lastActiveAt && Date.now() - f.lastActiveAt < 3 * 86400000) };
+    return { name: f ? users.displayName(f) : null, joinedAt: f ? (f.referredAt || f.joinedAt || null) : null, active: !!(f && f.lastActiveAt && Date.now() - f.lastActiveAt < 3 * 86400000) };
   });
 }
 

@@ -103,7 +103,7 @@ function friendsView(nav, d, body) {
       } }, t('pass.take'))
         : s.state === 'pending' ? pill('⏳', 'warn') : s.state === 'approved' ? pill('✓', 'ok') : s.state === 'rejected' ? pill('✕', 'bad') : el('span', { class: 'row-val' }, (L.count) + '/' + s.need),
     }))), t('fr.ladderFoot')),
-    ...section(t('fr.list'), d.friends.length ? list(d.friends.map(f => row({ icon: f.active ? '🟢' : '⚪️', title: f.name, sub: f.joinedAt ? when(f.joinedAt) : null }))) : el('div', { class: 'card' }, empty(t('fr.none')))),
+    ...section(t('fr.list'), d.friends.length ? list(d.friends.map(f => row({ icon: f.active ? '🟢' : '⚪️', title: f.name || t('app.player'), sub: f.joinedAt ? when(f.joinedAt) : null }))) : el('div', { class: 'card' }, empty(t('fr.none')))),
   ];
 }
 
