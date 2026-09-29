@@ -58,9 +58,16 @@ function unlockText(lang, un) {
 const firstLevelWith = (key) => { const x = E.LEVEL_PERKS[key].find(([, v]) => v > 0); return x ? x[0] : null; };
 const bar = (pct) => { const k = Math.round(Math.max(0, Math.min(100, pct)) / 10); return '▰'.repeat(k) + '▱'.repeat(10 - k); };
 
-// «🎉 НОВИЙ РІВЕНЬ!» — особисте повідомлення.
-function levelUpText(lang, info, rw) {
-  const un = unlockText(lang, E.perksUnlockedAt(info.n));
+// Що відкрилось на рівнях from…to (стрибок може бути на кілька рівнів).
+function unlockedBetween(from, to) {
+  const out = {};
+  for (let n = from || to; n <= to; n++) Object.assign(out, E.perksUnlockedAt(n));
+  return out;
+}
+
+// «🎉 НОВИЙ РІВЕНЬ!» — особисте повідомлення. rw — сума нагород за всі пройдені рівні.
+function levelUpText(lang, info, rw, fromN) {
+  const un = unlockText(lang, unlockedBetween(fromN, info.n));
   const nx = info.next;
   const next = nx
     ? i18n.t(lang, 'level.next', { e: nx.e, t: esc(nx.t), left: nx.left, reward: rewardText(nx.reward) || '—', perks: unlockText(lang, nx.unlocks) ? ' · ' + unlockText(lang, nx.unlocks) : '' })
@@ -117,4 +124,4 @@ function register(bot) {
   bot.action('my_level', show);
 }
 
-module.exports = { register, levelsView, levelUpText, menuButton, rewardText };
+module.exports = { register, levelsView, levelUpText, menuButton, rewardText, unlockedBetween };

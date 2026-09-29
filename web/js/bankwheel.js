@@ -30,17 +30,22 @@ export function createBankWheel(sectors, bankId, youLabel) {
       kids.push(sectors.length === 1 ? svg('circle', { cx: C, cy: C, r: R, style }) : svg('path', { d: arc(a0, a1, R), style }));
       spans.push({ uid: String(s.uid), a0, a1 });
       // Підпис уздовж радіуса («спицею») — поперек вузького сектора місця немає.
+      // Текст іде від обода до центру й не довший за відрізок між ободом і
+      // серединкою, тому ніколи не вилазить за колесо. Відсотки — у легенді.
       if (a1 - a0 >= 14) {
         const mid = (a0 + a1) / 2;
         let rot = mid - 90;
         const flip = mid > 180;
         if (flip) rot += 180;
+        const fs = a1 - a0 >= 30 ? 10 : 8.5;
+        const room = R - 10 - 24;                       // від обода до серединки
+        const maxChars = Math.max(3, Math.floor(room / (fs * 0.62)));
         const g = svg('g', { transform: `rotate(${rot} ${C} ${C})` });
-        const x = flip ? C - 58 : C + 58;
         g.appendChild(svg('text', {
-          x, y: C, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': a1 - a0 >= 30 ? 10 : 8.5, 'font-weight': 700,
+          x: flip ? C - (R - 10) : C + (R - 10), y: C, 'text-anchor': flip ? 'start' : 'end', 'dominant-baseline': 'middle',
+          'font-size': fs, 'font-weight': 700,
           style: 'fill: #fff; font-family: inherit; paint-order: stroke; stroke: rgba(0,0,0,.25); stroke-width: 2px',
-        }, (s.me ? youLabel : short(s.name, 11)) + ' · ' + s.percent + '%'));
+        }, s.me ? youLabel : short(s.name, maxChars)));
         kids.push(g);
       }
       acc = a1;

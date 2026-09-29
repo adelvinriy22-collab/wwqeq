@@ -666,7 +666,8 @@ function createChat(bot, opts) {
     if (isAdminUid(uid)) return;
     if (fromChat && o.msgId) react(o.msgId, '🎉');
     const prize = [rw.tickets ? '+' + rw.tickets + ' ' + TIX : null, rw.stars ? '+' + rw.stars + ' ' + E('starIcon', '⭐') : null].filter(Boolean).join(' ');
-    const un = econ.perksUnlockedAt(info.n);
+    const un = {};
+    for (let n = (o && o.from) || info.n; n <= info.n; n++) Object.assign(un, econ.perksUnlockedAt(n));
     const perk = un.withdrawFee != null ? 'комісія виводу тепер ' + un.withdrawFee + '%'
       : un.topupBonus != null ? '+' + un.topupBonus + '% до кожного поповнення'
       : un.chatBonus != null ? '+' + un.chatBonus + ' ' + TIX + ' до щоденного бонусу' : '';

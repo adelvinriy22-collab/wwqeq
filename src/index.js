@@ -38,7 +38,7 @@ progress.hooks.onLevelUp.push((uid, info, rw, opts) => {
   if (opts.silent) return;
   const u = users.get(uid);
   if (!u || !u.lang) return;
-  notify.dm(uid, require('./bot/levels').levelUpText(u.lang, info, rw),
+  notify.dm(uid, require('./bot/levels').levelUpText(u.lang, info, rw, opts.from),
     notify.appKeyboard(i18n.t(u.lang, 'btn.open'), 'progress', [[{ text: i18n.t(u.lang, 'btn.levels'), callback_data: 'my_level' }]]));
 });
 

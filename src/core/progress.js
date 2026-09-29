@@ -84,13 +84,19 @@ function addXp(uid, src, amount, opts) {
   users.patch(uid, { xp: x });
   const after = levelIndex(x.total);
   if (after > before) {
+    // Нагорода — за КОЖЕН пройдений рівень, а сповіщення одне: про останній,
+    // із сумою всіх нагород (інакше стрибок на кілька рівнів — це кілька повідомлень).
+    const total = { tickets: 0, stars: 0 };
     for (let i = before + 1; i <= after; i++) {
       const rw = E.levelReward(i);
       if (rw.tickets || rw.stars) users.move(uid, { tickets: rw.tickets || 0, stars: rw.stars || 0 }, 'level', { level: i + 1 });
-      const info = levelInfo(E.LEVELS[i].at, u.lang);
-      for (const h of hooks.onLevelUp) {
-        try { h(uid, info, rw, opts || {}); } catch (e) { console.error('onLevelUp hook:', e.message); }
-      }
+      total.tickets += rw.tickets || 0;
+      total.stars += rw.stars || 0;
+    }
+    const info = levelInfo(x.total, u.lang);
+    const o = { ...(opts || {}), from: before + 1, levels: after - before };
+    for (const h of hooks.onLevelUp) {
+      try { h(uid, info, total, o); } catch (e) { console.error('onLevelUp hook:', e.message); }
     }
   }
   return gain;

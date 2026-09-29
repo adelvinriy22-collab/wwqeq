@@ -49,7 +49,7 @@ const nav = { go, push, back, rerender: () => render() };
 function applyStart(p) {
   const map = {
     wheel: ['games', 'wheels'], wheels: ['games', 'wheels'], bank: ['games', 'bank'], games: ['games', 'dice'], dice: ['games', 'dice'],
-    pass: ['progress', 'pass'], league: ['progress', 'league'], quests: ['progress', 'quests'], tasks: ['progress', 'quests'],
+    progress: ['progress'], level: ['progress'], pass: ['progress', 'pass'], league: ['progress', 'league'], quests: ['progress', 'quests'], tasks: ['progress', 'quests'],
     wallet: ['wallet'], topup: ['wallet', 'topup'], withdraw: ['wallet', 'withdraw'], shop: ['wallet', 'shop'],
     friends: ['profile', 'friends'], profile: ['profile'], apps: ['profile', 'apps'], admin: ['profile', 'admin'],
   };
