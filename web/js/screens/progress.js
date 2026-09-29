@@ -59,7 +59,8 @@ function xpHelp() {
     el('p', null, t('xp.lead')),
     list(
       row({ icon: '🎰', title: t('xp.spin', { n: (src.spin || {}).per || 10 }), sub: t('xp.cap', { n: (src.spin || {}).dayCap || 80 }) }),
-      row({ icon: '⭐', title: t('xp.wager', { a: rates.paidSpinPerStar || 3, b: rates.gamePerStar || 2 }), sub: t('xp.cap', { n: (src.wager || {}).dayCap || 450 }) }),
+      row({ icon: '⭐', title: t('xp.wager', { a: rates.paidSpinPerStar || 3, b: rates.gamePerStar || 2, c: rates.bankPerStar || 1 }), sub: t('xp.cap', { n: (src.wager || {}).dayCap || 450 }) }),
+      row({ icon: '🏦', title: t('xp.bank', { n: (src.bank || {}).per || 15 }) }),
       row({ icon: '👥', title: t('xp.friend', { n: (src.friend || {}).per || 150 }) }),
       row({ icon: '💳', title: t('xp.deposit', { n: (src.deposit || {}).per || 100 }) }),
       row({ icon: '📋', title: t('xp.quest'), sub: t('xp.cap', { n: (src.quest || {}).dayCap || 300 }) }),
@@ -220,6 +221,7 @@ function goQuest(nav, target) {
   const [tab, sub] = String(target || '').split(':');
   if (tab === 'wheel') { import('./games.js').then(() => nav.go('games', 'wheels')); return; }
   if (tab === 'games') return nav.go('games', 'dice');
+  if (tab === 'bank') return nav.go('games', 'bank');
   if (tab === 'quests') return;
   nav.go(tab || 'home', sub);
 }

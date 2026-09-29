@@ -1,4 +1,4 @@
-// Ігри: колеса (щоденне, за білети, за зірки) з ризиком ×2 та
+// Ігри: колеса (щоденне, за білети, за зірки) з ризиком ×2, спільний банк,
 // ігри на зірки (кубик, дартс, боулінг, баскетбол, футбол, слоти).
 import { el, mount, img } from '../dom.js';
 import { t } from '../i18n.js';
@@ -13,15 +13,16 @@ let wheelId = 'daily';
 
 export function render(nav, v) {
   if (v) view = v === 'dice' ? 'dice' : v;
-  if (!['wheels', 'dice'].includes(view)) view = 'wheels';
+  if (!['wheels', 'bank', 'dice'].includes(view)) view = 'wheels';
   const body = el('div');
   const pick = (id) => { view = id; nav.rerender(); };
   const out = [
     el('div', { class: 'h1' }, t('games.title')),
-    seg([['wheels', t('games.wheels')], ['dice', t('games.dice')]], view, pick),
+    seg([['wheels', t('games.wheels')], ['bank', t('games.bank')], ['dice', t('games.dice')]], view, pick),
     body,
   ];
   if (view === 'wheels') mount(body, wheels(nav));
+  else if (view === 'bank') bankView(nav, body);
   else diceView(nav, body);
   return out;
 }
@@ -173,6 +174,106 @@ function fairRow(nav) {
   return [
     ...section(null, list(row({ icon: '🛡', title: t('fair.title'), sub: t('fair.short', { h: String(S.me.fairHash || '').slice(0, 10) + '…' }), onClick: () => import('./profile.js').then(m => m.openFair(nav)) }))),
   ];
+}
+
+// ─── Банк ────────────────────────────────────────────────────────────────
+let bankPoll = null;
+async function bankView(nav, body) {
+  mount(body, empty(t('common.loading')));
+  let b;
+  try { b = await api.get('/bank'); } catch (e) { mount(body, empty(t('err.generic'))); return; }
+  if (!body.isConnected) return;
+  drawBank(nav, body, b);
+  clearInterval(bankPoll);
+  bankPoll = setInterval(async () => {
+    if (!body.isConnected) { clearInterval(bankPoll); return; }
+    if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+    try { const nb = await api.get('/bank'); if (body.isConnected) drawBank(nav, body, nb); } catch (e) {}
+  }, 6000);
+}
+
+function drawBank(nav, body, b) {
+  if (!b.active) {
+    mount(body, el('div', { class: 'card pad center' },
+      el('div', { style: { fontSize: '48px' } }, '🏦'),
+      el('div', { class: 't mt8', style: { fontWeight: 600 } }, t('bank.none')),
+      el('div', { class: 'muted mt8' }, b.auto && b.auto.enabled ? t('bank.autoNext', { h: String(b.auto.hour).padStart(2, '0') }) : t('bank.soon'))),
+      ...section(t('bank.how'), list(
+        row({ icon: '⭐', title: t('bank.how1') }), row({ icon: '🎫', title: t('bank.how2', { w: 5 }) }),
+        row({ icon: '🎯', title: t('bank.how3') }), row({ icon: '🎁', title: t('bank.how4') }))));
+    return;
+  }
+  const open = b.status === 'open';
+  const hero = el('div', { class: 'card' },
+    el('div', { class: 'hero' },
+      el('div', { class: 'sub' }, open ? t('bank.pot') : t('bank.drawn')),
+      el('div', { class: 'big' }, stars(b.prize.stars) + (b.prize.tickets ? ' + ' + tix(b.prize.tickets) : '')),
+      el('div', { class: 'sub' }, open ? [t('bank.drawIn') + ' ', countdown(b.drawAt, left, () => bankView(nav, body))] : when(b.drawAt))),
+    el('div', { class: 'stat-grid' },
+      el('div', null, el('b', null, String(b.players)), el('span', null, t('bank.players'))),
+      el('div', null, el('b', null, fmt(b.mine.weight)), el('span', null, t('bank.myStake'))),
+      el('div', null, el('b', null, b.mine.chance + '%'), el('span', null, t('bank.chance')))));
+  const parts = [hero];
+
+  if (!open && b.winner) {
+    parts.push(el('div', { class: 'banner ' + (b.winner.me ? 'green' : '') + ' mt12' }, el('div', { class: 'bi' }, b.winner.me ? '🏆' : '🎉'),
+      el('div', { class: 'bm' }, el('div', { class: 'bt' }, b.winner.me ? t('bank.youWon') : t('bank.winner', { name: b.winner.name })), b.won ? el('div', { class: 'bs' }, stars(b.won.stars) + (b.won.tickets ? ' + ' + tix(b.won.tickets) : '')) : null)));
+  }
+  if (open) parts.push(...section(t('bank.bet'), el('div', { class: 'card pad' }, betForm(nav, body, b)), t('bank.betFoot', { w: b.ticketWeight, c: b.consolePer })));
+
+  const ms = b.milestones;
+  if (ms && ms.list && ms.list.length) {
+    parts.push(...section(t('bank.milestones'), el('div', { class: 'card pad' },
+      ms.next ? [el('div', { class: 'kv', style: { marginTop: 0 } }, el('span', null, t('bank.toNext', { n: fmt(ms.toNext), label: ms.next.label })), el('span', null, ms.nextPercent + '%')), el('div', { class: 'mt8' }, bar(ms.nextPercent, 'gold'))] : el('div', { class: 'ok-text' }, t('bank.allMs')),
+      el('div', { class: 'gap8 mt12' }, ms.list.map(m => pill((m.reached ? '✓ ' : '') + m.at + ' → +' + m.bonus + '⭐', m.reached ? 'ok' : 'grey'))))));
+  }
+  if (b.sectors && b.sectors.length) {
+    parts.push(...section(t('bank.table'), list(b.sectors.slice(0, 15).map((s, i) =>
+      row({ icon: i < 3 ? ['🥇', '🥈', '🥉'][i] : String(i + 1), title: s.name + (s.me ? ' · ' + t('common.you') : ''), sub: (s.stars ? stars(s.stars) : '') + (s.stars && s.tickets ? ' + ' : '') + (s.tickets ? tix(s.tickets) : ''), value: s.percent + '%', strong: s.me })))));
+  }
+  if (b.feed && b.feed.length && open) {
+    parts.push(...section(t('bank.feed'), list(b.feed.slice(0, 6).map(f => row({ icon: f.tickets && !f.stars ? '🎫' : '⭐', title: f.name, sub: when(f.at), value: '+' + (f.stars ? stars(f.stars) : '') + (f.stars && f.tickets ? ' ' : '') + (f.tickets ? tix(f.tickets) : '') })))));
+  }
+  const verify = b.verify;
+  parts.push(...section(t('fair.title'), list(
+    row({ icon: '🔒', title: t('bank.seedHash'), sub: el('span', { class: 'mono' }, String(b.seedHash || '')) }),
+    verify ? row({ icon: verify.seedOk && verify.hmacOk ? '✅' : '⚠️', title: verify.seedOk && verify.hmacOk ? t('bank.verified') : t('bank.verifyFail'), sub: el('span', { class: 'mono' }, 'seed: ' + verify.seed) }) : null),
+    t('bank.fairFoot')));
+  mount(body, parts);
+}
+
+function betForm(nav, body, b) {
+  const sIn = el('input', { type: 'number', inputmode: 'numeric', min: 0, placeholder: '0' });
+  const tIn = el('input', { type: 'number', inputmode: 'numeric', min: 0, placeholder: '0' });
+  const hint = el('div', { class: 'kv' });
+  const upd = () => {
+    const s = Math.floor(Number(sIn.value) || 0), tk = Math.floor(Number(tIn.value) || 0);
+    const w = s + tk * b.ticketWeight;
+    const mine = b.mine.weight + w, pot = b.pot + w;
+    hint.textContent = '';
+    hint.append(el('span', null, t('bank.weight', { w: fmt(w) })), el('span', null, w ? t('bank.newChance', { p: pot ? Math.round(mine / pot * 1000) / 10 : 0 }) : ''));
+  };
+  sIn.addEventListener('input', upd); tIn.addEventListener('input', upd);
+  upd();
+  const presets = el('div', { class: 'presets four mt8' }, [5, 10, 25, 50].map(n => el('button', { class: 'preset', type: 'button', onclick: () => { sIn.value = String(n); haptic('select'); upd(); } }, n + '⭐')));
+  return el('div', null,
+    el('div', { class: 'btns' },
+      el('div', { class: 'field' }, sIn, el('span', { class: 'unit' }, '⭐')),
+      el('div', { class: 'field' }, tIn, el('span', { class: 'unit' }, '🎫'))),
+    el('div', { class: 'kv' }, el('span', null, t('wheel.youHave', { v: stars(b.balance) })), el('span', null, tix(b.myTickets))),
+    presets, hint,
+    el('div', { class: 'mt12' }, button(t('bank.place'), async () => {
+      const s = Math.floor(Number(sIn.value) || 0), tk = Math.floor(Number(tIn.value) || 0);
+      if (!s && !tk) { toast(t('bank.enter')); return; }
+      try {
+        const r = await api.post('/bank/bet', { stars: s, tickets: tk });
+        setBalance(r.balance, r.tickets);
+        toast(t('bank.placed', { p: r.chance }), 'success');
+        refreshSoon();
+        const nb = await api.get('/bank');
+        drawBank(nav, body, nb);
+      } catch (e) { fail(e); }
+    })));
 }
 
 // ─── Ігри на зірки ───────────────────────────────────────────────────────

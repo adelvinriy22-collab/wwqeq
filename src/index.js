@@ -3,7 +3,7 @@
 //   1. міграція бази (з резервною копією);
 //   2. HTTP: застосунок + API (працює навіть без Telegram);
 //   3. бот (long polling з повторами);
-//   4. планувальники: ліга, чат, нагадування.
+//   4. планувальники: банк, ліга, чат, нагадування.
 // ==========================================================================
 require('dotenv').config();
 const config = require('./config');
@@ -27,8 +27,9 @@ process.on('unhandledRejection', (e) => { console.error('⚠️ unhandledRejecti
 process.on('uncaughtException', (e) => { console.error('⚠️ uncaughtException:', e && e.message ? e.message : e); if (isFatal(e)) process.exit(1); });
 
 store.migrate({ pass: E.PASS, seasonId: progress.seasonId, weekKey: time.weekKey });
-// Банк прибрано: відкритий банк зі ставками (якщо був) повертається гравцям.
-try { bank.closeLegacy(); } catch (e) { console.error('bank.closeLegacy:', e.message); }
+// Банк, який попередня версія встигла скасувати, повертається з тими самими ставками.
+try { bank.restoreRemoved(); } catch (e) { console.error('bank.restoreRemoved:', e.message); }
+try { bank.ensureInitial(); } catch (e) { console.error('bank.ensureInitial:', e.message); }
 try { promo.ensureDefaults(); } catch (e) { console.error('promo.ensureDefaults:', e.message); }
 
 // Новий рівень — особисте повідомлення (з чату рівень оголошує сам чат).
@@ -50,7 +51,7 @@ if (!config.BOT_TOKEN) {
 } else {
   const built = require('./bot').createBot(config.BOT_TOKEN);
   bot = built.bot; chat = built.chat;
-  require('./bot').launch(bot, chat, () => bank.deliverNotices().catch(e => console.error('bank notices:', e.message)));
+  require('./bot').launch(bot, chat, () => bank.deliverRestoreNotices().catch(e => console.error('bank notices:', e.message)));
 }
 if (!config.WEBAPP_URL) console.warn('ℹ️ WEBAPP_URL не задано — у боті не буде кнопок відкриття застосунку.');
 if (config.ADVANCED_UNLOCK_PASSWORD_IS_DEFAULT) console.warn('⚠️ ADVANCED_UNLOCK_PASSWORD не задано — використовується стандартний пароль.');
@@ -68,6 +69,7 @@ function every(ms, name, fn) {
   timers.push(t);
 }
 if (!config.NO_SCHEDULERS) {
+  every(60 * 1000, 'bank.tick', () => bank.tick());
   every(60 * 1000, 'league.tick', () => league.tick());
   every(60 * 1000, 'chat.tick', () => chat && notify.tg.telegram ? chat.tick() : null);
   every(30 * 60 * 1000, 'reminders', () => reminders.run());

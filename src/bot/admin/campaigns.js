@@ -382,6 +382,8 @@ function register(bot, hooks) {
     if (ev && ev.active) out.push({ key: 'event', label: '🎉 Подія', info: 'до ' + time.fmtKyiv(ev.endsAt) });
     const pc = store.getPasswordChallenge();
     if (pc && pc.active) out.push({ key: 'password', label: '🔑 Пароль-челендж', info: 'пароль: ' + pc.password });
+    const b = (store.getFeatureFlags() || {}).bank;
+    if (b && b.status === 'open') out.push({ key: 'bank', label: '🏦 Банк', info: b.order.length + ' гравців, розіграш ' + time.fmtKyiv(b.drawAt) });
     const pool = store.getExternalRefPool();
     if (pool && pool.active) out.push({ key: 'extref', label: '🧸 Шанс на мішку', info: (pool.participants || []).length + '/10' });
     for (const [gid, g] of Object.entries(store.listGiveaways() || {})) if (g && g.active && g.endsAt > Date.now()) out.push({ key: 'giveaway:' + gid, label: '🎁 Розіграш ' + gid, info: Object.keys(g.participants || {}).length + ' учасників' });
@@ -401,6 +403,7 @@ function register(bot, hooks) {
       if (k === 'event') { const ev = store.getEvent(); if (ev) { ev.active = false; store.setEvent(ev); done.push('подію'); } }
       else if (k === 'password') { const pc = store.getPasswordChallenge(); if (pc) { pc.active = false; store.setPasswordChallenge(pc); done.push('челендж'); } }
       else if (k === 'extref') { const p = store.getExternalRefPool(); if (p) { p.active = false; store.setExternalRefPool(p); done.push('шанс на мішку'); } }
+      else if (k === 'bank') { const r = require('../../features/bank').cancel('Банк скасовано адміністратором.'); if (r.ok) done.push('банк (повернуто ставки)'); }
       else if (k.startsWith('giveaway:')) { const gid = k.slice(9); const g = store.getGiveaway(gid); if (g) { g.active = false; store.setGiveaway(gid, g); done.push('розіграш ' + gid); } }
     };
     if (key === 'all') activeEvents().forEach(e => stop(e.key)); else stop(key);

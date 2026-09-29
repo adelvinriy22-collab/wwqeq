@@ -48,7 +48,7 @@ const nav = { go, push, back, rerender: () => render() };
 // Глибокі посилання: ?tab=... або start_param застосунку.
 function applyStart(p) {
   const map = {
-    wheel: ['games', 'wheels'], wheels: ['games', 'wheels'], bank: ['games', 'wheels'], games: ['games', 'dice'], dice: ['games', 'dice'],
+    wheel: ['games', 'wheels'], wheels: ['games', 'wheels'], bank: ['games', 'bank'], games: ['games', 'dice'], dice: ['games', 'dice'],
     pass: ['progress', 'pass'], league: ['progress', 'league'], quests: ['progress', 'quests'], tasks: ['progress', 'quests'],
     wallet: ['wallet'], topup: ['wallet', 'topup'], withdraw: ['wallet', 'withdraw'], shop: ['wallet', 'shop'],
     friends: ['profile', 'friends'], profile: ['profile'], apps: ['profile', 'apps'], admin: ['profile', 'admin'],

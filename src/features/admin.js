@@ -1,6 +1,6 @@
 // ==========================================================================
 // АДМІН-ПАНЕЛЬ (у застосунку): зведення, черга заявок, пошук гравця,
-// коригування балансу з причиною, промокоди, техроботи, ліга.
+// коригування балансу з причиною, промокоди, техроботи, банк, ліга.
 // Усі дії адміна з балансом теж ідуть у журнал транзакцій.
 // ==========================================================================
 const E = require('../economy');
@@ -9,6 +9,7 @@ const users = require('../core/users');
 const progress = require('../core/progress');
 const applications = require('./applications');
 const maintenance = require('./maintenance');
+const bank = require('./bank');
 const league = require('./league');
 const promo = require('./promo');
 const time = require('../lib/time');
@@ -30,12 +31,15 @@ function overview() {
     deposits += u.depositedTotal || 0;
   }
   const pending = store.listApplications('pending');
+  const b = bank.get();
   const f = store.getFeatureFlags() || {};
   return {
     users: all.length, registered, active24, active7, newToday,
     balances: { stars: round2(stars), tickets }, deposited: round2(deposits),
     pending: pending.length, pendingPayout: pending.reduce((s, a) => s + (a.payoutStars || 0), 0),
     pendingBySource: pending.reduce((m, a) => { m[a.source || 'ladder'] = (m[a.source || 'ladder'] || 0) + 1; return m; }, {}),
+    bank: b && b.status === 'open' ? { pot: bank.core.totalPot(b), players: b.order.length, drawAt: b.drawAt } : null,
+    bankAuto: bank.autoCfg(),
     maintenance: maintenance.state(),
     league: league.enabled(),
     spinNotify: !f.spinNotifyOff,
@@ -84,4 +88,4 @@ function giveSpins(uid, free, gifted) {
 
 function setSpinNotify(on) { store.setFeatureFlags({ spinNotifyOff: !on }); return !!on; }
 
-module.exports = { overview, appsList, userInfo, adjust, giveSpins, setSpinNotify, promo, maintenance, league, E };
+module.exports = { overview, appsList, userInfo, adjust, giveSpins, setSpinNotify, promo, maintenance, bank, league, E };
