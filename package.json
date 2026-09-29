@@ -1,12 +1,12 @@
 {
   "name": "starforge-bot",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "StarForge — Telegram-бот із колесами удачі, спільним банком, іграми та WebApp",
-  "main": "server.js",
+  "description": "StarForge — Telegram-гра: колеса удачі, спільний банк, ігри, пас і ліга в застосунку (WebApp)",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node server.js",
-    "check": "node --check server.js && node --check chat.js && node --check bank.js && node --check db.js && node --check config.js && node --check i18n.js && node --check league.js && node --check pass.js && node --check assets.js",
+    "start": "node src/index.js",
+    "check": "node -e \"const{execSync}=require('child_process');const fs=require('fs'),p=require('path');const w=(d)=>fs.readdirSync(d).flatMap(f=>{const x=p.join(d,f);return fs.statSync(x).isDirectory()?w(x):x.endsWith('.js')?[x]:[]});for(const f of w('src'))execSync('node --check '+f);for(const f of w('web/js'))execSync('node --experimental-default-type=module --check '+f);console.log('ok')\"",
     "test": "node --test test/*.test.js"
   },
   "engines": {
