@@ -54,7 +54,7 @@ const WHEELS = {
       tix1: 180, tix3: 75, tix5: 20,
       gift: 2.2, rocket: 1.1, trophy: 0.45, wheel_stocking: 0.65, wheel_snake: 0.65, wheel_lolpop: 0.45, wheel_eye: 0.22, premium3m: 0.07,
     },
-    segments: ['star2', 'gift', 'star3', 'rocket', 'tix1', 'nft', 'star5', 'trophy', 'tix3', 'star8', 'tix5', 'star12'],
+    segments: ['star2', 'gift', 'star3', 'rocket', 'tix1', 'nft', 'star5', 'trophy', 'tix3', 'star8', 'tix5', 'star12', 'tix1', 'star25'],
   },
   referral: {   // історична назва: тепер це колесо білетів
     title: { uk: 'За білети', en: 'Tickets', ru: 'За билеты' },

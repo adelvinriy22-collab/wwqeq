@@ -12,7 +12,7 @@ export function render(nav) {
   const pick = (id) => { tab = id; draw(nav, body, wrap); };
   const wrap = el('div');
   const draw = (n, b) => {
-    mount(wrap, seg([['overview', 'Огляд'], ['apps', 'Заявки'], ['user', 'Гравець'], ['promo', 'Промо'], ['ops', 'Керування']], tab, pick), body);
+    mount(wrap, seg([['overview', 'Огляд'], ['apps', 'Заявки'], ['user', 'Гравець'], ['promo', 'Промо'], ['ops', 'Режими']], tab, pick), body);
     ({ overview, apps, user, promo, ops })[tab](nav, body);
   };
   draw(nav, body);

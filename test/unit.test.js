@@ -26,15 +26,18 @@ test('ігри: очікуваний виграш менший за ставку
   }
 });
 
-test('колеса: кожен можливий результат має сектор того ж типу', () => {
+test('колеса: кожен можливий результат має на колесі саме свій сектор', () => {
   for (const [wid, w] of Object.entries(E.WHEELS)) {
     if (w.disabled) continue;
     for (const id of Object.keys(w.weights)) {
-      const i = wheels.segmentIndex(wid, id);
-      const seg = wheels.segmentsView(wid)[i];
-      assert.ok(seg, `${wid}/${id}`);
-      assert.strictEqual(seg.kind, wheels.outcomeKind(id), `${wid}/${id} → ${seg.id}`);
+      const special = E.NFT_IDS.includes(id) || id === 'premium3m';
+      for (let k = 0; k < 20; k++) {
+        const i = wheels.segmentIndex(wid, id);
+        const seg = w.segments[i];
+        assert.strictEqual(seg, special ? 'nft' : id, `${wid}/${id} показується як ${seg}`);
+      }
     }
+    assert.strictEqual(w.segments.length % 2, 0, `${wid}: парна кількість секторів, щоб кольори чергувались`);
   }
 });
 

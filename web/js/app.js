@@ -1,5 +1,6 @@
 // StarForge — застосунок. Шапка з балансом, нижні вкладки, екрани.
 import { ready, setBack, startParam, tg } from './tg.js';
+import { watchTheme } from './theme.js';
 import { el, mount, img } from './dom.js';
 import { t, setLang, lang } from './i18n.js';
 import { S, refresh, onChange, onLevelUp } from './state.js';
@@ -57,20 +58,33 @@ function applyStart(p) {
 }
 
 // ── Шапка ───────────────────────────────────────────────────────────────
+// Шапка й вкладки будуються один раз, далі оновлюються лише тексти й
+// класи — інакше дотик у момент оновлення балансу міг загубитись.
+let topRefs = null;
 function renderTop() {
   const me = S.me;
   if (!me) return mount(top);
   const lv = me.progress.level;
-  const initial = (me.user.name || me.user.username || '?').trim().charAt(0).toUpperCase();
-  mount(top,
-    el('button', { class: 'me', type: 'button', onclick: () => go('profile') },
-      el('div', { class: 'avatar' }, me.user.photo ? el('img', { src: me.user.photo, alt: '', referrerpolicy: 'no-referrer' }) : initial),
-      el('div', { class: 'me-text' },
-        el('div', { class: 'me-name' }, me.user.name || (me.user.username ? '@' + me.user.username : t('app.player'))),
-        el('div', { class: 'me-level' }, lv.e + ' ' + lv.t + ' · ' + lv.n, el('div', { class: 'lvlbar' }, el('i', { style: { width: lv.pct + '%' } }))))),
-    el('div', { class: 'chips' },
-      el('button', { class: 'chip', type: 'button', onclick: () => go('wallet') }, '⭐', el('b', null, fmtShort(me.balance.stars))),
-      el('button', { class: 'chip', type: 'button', onclick: () => go('games', 'wheels') }, '🎫', el('b', null, fmtShort(me.balance.tickets)))));
+  if (!topRefs || topRefs.lang !== lang()) {
+    topRefs = { lang: lang(), avatar: el('div', { class: 'avatar' }), name: el('div', { class: 'me-name' }), level: el('span'), bar: el('i'), stars: el('b'), tickets: el('b'), photo: undefined };
+    mount(top,
+      el('button', { class: 'me', type: 'button', onclick: () => go('profile') },
+        topRefs.avatar,
+        el('div', { class: 'me-text' }, topRefs.name, el('div', { class: 'me-level' }, topRefs.level, el('div', { class: 'lvlbar' }, topRefs.bar)))),
+      el('div', { class: 'chips' },
+        el('button', { class: 'chip', type: 'button', onclick: () => go('wallet') }, '⭐', topRefs.stars),
+        el('button', { class: 'chip', type: 'button', onclick: () => go('games', 'wheels') }, '🎫', topRefs.tickets)));
+  }
+  const R = topRefs;
+  if (R.photo !== (me.user.photo || null)) {
+    R.photo = me.user.photo || null;
+    mount(R.avatar, R.photo ? el('img', { src: R.photo, alt: '', referrerpolicy: 'no-referrer' }) : (me.user.name || me.user.username || '?').trim().charAt(0).toUpperCase());
+  }
+  R.name.textContent = me.user.name || (me.user.username ? '@' + me.user.username : t('app.player'));
+  R.level.textContent = lv.e + ' ' + lv.t + ' · ' + lv.n;
+  R.bar.style.width = lv.pct + '%';
+  R.stars.textContent = fmtShort(me.balance.stars);
+  R.tickets.textContent = fmtShort(me.balance.tickets);
 }
 function fmtShort(n) {
   const v = Number(n) || 0;
@@ -79,16 +93,30 @@ function fmtShort(n) {
   return fmt(v);
 }
 
+let tabRefs = null;
 function renderTabs() {
   const me = S.me || {};
   const dots = {
     home: me.wheels && me.wheels.wheels && me.wheels.wheels.daily && me.wheels.wheels.daily.ready ? '1' : null,
     progress: ((me.pass && me.pass.claimable) || 0) + (me.quests && me.quests.quiz ? 1 : 0) || null,
   };
-  mount(tabbar, TABS.map(tb => el('button', {
-    class: 'tab' + (S.route.tab === tb.id && !S.stack.length ? ' on' : S.route.tab === tb.id ? ' on' : ''), type: 'button',
-    onclick: () => go(tb.id),
-  }, el('span', { class: 'ti' }, tb.icon), el('span', null, t('tab.' + tb.id)), dots[tb.id] ? el('span', { class: 'dot' }, String(dots[tb.id])) : null)));
+  if (!tabRefs || tabRefs.lang !== lang()) {
+    tabRefs = { lang: lang(), items: {} };
+    mount(tabbar, TABS.map(tb => {
+      const dot = el('span', { class: 'dot hidden' });
+      const label = el('span', null, t('tab.' + tb.id));
+      const b = el('button', { class: 'tab', type: 'button', onclick: () => go(tb.id) }, el('span', { class: 'ti' }, tb.icon), label, dot);
+      tabRefs.items[tb.id] = { b, dot };
+      return b;
+    }));
+  }
+  for (const tb of TABS) {
+    const it = tabRefs.items[tb.id];
+    it.b.classList.toggle('on', S.route.tab === tb.id);
+    const d = dots[tb.id];
+    it.dot.classList.toggle('hidden', !d);
+    if (d) it.dot.textContent = String(d);
+  }
 }
 
 // ── Гейти ───────────────────────────────────────────────────────────────
@@ -158,12 +186,17 @@ onChange((what) => {
   if (what === 'me') { homeDirty = true; redrawHome(); }
 });
 onSheetClose(() => setTimeout(redrawHome, 0));
-onLevelUp((lv) => {
+// Новий рівень не перекриває вікно з результатом спіну (там ризик ×2) —
+// показуємо, щойно воно закриється.
+let levelQueue = null;
+function showLevel(lv) {
   sheet(() => [
     el('div', { class: 'result' }, el('div', { class: 'big' }, lv.e), el('div', { class: 't' }, t('lvl.up', { n: lv.n })), el('div', { class: 's' }, lv.t)),
     el('div', { class: 'mt12' }, button(t('common.great'), () => closeSheet())),
   ]);
-});
+}
+onLevelUp((lv) => { if (sheetOpen() || games.busy()) levelQueue = lv; else showLevel(lv); });
+onSheetClose(() => setTimeout(() => { if (levelQueue && !sheetOpen()) { const lv = levelQueue; levelQueue = null; showLevel(lv); } }, 350));
 
 // Повернулись у застосунок — оновити стан.
 document.addEventListener('visibilitychange', () => {
@@ -177,6 +210,7 @@ function checkBuild() {
 
 async function boot() {
   ready();
+  watchTheme(tg);
   applyStart(startParam());
   try {
     await refresh();

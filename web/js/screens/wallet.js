@@ -4,7 +4,7 @@ import { el, mount, img } from '../dom.js';
 import { t } from '../i18n.js';
 import * as api from '../api.js';
 import { S, setBalance, refreshSoon, refresh } from '../state.js';
-import { openInvoice, confirm } from '../tg.js';
+import { openInvoice, confirm, haptic } from '../tg.js';
 import { section, list, row, button, empty, pill, toast, fail, sheet, fmt, stars, tix, when } from '../ui.js';
 
 export function render(nav, v) {
@@ -19,12 +19,16 @@ export function render(nav, v) {
     el('div', { class: 'h1' }, t('wallet.title')),
     el('div', { class: 'card' },
       el('div', { class: 'hero' }, el('div', { class: 'sub' }, t('wallet.balance')), el('div', { class: 'big' }, stars(b.stars)), el('div', { class: 'sub' }, tix(b.tickets))),
-      el('div', { class: 'btns', style: { padding: '0 16px 16px' } },
-        button(t('wallet.topup'), () => topup(nav)),
-        button(t('wallet.withdraw'), () => withdraw(nav, body), 'tinted'),
-        button(t('wallet.exchange'), () => exchange(nav, body), 'tinted'))),
+      el('div', { class: 'actions' },
+        action('＋', t('wallet.topup'), () => topup(nav)),
+        action('↑', t('wallet.withdraw'), () => withdraw(nav, body)),
+        action('⇄', t('wallet.exchange'), () => exchange(nav, body)))),
     body,
   ];
+}
+
+function action(icon, label, fn) {
+  return el('button', { class: 'action', type: 'button', onclick: () => { haptic('light'); fn(); } }, el('span', { class: 'ai' }, icon), el('span', null, label));
 }
 
 let data = null;

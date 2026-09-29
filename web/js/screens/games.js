@@ -47,7 +47,7 @@ function wheels(nav) {
 
 export function wheelCard(nav, id, compact) {
   const w = S.me.wheels.wheels[id];
-  const wheel = createWheel(w.segments);
+  const wheel = createWheel(w.segments, id);
   const hh = S.me.wheels.happyHour;
   const meta = el('div', { class: 'wheel-meta' });
   if (hh && hh.active) meta.appendChild(pill('🍀 ' + t('wheel.happy'), 'warn'));
@@ -102,6 +102,7 @@ export async function spinFlow(nav, id, wheel) {
       return null;
     }
     haptic('medium');
+    if (r.kind === 'prize') wheel.showPrize(r.segment, tierImg(r.outcome));
     await wheel.spinTo(r.segment);
     S.me.wheels = r.state;
     S.me.risk = r.riskAvailable ? { amount: r.amount, streak: 0, expiresAt: Date.now() + 5 * 60000, chance: 0.45, maxStreak: 3 } : null;

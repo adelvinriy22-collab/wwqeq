@@ -52,10 +52,14 @@ function outcomeAmount(id) {
   return 0;
 }
 // Сектор колеса, куди має впасти стрілка.
+// Якщо таких секторів кілька — випадковий із них, щоб колесо не зупинялось
+// щоразу на тому самому місці.
 function segmentIndex(wheel, id) {
   const segs = E.WHEELS[wheel].segments;
-  let i = segs.indexOf(id);
-  if (i !== -1) return i;
+  const same = [];
+  segs.forEach((s, j) => { if (s === id) same.push(j); });
+  if (same.length) return same.length === 1 ? same[0] : same[require('crypto').randomInt(same.length)];
+  let i;
   if (E.PRIZE_IDS.includes(id)) { i = segs.indexOf('nft'); if (i !== -1) return i; }
   // Найближчий номінал того ж типу.
   const kind = outcomeKind(id), amt = outcomeAmount(id);
@@ -69,7 +73,7 @@ function segmentIndex(wheel, id) {
 }
 function segmentsView(wheel) {
   return E.WHEELS[wheel].segments.map(id => {
-    if (id === 'nft') return { id, kind: 'prize', img: 'nft', cycle: E.NFT_IDS.map(n => E.getTier(n).img) };
+    if (id === 'nft') return { id, kind: 'prize', img: 'nft', cycle: E.NFT_IDS.concat(['premium3m']).map(n => E.getTier(n).img).filter(Boolean) };
     const kind = outcomeKind(id);
     if (kind === 'prize') return { id, kind, img: E.getTier(id).img };
     return { id, kind, amount: outcomeAmount(id) };
