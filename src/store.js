@@ -154,27 +154,37 @@ const migrations = {
       const legacyTickets = Math.max(0, (u.tickets || 0) + (u.invitedIds || []).length - (u.ticketsUsed || 0));
       u.tickets = legacyTickets;
       delete u.ticketsUsed;
-      // Досвід: очки чату стають загальним досвідом (титули зберігаються),
-      // XP поточного сезону пасу й поточного тижня ліги переносяться як є.
+      // Пас. Старий бот (pass.js) звав сезони «s9» (лік з нуля), рахував
+      // 250 XP на рівень і тримав забрані нагороди в claimed[] і claimedPrem[].
+      // Сезони ті самі 30-денні вікна від 1 січня 2026, тож поточний упізнаємо
+      // за номером, а XP перераховуємо так, щоб рівень пасу в людини не змінився.
       const p = u.pass && typeof u.pass === 'object' ? u.pass : null;
-      const seasonXp = p && p.season === curSeason ? Math.max(0, Number(p.xp) || 0) : 0;
+      const idx = Math.floor((Date.now() - passCfg.epoch) / (passCfg.seasonDays * 86400000));
+      const oldFmt = !!(p && typeof p.season === 'string' && /^s\d+$/.test(p.season));
+      const isCurrent = !!(p && (p.season === curSeason || (oldFmt && p.season === 's' + idx)));
+      const oldLevelXp = oldFmt ? 250 : passCfg.levelXp;
+      const seasonXp = isCurrent ? Math.round(Math.max(0, Number(p.xp) || 0) * passCfg.levelXp / oldLevelXp * 100) / 100 : 0;
       const weekXp = u.league && u.league.week === curWeek ? Math.max(0, Number(u.league.xp) || 0) : 0;
+      // Досвід: очки чату стають загальним досвідом (титули зберігаються).
       u.xp = {
         total: Math.max(0, Number(u.chatPts) || 0),
         season: { id: curSeason, xp: seasonXp },
         week: { id: curWeek, xp: weekXp },
         day: null,
       };
-      // Пас: лишаємо купівлю й забрані нагороди. Якщо формат забраних невідомий —
-      // вважаємо забраними всі відкриті рівні, щоб нагороди не видались удруге.
-      if (p && p.season === curSeason) {
+      if (isCurrent) {
         const lvl = Math.min(passCfg.maxLevel, 1 + Math.floor(seasonXp / passCfg.levelXp));
-        const okFmt = p.claimed && Array.isArray(p.claimed.free) && Array.isArray(p.claimed.prem);
         const all = []; for (let i = 1; i <= lvl; i++) all.push(i);
+        const nums = (a) => (Array.isArray(a) ? a : []).map(Number).filter(n => n > 0);
+        let claimed;
+        if (Array.isArray(p.claimed)) claimed = { free: nums(p.claimed), prem: nums(p.claimedPrem) };
+        else if (p.claimed && Array.isArray(p.claimed.free) && Array.isArray(p.claimed.prem)) claimed = { free: nums(p.claimed.free), prem: nums(p.claimed.prem) };
+        // Формат невідомий — вважаємо забраними всі відкриті рівні, щоб нагороди не видались удруге.
+        else claimed = { free: all.slice(), prem: p.premium ? all.slice() : [] };
         u.pass = {
-          season: curSeason, premium: !!p.premium, premiumMethod: p.premiumMethod || null,
-          claimed: okFmt ? { free: p.claimed.free.slice(), prem: p.claimed.prem.slice() } : { free: all.slice(), prem: p.premium ? all.slice() : [] },
-          bankXpFor: p.bankXpFor || null,
+          season: curSeason, premium: !!p.premium,
+          premiumMethod: p.premiumMethod || (p.premium ? 'balance' : null), premiumAt: p.premiumAt || p.boughtAt || null,
+          claimed, bankXpFor: p.bankXpFor || null,
         };
       } else {
         u.pass = null;

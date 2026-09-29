@@ -15,6 +15,7 @@ const ADMIN = '999';
 const ROOT = path.join(__dirname, '..');
 let tg, proc, base, dataDir;
 
+const SEASON_IDX = Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / (30 * 86400000));
 const U = (id, extra) => ({
   id, name: 'User' + id, username: 'user' + id, lang: 'uk', subscribed: true,
   invitedIds: [], starBalance: 0, joinedAt: Date.now(), lastActiveAt: Date.now(), ...extra,
@@ -36,6 +37,9 @@ function seedV2() {
       700: U('700', { starBalance: 60 }),
       // Мав ставку у відкритому банку — банк прибрано, ставка має повернутись.
       900: U('900', { starBalance: 1, tickets: 0 }),
+      // Пас у форматі справжнього giftbot: сезон «s9», 250 XP на рівень, куплений преміум.
+      950: U('950', { pass: { season: 's' + SEASON_IDX, xp: 900, claimed: [3], claimedPrem: [1, 2, 3], premium: true, boughtAt: 1, wagerDay: '', wagerXpDay: 0 } }),
+      951: U('951', { pass: { season: 's' + (SEASON_IDX - 1), xp: 5000, claimed: [], claimedPrem: [], premium: true } }),
     },
     giveaways: {}, applications: [], nextApplicationId: 1,
     featureFlags: {
@@ -118,6 +122,15 @@ test('міграція v2 → v3: білети, досвід, резервна �
   assert.strictEqual(db.users['400'].tickets, 10, '12 − 2 витрачені');
   assert.strictEqual(db.users['100'].ticketsUsed, undefined);
   assert.strictEqual(db.users['100'].xp.total, 310, 'очки чату → XP (титул той самий)');
+  // Пас зі справжнього giftbot: рівень той самий (900 XP / 250 = рівень 4), преміум і забрані нагороди збережено.
+  const p950 = db.users['950'];
+  assert.strictEqual(p950.pass.premium, true, 'куплений преміум-пас не втрачено');
+  assert.deepStrictEqual(p950.pass.claimed, { free: [3], prem: [1, 2, 3] });
+  assert.strictEqual(p950.xp.season.xp, 360);
+  const pv = await api('GET', '/progress', null, '950');
+  assert.strictEqual(pv.d.pass.level, 4);
+  assert.strictEqual(pv.d.pass.premium, true);
+  assert.strictEqual(db.users['951'].pass, null, 'пас минулого сезону не переноситься');
   const me = await api('GET', '/me');
   assert.strictEqual(me.status, 200, JSON.stringify(me.d));
   assert.strictEqual(me.d.balance.tickets, 23);
