@@ -6,10 +6,12 @@
 --glow — для подарунків із сяйвом (свічки торта): сяйво стає напівпрозорим.
 --precise — прибирати лише пікселі саме кольору фону (для сірих подарунків: кільце).
 --holes — прибрати й замкнений фон усередині предмета (дірка кільця).
+--noglow — прибрати сяйво навколо полум'я (торт) замість напівпрозорого.
+--rgba — зберегти без палітри (трохи більший файл, чистіші напівпрозорі краї).
 Потрібен Pillow (pip install pillow) — лише для розробки, не для бота."""
 import sys
 from collections import deque
-from PIL import Image, ImageFilter
+from PIL import Image, ImageFilter, ImageChops
 
 SIZE = 200
 
@@ -74,6 +76,34 @@ def cutout(src, dst):
     # М'який край замість «драбинки».
     mask = mask.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(1.1))
     im.putalpha(mask)
+    if NOGLOW:
+        # Сяйво навколо полум'я просто прибираємо: на світлому тлі напівпрозоре
+        # сяйво виглядає брудною плямою, а полум'я й без нього яскраве.
+        px2 = im.load()
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a0 = px2[x, y]
+                if a0 and max(r, g, b) < 185 and r >= g * 0.8 and g > b * 1.3 and b < 120 and not (r > 150 and g < 90):
+                    px2[x, y] = (0, 0, 0, 0)
+        # Після цього по краях лишаються поодинокі темні пікселі — прибрати й їх.
+        a_ch = im.getchannel('A').filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3))
+        im.putalpha(Image.eval(ImageChops.multiply(im.getchannel('A'), a_ch), lambda v: v))
+        # Темні сірі шматочки фону (шум JPEG), що торкаються прозорого, — теж геть.
+        # Полуниці темно-червоні (кольорові), тож їх це не зачіпає.
+        for _ in range(4):
+            px2 = im.load()
+            kill = []
+            for y in range(1, h - 1):
+                for x in range(1, w - 1):
+                    r, g, b, a0 = px2[x, y]
+                    if a0 and max(r, g, b) < 80 and max(r, g, b) - min(r, g, b) < 32 and \
+                            min(px2[x + 1, y][3], px2[x - 1, y][3], px2[x, y + 1][3], px2[x, y - 1][3]) < 128:
+                        kill.append((x, y))
+            for x, y in kill:
+                px2[x, y] = (0, 0, 0, 0)
+            if not kill:
+                break
+        mask = im.getchannel('A')
     if GLOW:
         # Сяйво (полум'я свічок) на темному тлі — «віднімаємо» тло: темно-жовті
         # пікселі стають напівпрозорим жовтим замість брудно-оливкового.
@@ -102,13 +132,18 @@ def cutout(src, dst):
     canvas.paste(im, ((side - cw) // 2, (side - ch) // 2), im)
     canvas = canvas.resize((SIZE, SIZE), Image.LANCZOS)
     # Палітра на 256 кольорів — у кілька разів менший файл, прозорість зберігається.
-    small = canvas.quantize(colors=256, method=Image.Quantize.FASTOCTREE)
-    small.save(dst, optimize=True)
+    if RGBA:
+        canvas.save(dst, optimize=True)          # без палітри — чисті напівпрозорі краї
+    else:
+        small = canvas.quantize(colors=256, method=Image.Quantize.FASTOCTREE)
+        small.save(dst, optimize=True)
 
 
-GLOW = False
+GLOW = NOGLOW = RGBA = False
 if __name__ == '__main__':
     GLOW = '--glow' in sys.argv
+    NOGLOW = '--noglow' in sys.argv
+    RGBA = '--rgba' in sys.argv
     PRECISE = '--precise' in sys.argv
     HOLES = '--holes' in sys.argv
     cutout(sys.argv[1], sys.argv[2])
