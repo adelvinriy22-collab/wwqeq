@@ -90,6 +90,7 @@ function createBot(token) {
   require('./games').register(bot, hooks, start.gate);
   require('./menu').register(bot, hooks, start.gate);
   require('./levels').register(bot);
+  require('./autogift').register(bot, hooks);
   campaigns.register(bot, hooks);
   apps.register(bot, hooks);
   ops.register(bot);
@@ -140,6 +141,7 @@ async function setupUi(bot) {
       { command: 'tickets', description: 'Білети гравцю: /tickets @нік 5 або -5' },
       { command: 'broadcast', description: 'Розсилка (відповіддю на повідомлення)' },
       { command: 'say', description: 'Пост у чат від імені бота: /say текст' },
+      { command: 'autowd', description: 'Автовивід Мішки гравцю (один раз): /autowd @нік' },
       { command: 'chat_status', description: 'Стан чату' },
       { command: 'version', description: 'Версія' },
     ], { scope: { type: 'chat', chat_id: Number(id) } }).catch(e => console.error('setMyCommands(admin):', e.message));

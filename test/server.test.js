@@ -48,6 +48,8 @@ function seedV2() {
       970: U('970', { starBalance: 50 }),
       // Відкривають скриньки в чаті.
       980: U('980', { tickets: 0 }), 981: U('981', { tickets: 0 }),
+      // Автовивід Мішки.
+      985: U('985', {}),
     },
     giveaways: {}, applications: [], nextApplicationId: 1,
     featureFlags: {
@@ -428,6 +430,38 @@ test('/say: пост у чат від імені бота — текст, пре
   assert.doesNotMatch(post.payload.text, /\[🎰 Грати\]/, 'рядок кнопки не в тексті');
   assert.deepStrictEqual(post.payload.reply_markup.inline_keyboard, [[{ text: '🎰 Грати', url: 'https://t.me/TestStarBot' }]]);
   assert.ok(await (async () => { for (let i = 0; i < 20; i++) { await sleep(100); if (tg.calls.slice(n0).some(c => c.method === 'pinChatMessage')) return true; } return false; })(), 'закріплено');
+});
+
+test('автовивід: адмін відкриває, гравець пише підпис, бот надсилає Мішку — рівно один раз', async () => {
+  const from = { id: 985, is_bot: false, first_name: 'P985', username: 'user985' };
+  const cb = (data) => tg.push({ callback_query: { id: 'g' + Math.random(), from, chat_instance: 'x', data, message: { message_id: 9, date: 0, chat: { id: 985, type: 'private' } } } });
+  const waitFor = async (pred) => { for (let i = 0; i < 30; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  const n0 = tg.calls.length;
+  adminCmd('/autowd @user985');
+  const invite = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '985' && /ag:text/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  assert.ok(invite, 'гравцю прийшло запрошення');
+  cb('ag:text');
+  await sleep(400);
+  tg.push({ message: { message_id: 2001, date: Math.floor(Date.now() / 1000), chat: { id: 985, type: 'private' }, from, text: 'Дякую за Мішку 🧸🔥', entities: [{ type: 'bold', offset: 0, length: 5 }, { type: 'url', offset: 6, length: 2 }] } });
+  const preview = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '985' && c.payload.text === 'Дякую за Мішку 🧸🔥'));
+  assert.ok(preview, 'підпис показано так, як його побачать');
+  assert.match(JSON.stringify(preview.payload.reply_markup), /ag:send/);
+  cb('ag:send');
+  cb('ag:send');   // подвійне натискання
+  const gift = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendGift'));
+  assert.ok(gift, 'бот викликав sendGift');
+  assert.strictEqual(gift.payload.user_id, 985);
+  assert.strictEqual(gift.payload.text, 'Дякую за Мішку 🧸🔥');
+  assert.deepStrictEqual(gift.payload.text_entities, [{ type: 'bold', offset: 0, length: 5 }], 'лише дозволене форматування');
+  await sleep(600);
+  assert.strictEqual(tg.calls.slice(n0).filter(c => c.method === 'sendGift').length, 1, 'подвійне натискання — одна Мішка');
+  assert.strictEqual(readDb().users['985'].autoGift.status, 'sent');
+  // Повторно — ні гравцю, ні адміну.
+  cb('ag:plain');
+  adminCmd('/autowd @user985');
+  await sleep(800);
+  assert.strictEqual(tg.calls.slice(n0).filter(c => c.method === 'sendGift').length, 1, 'автовивід одноразовий');
+  assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendMessage' && String(c.payload.chat_id) === ADMIN && /уже отримав/.test(c.payload.text || '')), 'адміну сказано, що вже отримав');
 });
 
 test('пас: закритий рівень не видається; промокод один раз', async () => {
