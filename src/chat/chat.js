@@ -1162,7 +1162,7 @@ function createChat(bot, opts) {
       sec('trophy', 'КЛАНОВА ВІЙНА', 'Вступи в клан за 1 клік (<b>+' + econ.CLANS.joinBonus.tickets + ' ' + TIX + ' +' + econ.CLANS.joinBonus.xp + ' XP одразу</b>) або створи свій (<b>+' + econ.CLANS.createBonus.tickets + ' ' + TIX + ' +' + econ.CLANS.createBonus.xp + ' XP</b>). XP учасників — очки клану: клан відкриває скрині з білетами для всіх, а у фіналі топ-3 отримують призи. <code>/clan</code> — усе про війну.',
         'скрині кожному + у фіналі до ' + econ.CLANS.rewards[0].stars + S + ' ' + econ.CLANS.rewards[0].tickets + ' ' + TIX + ', лідеру 🎁 25' + S) + '\n' +
       sec('almost', 'ГАРЯЧА ГОДИНА', 'Раз на день у випадковий момент між ' + CFG.hhFromHour + ':00 і ' + CFG.hhToHour + ':00 на ' + CFG.hhMinutes + ' хв.', 'XP ×2 — рівень росте удвічі швидше') + '\n' +
-      E('crown', '👑') + ' <b>ЗА ЩО XP У ЧАТІ</b>\n<blockquote expandable>• повідомлення — 1 (у гарячу годину 2), до ' + econ.XP.chat.dayCap + ' XP з чату на день\n• дроп, вікторина — 5\n• дуель — 3, перемога — ще 3\n• /bonus — 2 · квест дня — 10\n• активісти дня й спільна ціль — див. вище</blockquote>\n' +
+      E('crown', '👑') + ' <b>ЗА ЩО XP У ЧАТІ</b>\n<blockquote expandable>• повідомлення — 1 (у гарячу годину 2), до ' + econ.XP.chat.dayCap + ' XP з чату на день (у клані під час війни — ×' + econ.CLANS.xpCapMult + ')\n• дроп, вікторина — 5\n• дуель — 3, перемога — ще 3\n• /bonus — 2 · квест дня — 10\n• активісти дня й спільна ціль — див. вище</blockquote>\n' +
       '<b>Команди:</b> /quests · /bonus · /games · /rank · /me · /goal · /duel · /clan\n\n' +
       '<i>Брати участь можуть ті, хто запустив @' + (getBotUsername() || 'StarForgeX_bot') + '</i>';
     await ctx.reply(t, { parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id, disable_web_page_preview: true }).catch(() => {});
@@ -1652,7 +1652,7 @@ function createChat(bot, opts) {
         const next = Object.keys(CFG.streakMilestones).map(Number).find(d => d > streakOf(u));
         return next ? ' · до бонусу ' + next + ' дн.' : '';
       })(),
-      '✍️ XP з чату сьогодні: <b>+' + Math.floor(progress.xpOf(u).day.src.chat || 0) + '</b> / ' + econ.XP.chat.dayCap,
+      '✍️ XP з чату сьогодні: <b>+' + Math.floor(progress.xpOf(u).day.src.chat || 0) + '</b> / ' + progress.dayCapOf(uid, 'chat') + (progress.dayCapOf(uid, 'chat') > econ.XP.chat.dayCap ? ' (у клані ×' + econ.CLANS.xpCapMult + ')' : ''),
       '💬 Сьогодні в чаті: <b>' + n + '</b> повідомл.' + (ai >= 0 ? ' · <b>#' + (ai + 1) + '</b> за активністю' : ''),
       n < CFG.activistMinMsgs ? '      до активіста дня — ще ' + (CFG.activistMinMsgs - n) : null,
       E('statsIcon', '📊') + ' Ціль чату: <b>' + g.count + ' / ' + CFG.goalTarget + '</b>' + (g.done ? ' ' + E('check', '✅') : ''),
@@ -1826,7 +1826,7 @@ function createChat(bot, opts) {
             ]), { parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id }).catch(() => {});
           }
           if (!cmd && ctx.message.reply_to_message && clans.onReply(ctx)) return;   // назва нового клану у відповідь боту
-          if (!cmd && ctx.from && !ctx.from.is_bot) onChatMessage(ctx);
+          if (!cmd && ctx.from && !ctx.from.is_bot) { onChatMessage(ctx); try { clans.onChatMessage(ctx); } catch (e) {} }
         }
       } catch (e) { console.error('chat router:', e.message); }
     };

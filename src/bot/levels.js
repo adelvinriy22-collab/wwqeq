@@ -121,9 +121,10 @@ function remember(name, msg) {
 }
 
 // ─── Скільки XP ще можна набрати сьогодні ───────────────────────────────
-function todayLeft(u) {
+// Стеля — з урахуванням множника (у клані під час війни — ×2).
+function todayLeft(u, uid) {
   const src = (progress.view(u).today) || {};
-  const left = (k) => Math.max(0, Math.round((E.XP[k].dayCap || 0) - (src[k] || 0)));
+  const left = (k) => Math.max(0, Math.round((progress.dayCapOf(uid, k) || 0) - (src[k] || 0)));
   return { spin: left('spin'), wager: left('wager'), chat: left('chat'), friend: left('friend'), quest: left('quest') };
 }
 // Скількох гравців випереджає (за загальним XP).
@@ -152,7 +153,7 @@ function mainPage(uid) {
     if (rewardText(lv.next.reward)) lines.push(tt(lang, 'reward', { reward: rewardText(lv.next.reward) }));
     const un = unlockText(lang, lv.next.unlocks);
     if (un) lines.push(tt(lang, 'unlock', { list: un }));
-    const d = todayLeft(u);
+    const d = todayLeft(u, uid);
     const can = d.spin + d.wager + d.chat;       // те, що точно доступне сьогодні (завдань може й не бути)
     if (can > 0) lines.push('', tt(lang, 'today', { n: can }) + ' ' + tt(lang, can >= lv.next.left ? 'todayOk' : 'todayNo'));
     lines.push(tt(lang, 'rank', { p: aheadPercent(uid) }));
@@ -175,16 +176,17 @@ function howPage(uid) {
   const u = users.get(uid) || {};
   const lang = langOf(u);
   const lv = progress.view(u, lang).level;
-  const d = todayLeft(u);
+  const d = todayLeft(u, uid);
   const X = E.XP;
+  const cap = (k) => progress.dayCapOf(uid, k);
   const lines = [tt(lang, 'hLead'), '',
-    tt(lang, 'hSpin', { per: X.spin.per, left: d.spin, cap: X.spin.dayCap }),
-    tt(lang, 'hWager', { g: E.XP_RATES.gamePerStar, left: d.wager, cap: X.wager.dayCap }),
+    tt(lang, 'hSpin', { per: X.spin.per, left: d.spin, cap: cap('spin') }),
+    tt(lang, 'hWager', { g: E.XP_RATES.gamePerStar, left: d.wager, cap: cap('wager') }),
     tt(lang, 'hBank', { per: X.bank.per }),
-    tt(lang, 'hChat', { left: d.chat, cap: X.chat.dayCap }),
-    tt(lang, 'hFriend', { per: X.friend.per, left: d.friend, cap: X.friend.dayCap }),
+    tt(lang, 'hChat', { left: d.chat, cap: cap('chat') }),
+    tt(lang, 'hFriend', { per: X.friend.per, left: d.friend, cap: cap('friend') }),
     tt(lang, 'hDeposit', { per: X.deposit.per }),
-    tt(lang, 'hQuest', { left: d.quest, cap: X.quest.dayCap }),
+    tt(lang, 'hQuest', { left: d.quest, cap: cap('quest') }),
   ];
   if (lv.next) {
     const need = Math.ceil(lv.next.left);

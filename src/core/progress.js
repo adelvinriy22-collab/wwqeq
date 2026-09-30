@@ -13,8 +13,17 @@ const E = require('../economy');
 const time = require('../lib/time');
 const users = require('./users');
 
-// onXp(uid, src, gain) — кожне нарахування (клани рахують із нього свої очки).
-const hooks = { onLevelUp: [], onXp: [] };
+// onXp(uid, src, gain, raw) — кожне нарахування; raw — скільки було б без денної
+// стелі (клани рахують очки й понад стелю). capMult(uid, src) → множник денної
+// стелі (у клані під час війни — ×2).
+const hooks = { onLevelUp: [], onXp: [], capMult: [] };
+function dayCapOf(uid, src) {
+  const cap = E.XP[src] && E.XP[src].dayCap;
+  if (cap == null) return null;
+  let m = 1;
+  for (const f of hooks.capMult) { try { m = Math.max(m, Number(f(uid, src)) || 1); } catch (e) {} }
+  return cap * m;
+}
 
 function seasonIndex(now) { return Math.floor(((now || Date.now()) - E.PASS.epoch) / (E.PASS.seasonDays * time.DAY_MS)); }
 function seasonId(now) { return 'S' + (seasonIndex(now) + 1); }
@@ -62,6 +71,10 @@ function levelInfo(total, lang) {
   };
 }
 
+function runXpHooks(uid, src, gain, raw) {
+  for (const h of hooks.onXp) { try { h(uid, src, gain, raw); } catch (e) { console.error('onXp hook:', e.message); } }
+}
+
 // Нарахувати XP. Повертає скільки реально нараховано (після денних стель).
 // opts.silent — без сповіщень про новий рівень; opts.msgId — для реакції в чаті.
 function addXp(uid, src, amount, opts) {
@@ -69,13 +82,14 @@ function addXp(uid, src, amount, opts) {
   if (!u) return 0;
   let gain = Math.max(0, Math.round((Number(amount) || 0) * 100) / 100);
   if (!gain) return 0;
+  const raw = gain;
   const now = Date.now();
   const x = xpOf(u, now);
-  const cap = E.XP[src] && E.XP[src].dayCap;
+  const cap = dayCapOf(uid, src);
   if (cap != null) {
     const used = x.day.src[src] || 0;
     gain = Math.min(gain, Math.max(0, cap - used));
-    if (gain <= 0) return 0;
+    if (gain <= 0) { runXpHooks(uid, src, 0, raw); return 0; }
   }
   const before = levelIndex(x.total);
   x.total = Math.round((x.total + gain) * 100) / 100;
@@ -83,7 +97,7 @@ function addXp(uid, src, amount, opts) {
   x.week = { ...x.week, xp: Math.round((x.week.xp + gain) * 100) / 100, lastAt: now };
   x.day = { ...x.day, src: { ...x.day.src, [src]: (x.day.src[src] || 0) + gain } };
   users.patch(uid, { xp: x });
-  for (const h of hooks.onXp) { try { h(uid, src, gain); } catch (e) { console.error('onXp hook:', e.message); } }
+  runXpHooks(uid, src, gain, raw);
   const after = levelIndex(x.total);
   if (after > before) {
     // Нагорода — за КОЖЕН пройдений рівень, а сповіщення одне: про останній,
@@ -144,6 +158,6 @@ function ladder(u, lang) {
 }
 
 module.exports = {
-  hooks, addXp, view, levelInfo, levelIndex, xpOf, perksOf, ladder,
+  hooks, addXp, dayCapOf, view, levelInfo, levelIndex, xpOf, perksOf, ladder,
   seasonId, seasonEndsAt, weekXp, seasonXp,
 };

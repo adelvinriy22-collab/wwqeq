@@ -369,20 +369,68 @@ function setOpen(byUid, open) {
 }
 
 // ─── Очки: XP учасників під час війни ───────────────────────────────────
-function onXp(uid, src, gain) {
-  if (!gain || src === 'clan' || src === 'admin') return;
+// raw — скільки XP було б без денної стелі: понад стелю активність однаково
+// йде в очки клану (до C.overflowDayCap на день на гравця).
+function onXp(uid, src, gain, raw) {
+  if (src === 'clan' || src === 'admin') return;
+  const over = Math.max(0, r2((raw || gain || 0) - (gain || 0)));
+  if (!gain && !over) return;
   const u = users.get(uid);
   if (!u || !u.clanId) return;
   const d = data();
   if (!counting(d)) return;
   const c = d.list[u.clanId];
   if (!c || !c.members.includes(String(uid))) return;
+  let extra = 0;
+  if (over > 0) {
+    const day = time.dayKey(Date.now());
+    const used = u.clanOver && u.clanOver.day === day ? u.clanOver.n : 0;
+    extra = Math.min(over, Math.max(0, C.overflowDayCap - used));
+    if (extra > 0) users.patch(uid, { clanOver: { day, n: r2(used + extra) } });
+  }
+  const add = r2((gain || 0) + extra);
+  if (add <= 0) return;
   const s = score(d, c);
-  s.pts = r2(s.pts + gain);
-  s.contrib[uid] = r2((s.contrib[uid] || 0) + gain);
+  s.pts = r2(s.pts + add);
+  s.contrib[uid] = r2((s.contrib[uid] || 0) + add);
   payChests(d, c);
   save(d);
 }
+
+// Множник денної стелі XP: у клані під час війни — ×C.xpCapMult.
+function capMult(uid, src) {
+  if (!C.capSources.includes(src)) return 1;
+  const d = data();
+  return counting(d) && clanOfUser(d, uid) ? C.xpCapMult : 1;
+}
+
+// ─── Особисте запрошення: активний у чаті, але без клану ────────────────
+const talk = new Map();   // uid → повідомлень сьогодні (скидається щодня)
+let talkDay = null, lastNudgeAt = 0;
+function onChatMessage(ctx) {
+  const uid = String(ctx.from.id);
+  const d = data();
+  if (!counting(d) || users.isAdmin(uid)) return;
+  const day = time.dayKey(Date.now());
+  if (talkDay !== day) { talk.clear(); talkDay = day; }
+  const n = (talk.get(uid) || 0) + 1;
+  talk.set(uid, n);
+  if (n !== C.nudgeAfter || clanOfUser(d, uid)) return;
+  const u = users.get(uid);
+  if (u && u.clanNudge === d.event.id) return;
+  if (Date.now() - lastNudgeAt < 10 * 60e3) return;           // не частіше разу на 10 хв на весь чат
+  lastNudgeAt = Date.now();
+  if (u) users.patch(uid, { clanNudge: d.event.id });
+  const who = ctx.from.username ? '@' + ctx.from.username : esc(ctx.from.first_name || 'друже');
+  ctx.reply(withEmoji(`{:lightning} ${who}, ти сьогодні активний у чаті — а в клані кожне твоє повідомлення приносило б ще й очки клану!\n\n` +
+    `{:giftBox} <b>${bonusText(C.joinBonus)} одразу</b> за вступ\n{:rocket} ліміт XP у клані <b>×${C.xpCapMult}</b>\n{:trophy} скрині й призи фіналу` +
+    (freePlaces(d) ? `\n{:crown} призових місць вільно: <b>${freePlaces(d)}</b>` : '')), {
+    parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id, allow_sending_without_reply: true,
+    reply_markup: { inline_keyboard: [[btn('ВСТУПИТИ · +' + C.joinBonus.tickets + '🎫', 'cl:q', 'success', 'lightning'), btn('СВІЙ КЛАН · +' + C.createBonus.tickets + '🎫', 'cl:new', null, 'crown')]] },
+  }).catch(() => {});
+}
+// Скільки призових місць фіналу ще ніхто не займає (мало кланів — шанс для нових).
+const freePlaces = (d) => Math.max(0, C.rewards.length - ranked(d).filter(r => r.pts > 0).length);
 
 // ─── Тексти ─────────────────────────────────────────────────────────────
 const card = (icon, title, lines, foot) => withEmoji(icon + ' <b>' + title + '</b>\n' + LINE + '\n' +
@@ -401,6 +449,7 @@ const best = C.rewards[0];
 const giftOf = (rw) => rw.ownerGift ? `${E.getTier(rw.ownerGift).emoji} ${E.getTier(rw.ownerGift).price}⭐` : '';
 const perks = () => [
   `{:lightning} <b>${bonusText(C.joinBonus)} одразу</b> за вступ, <b>${bonusText(C.createBonus)}</b> — за свій клан`,
+  `{:rocket} у клані ліміт XP <b>×${C.xpCapMult}</b>, а очки клану йдуть навіть понад ліміт`,
   `{:giftBox} скрині клану — до <b>${chestSum()}</b> кожному`,
   `{:trophy} фінал, топ-3 — до <b>+${best.stars}⭐ +${best.tickets}🎫</b> кожному, лідеру ${giftOf(best)}`,
 ];
@@ -429,10 +478,12 @@ function startText(ev) {
     `{:clockIcon} Фінал: <b>${whenText(ev.endsAt)}</b> (Київ)`,
   ], `Свій клан — лише ${C.createCost}🎫 · /clan`);
 }
+const freeLine = (d) => freePlaces(d) ? `{:crown} Призових місць вільно: <b>${freePlaces(d)}</b> — створи клан, і приз уже майже твій!` : null;
 function statusText(icon, title) {
   const d = data();
   return card(icon, title, [
     topLine(d),
+    freeLine(d),
     '',
     `Без клану? Вступай за 1 клік — <b>${bonusText(C.joinBonus)} одразу</b>, а за свій клан — <b>${bonusText(C.createBonus)}</b>. Далі — скрині до ${chestSum()} і призи фіналу 👇`,
   ]);
@@ -459,6 +510,7 @@ function hubText(uid) {
       ...perks(),
       '',
       topLine(d),
+      freeLine(d),
     ], 'Очки клану — XP учасників: пиши в чаті, грай, крути колесо');
   }
   const s = score(d, mine), my = Math.floor(s.contrib[String(uid)] || 0), r = rankOf(d, mine);
@@ -467,6 +519,7 @@ function hubText(uid) {
     `${clanTitle(mine)} — ` + (r ? `<b>#${r}</b> · ` : '') + `<b>${Math.floor(s.pts)}</b> ${ptsWord(s.pts)}`,
     chestLine(d, mine),
     `Твій внесок: <b>${my}</b> · ` + (my >= C.activeMin ? '{:check} ти в призах фіналу' : `ще ${C.activeMin - my} — і ти в призах фіналу`),
+    `{:rocket} Ліміт XP у клані ×${C.xpCapMult}, понад ліміт очки однаково йдуть клану`,
     '',
     '{:trophy} <b>Призи фіналу:</b>',
     ...finalLines(),
@@ -855,5 +908,5 @@ function summaryOf(uid) { const c = clanOfUser(data(), uid); return c ? { emoji:
 
 module.exports = {
   create, join, decide, leave, kick, setOpen, onXp, tick, finish, startEvent, adminDelete, adminCommand,
-  command, callback, onReply, onPrivateText, onStart, isClanCommand, badgeOf, summaryOf, standings, data, COMMANDS,
+  command, callback, onReply, onPrivateText, onStart, onChatMessage, capMult, isClanCommand, badgeOf, summaryOf, standings, data, COMMANDS,
 };
