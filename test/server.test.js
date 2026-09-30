@@ -464,6 +464,26 @@ test('автовивід: адмін відкриває, гравець пише
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendMessage' && String(c.payload.chat_id) === ADMIN && /уже отримав/.test(c.payload.text || '')), 'адміну сказано, що вже отримав');
 });
 
+test('джекпот: Мішка видається одразу (sendGift) рівно раз, у чаті барабан, фото й закріплення', async () => {
+  const n0 = tg.calls.length;
+  adminCmd('/jackpot https://t.me/starforge_chat/555 @user960');
+  const waitFor = async (pred) => { for (let i = 0; i < 40; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  const ask = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /jp_555_bear/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  assert.ok(ask, 'адміну — вибір призу');
+  const click = () => tg.push({ callback_query: { id: 'j' + Math.random(), from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, chat_instance: 'a', data: 'jp_555_bear', message: { message_id: 3, date: 0, chat: { id: Number(ADMIN), type: 'private' } } } });
+  click(); click();
+  const gift = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendGift'));
+  assert.ok(gift, 'Мішку надіслано подарунком');
+  assert.strictEqual(gift.payload.user_id, 960);
+  assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'pinChatMessage')), 'джекпот закріплено');
+  assert.strictEqual(tg.calls.slice(n0).filter(c => c.method === 'sendGift').length, 1, 'подвійне натискання — одна Мішка');
+  assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendDice' && String(c.payload.chat_id) === '-1001' && c.payload.emoji === '🎰'), 'барабан 🎰 у чаті');
+  assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendPhoto'), 'картка JACKPOT');
+  await sleep(500);
+  const app = readDb().applications.find(a => a.uid === '960' && a.source === 'chat_jackpot');
+  assert.ok(app && app.status === 'approved' && app.autoSent, 'в історії — видано автоматично');
+});
+
 test('пас: закритий рівень не видається; промокод один раз', async () => {
   const locked = await api('POST', '/pass/claim', { level: 30, track: 'free' }, '700');
   assert.strictEqual(locked.status, 200);

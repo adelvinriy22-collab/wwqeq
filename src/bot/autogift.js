@@ -15,9 +15,10 @@ const { withEmoji } = require('../emoji');
 const { esc } = require('../lib/util');
 const time = require('../lib/time');
 
-const GIFT = { emoji: '🧸', stars: 15, fallbackId: '5170233102089322756' };   // «Мішка» з каталогу Telegram
-const TEXT_MAX = 128;                                                          // ліміт Telegram на підпис подарунка
-const KEEP_ENTITIES = new Set(['bold', 'italic', 'underline', 'strikethrough', 'spoiler', 'custom_emoji']);
+const tggifts = require('../features/tggifts');
+
+const GIFT = { tier: 'bear', ...tggifts.CATALOG.bear };   // «Мішка» з каталогу Telegram
+const TEXT_MAX = tggifts.TEXT_MAX;                         // ліміт Telegram на підпис подарунка
 
 const T = {
   uk: {
@@ -60,19 +61,6 @@ const stateOf = (uid) => (users.get(uid) || {}).autoGift || null;
 const setState = (uid, patch) => users.patch(uid, { autoGift: { ...(stateOf(uid) || {}), ...patch } });
 const who = (u) => (u.username ? '@' + u.username : esc(u.name || '')) + ' · <code>' + u.id + '</code>';
 
-// id «Мішки» беремо з каталогу подарунків Telegram (раз на годину).
-let giftCache = { id: null, at: 0 };
-async function bearGiftId() {
-  if (giftCache.id && Date.now() - giftCache.at < 3600e3) return giftCache.id;
-  try {
-    const r = await notify.tg.telegram.callApi('getAvailableGifts', {});
-    const list = (r && r.gifts) || [];
-    const g = list.find(x => x.star_count === GIFT.stars && x.sticker && x.sticker.emoji === GIFT.emoji && !x.total_count)
-      || list.find(x => x.sticker && x.sticker.emoji === GIFT.emoji);
-    if (g) { giftCache = { id: g.id, at: Date.now() }; return g.id; }
-  } catch (e) { console.error('getAvailableGifts:', e.message); }
-  return GIFT.fallbackId;
-}
 
 // ─── Адмін відкриває автовивід ──────────────────────────────────────────
 function grantKeyboard(lang) {
@@ -101,19 +89,12 @@ async function send(ctx, uid) {
   setState(uid, { status: 'sending', sendingAt: Date.now() });
   await ctx.reply(bt(lang, 'sending')).catch(() => {});
   const draft = st.draft || null;
-  const payload = { user_id: Number(uid), gift_id: await bearGiftId() };
-  if (draft && draft.text) {
-    payload.text = draft.text;
-    if (draft.entities && draft.entities.length) payload.text_entities = draft.entities;
-  }
-  try {
-    await notify.tg.telegram.callApi('sendGift', payload);
-  } catch (e) {
-    setState(uid, { status: 'granted', lastError: String(e.message || e).slice(0, 200), lastErrorAt: Date.now() });
+  const r = await tggifts.send(uid, GIFT.tier, draft && draft.text, draft && draft.entities);
+  if (!r.ok) {
+    setState(uid, { status: 'granted', lastError: r.error, lastErrorAt: Date.now() });
     const u = users.get(uid) || {};
-    const low = /BALANCE_TOO_LOW|not enough|STARGIFT_/i.test(String(e.message));
-    notify.admin('⚠️ <b>Автовивід не вдався</b>: ' + who(u) + '\n<code>' + esc(String(e.message || e).slice(0, 300)) + '</code>' +
-      (low ? '\n\nСхоже, на балансі зірок бота замало (Мішка коштує ' + GIFT.stars + '⭐). Поповни баланс бота — і гравець натисне «Спробувати ще».' : ''));
+    notify.admin('⚠️ <b>Автовивід не вдався</b>: ' + who(u) + '\n<code>' + esc(r.error) + '</code>' +
+      (r.lowBalance ? '\n\nСхоже, на балансі зірок бота замало (Мішка коштує ' + GIFT.stars + '⭐). Поповни баланс бота — і гравець натисне «Спробувати ще».' : ''));
     return ctx.reply(tt(lang, 'failed'), html([[ui.cb(bt(lang, 'retry'), 'ag:send', 'primary', 'lightning')]])).catch(() => {});
   }
   setState(uid, { status: 'sent', sentAt: Date.now(), text: draft ? draft.text : '' });
@@ -126,14 +107,7 @@ async function send(ctx, uid) {
 }
 const i18nOpen = (lang) => require('../i18n').t(lang, 'btn.open');
 
-// Підпис: лише ті форматування, які Telegram приймає в подарунках (включно з преміум-емодзі).
-function cleanEntities(ents) {
-  return (ents || []).filter(e => KEEP_ENTITIES.has(e.type)).map(e => {
-    const o = { type: e.type, offset: e.offset, length: e.length };
-    if (e.type === 'custom_emoji') o.custom_emoji_id = e.custom_emoji_id;
-    return o;
-  });
-}
+const cleanEntities = tggifts.cleanEntities;
 
 function register(bot, hooks) {
   const awaiting = new Set();
@@ -216,4 +190,4 @@ function register(bot, hooks) {
   });
 }
 
-module.exports = { register, grant, send, bearGiftId, GIFT, TEXT_MAX };
+module.exports = { register, grant, send, GIFT, TEXT_MAX };

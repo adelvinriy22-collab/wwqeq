@@ -12,6 +12,7 @@ const users = require('../../core/users');
 const progress = require('../../core/progress');
 const notify = require('../../core/notify');
 const applications = require('../../features/applications');
+const tggifts = require('../../features/tggifts');
 const time = require('../../lib/time');
 const ui = require('../ui');
 const { isAdminCtx, broadcast, audience, argsOf, yes } = require('./shared');
@@ -20,6 +21,8 @@ const { withEmoji } = require('../../emoji');
 
 const pendingBroadcast = new Map();   // адмін -> { from, id, at }
 const jpPending = new Map();          // msgId -> uid, коли автора вказано вручну
+const jpDone = new Set();             // msgId, за які приз уже видано (подвійне натискання — не вдруге)
+const JP_GIFT_TEXT = '🎰 ДЖЕКПОТ у чаті StarForge! Будь активним — і вигравай ще 🔥';
 
 const JP_PRIZES = {
   bear: { label: '🧸 Мішку', kind: 'tier', id: 'bear' },
@@ -237,11 +240,13 @@ function register(bot, hooks) {
     if (!who) return ctx.reply('🤔 Не знаю, хто автор — бот пам\'ятає лише свіжі повідомлення.\nНадішли те саме посилання й через пробіл @username автора.');
     if (users.isAdmin(who.uid)) return ctx.reply('Це твоє повідомлення 🙂');
     const inBot = !!(users.get(who.uid) || {}).lang;
-    return ctx.reply(`🎰 Джекпот для ${who.plain}` + (inBot ? '' : '\n⚠️ Ця людина ще не запускала бота — приз чекатиме її') + '\n\nЯкий приз?', ui.kb([
-      [ui.cb('✨ +100 XP (безкоштовно)', `jp_${msgId}_x100`, 'success')],
+    jpDone.delete(msgId);
+    return ctx.reply(`🎰 Джекпот для ${who.plain}` + (inBot ? '' : '\n⚠️ Ця людина ще не запускала бота — приз чекатиме її') +
+      '\n\nЯкий приз?\n🧸 Мішку (15⭐) і 🎁 Подарунок (25⭐) бот надішле <b>одразу сам</b> — справжнім подарунком Telegram з балансу зірок бота.', { parse_mode: 'HTML', ...ui.kb([
+      [ui.cb('🧸 Мішка — одразу', `jp_${msgId}_bear`, 'danger'), ui.cb('🎁 Подарунок — одразу', `jp_${msgId}_gift`, 'danger')],
       [ui.cb('20 🎫', `jp_${msgId}_t20`, 'primary'), ui.cb('5 ⭐', `jp_${msgId}_s5`, 'primary')],
-      [ui.cb('🧸 Мішка', `jp_${msgId}_bear`), ui.cb('🎁 Подарунок', `jp_${msgId}_gift`)],
-    ]));
+      [ui.cb('✨ +100 XP (безкоштовно)', `jp_${msgId}_x100`, 'success')],
+    ]) });
   }
   bot.command('jackpot', async (ctx) => { if (!isAdminCtx(ctx)) return; await jackpotAsk(ctx, ctx.message.text); });
   hooks.onAdminText.push(async (ctx, text) => {
@@ -254,6 +259,9 @@ function register(bot, hooks) {
     await ctx.answerCbQuery().catch(() => {});
     const msgId = Number(ctx.match[1]);
     const prize = JP_PRIZES[ctx.match[2] === 'p100' ? 'x100' : ctx.match[2]];
+    // Друге натискання (або інша кнопка) по тому самому повідомленню — приз уже видано.
+    if (jpDone.has(msgId)) return ctx.reply('Цей джекпот уже видано.').catch(() => {});
+    jpDone.add(msgId);
     const known = chat() ? chat().authorOf(msgId) : null;
     const uid = jpPending.get(msgId) || (known && known.uid);
     if (!uid) return ctx.reply('Автора вже не знаю — надішли посилання ще раз із @username.');
@@ -261,14 +269,27 @@ function register(bot, hooks) {
     const u = users.get(uid) || {};
     const name = u.username ? '@' + u.username : (known ? known.name : 'гравець');
     // Приз видається СПРАВЖНІЙ — інакше публічний «джекпот» обернеться хейтом.
-    let note;
-    if (prize.kind === 'tier') note = 'заявка #' + applications.create(uid, prize.id, 'chat_jackpot', {}, { silent: true }).id;
-    else if (prize.kind === 'stars') { users.move(uid, { stars: prize.n }, 'jackpot', {}); note = 'на балансі'; }
+    let note, auto = false;
+    if (prize.kind === 'tier') {
+      // Мішку й Подарунок бот надсилає одразу сам — справжнім подарунком Telegram.
+      const g = tggifts.canSend(prize.id) ? await tggifts.send(uid, prize.id, JP_GIFT_TEXT) : { ok: false, error: 'manual' };
+      const a = applications.create(uid, prize.id, 'chat_jackpot', g.ok ? { autoSent: true } : {}, { silent: true });
+      if (g.ok) {
+        a.status = 'approved'; a.decidedAt = Date.now(); store.save();
+        auto = true; note = 'надіслано одразу, подарунком Telegram ✅';
+      } else {
+        note = 'заявка #' + a.id + ' (автоматично не вийшло: ' + g.error + (g.lowBalance ? ' — замало зірок на балансі бота' : '') + ')';
+      }
+    } else if (prize.kind === 'stars') { users.move(uid, { stars: prize.n }, 'jackpot', {}); note = 'на балансі'; }
     else if (prize.kind === 'tickets') { users.move(uid, { tickets: prize.n }, 'jackpot', {}); note = 'на балансі'; }
     else { progress.addXp(uid, 'admin', prize.n, { why: 'jackpot' }); note = 'XP зараховано'; }
-    const ok = chat() ? await chat().jackpot(msgId, { name }, prize.label) : false;
-    notify.dm(uid, `🎰 <b>ДЖЕКПОТ!</b>\n\nТи виграв <b>${prize.label}</b> за активність у чаті!` +
-      (prize.kind === 'tier' ? '\nЗаявку створено — видамо найближчим часом.' : '\nУже зараховано.') + '\n\nСпілкуйся далі — бот стежить за найактивнішими 🔥');
+    await ctx.editMessageText(`⏳ Джекпот ${name}: ${prize.label} — оголошую в чаті…`).catch(() => {});
+    const kind = prize.kind === 'tier' ? prize.id : prize.kind;
+    const ok = chat() ? await chat().jackpot(msgId, { name }, prize.label, { kind, auto }) : false;
+    notify.dm(uid, withEmoji(`{:crown} <b>ДЖЕКПОТ!</b>\n━━━━━━━━━━━━━━\nТи зірвав джекпот у чаті — <b>${prize.label}</b>!\n\n` +
+      (auto ? '{:lightning} <b>Бот уже надіслав подарунок</b> — глянь у свій профіль Telegram → «Подарунки» {:giftBox}'
+        : prize.kind === 'tier' ? '{:pendingIcon} Заявку створено — видамо найближчим часом.' : '{:check} Уже зараховано на баланс.') +
+      '\n\n{:almost} Спілкуйся далі — бот стежить за найактивнішими!'));
     jpPending.delete(msgId);
     await ctx.editMessageText(`✅ Джекпот ${name}: ${prize.label} (${note})` + (ok ? '\nОголошено в чаті 🎉' : '\n⚠️ У чат написати не вдалось — /chat_status')).catch(() => {});
   });

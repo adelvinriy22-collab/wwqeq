@@ -3,6 +3,7 @@
 //   lvl-1.jpg … lvl-15.jpg — картка рівня (іконка, шкала, нагорода, привілеї)
 //   ladder.jpg             — усі 15 рівнів однією драбиною
 //   xp.jpg                 — за що дають XP
+// і web/img/jackpot/jp-<приз>.jpg — картинка «JACKPOT» для чату (мішка, подарунок, зірки, білети, XP).
 // Картинки без слів конкретною мовою (цифри й емодзі) — підходять для uk/en/ru.
 // Нагороди й привілеї беруться з src/economy.js: змінив їх — перезапусти:
 //   node scripts/render-level-images.js
@@ -140,6 +141,43 @@ function xpHtml() {
   </style></head><body>${sparks(7, 80)}<h1><span class="emo">⚡</span> XP <span class="emo">⚡</span></h1><div class="grid">${cards}</div></body></html>`;
 }
 
+// ─── Джекпот у чаті: jp-<приз>.jpg у web/img/jackpot ────────────────────
+const JP_OUT = path.join(__dirname, '..', 'web', 'img', 'jackpot');
+const JP_KINDS = { bear: '🧸', gift: '🎁', stars: '⭐', tickets: '🎫', xp: '⚡' };
+function jackpotHtml(kind) {
+  const e = JP_KINDS[kind];
+  const rays = Array.from({ length: 24 }, (_, i) => `<div class="ray" style="transform: rotate(${i * 15}deg)"></div>`).join('');
+  let conf = '';
+  let x = 42;
+  const rnd = () => { x = (x * 9301 + 49297) % 233280; return x / 233280; };
+  const colors = ['#ffd36b', '#ff3d8a', '#5dffb0', '#7cc4ff', '#d2a6ff', '#ffffff'];
+  for (let i = 0; i < 90; i++) {
+    const w = 8 + rnd() * 14, h = 4 + rnd() * 8;
+    conf += `<div class="cf" style="left:${rnd() * W}px;top:${rnd() * H}px;width:${w}px;height:${h}px;background:${colors[i % colors.length]};transform:rotate(${rnd() * 360}deg);opacity:${0.5 + rnd() * 0.5}"></div>`;
+  }
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${BASE_CSS}
+    body { background: radial-gradient(circle at 50% 55%, #ffb020 0%, #b3245f 42%, #2a0b52 75%, #07060d 100%); position: relative; }
+    .rays { position: absolute; left: 50%; top: 58%; width: 0; height: 0; }
+    .ray { position: absolute; left: -40px; top: -900px; width: 80px; height: 900px; transform-origin: 40px 900px;
+      background: linear-gradient(to top, #ffffff38, transparent 80%); clip-path: polygon(45% 100%, 55% 100%, 100% 0, 0 0); }
+    .cf { position: absolute; border-radius: 2px; }
+    h1 { position: absolute; top: 34px; left: 0; right: 0; text-align: center; font-size: 150px; font-weight: 900; letter-spacing: 14px;
+      color: #ffe08a; text-shadow: 0 6px 0 #b3245f, 0 12px 40px #000c, 0 0 60px #ffd36b; }
+    .ring { position: absolute; left: 50%; top: 58%; width: 380px; height: 380px; margin: -190px 0 0 -190px; border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #ffffff55, #ffb020cc 55%, #b3245f); border: 8px solid #ffe08a;
+      box-shadow: 0 0 120px #ffd36bcc, inset 0 0 60px #0006; display: grid; place-items: center; }
+    .ring .emo { font-size: 220px; line-height: 1; filter: drop-shadow(0 14px 24px #0009); }
+    .brand { position: absolute; right: 44px; bottom: 30px; font-size: 26px; font-weight: 800; letter-spacing: 6px; opacity: .7; }
+    .slot { position: absolute; left: 44px; bottom: 26px; font-size: 64px; }
+  </style></head><body>
+    <div class="rays">${rays}</div>${conf}
+    <h1>JACKPOT</h1>
+    <div class="ring"><span class="emo">${e}</span></div>
+    <div class="slot emo">🎰</div>
+    <div class="brand">STARFORGE</div>
+  </body></html>`;
+}
+
 (async () => {
   const { chromium } = loadPlaywright();
   fs.mkdirSync(OUT, { recursive: true });
@@ -155,5 +193,12 @@ function xpHtml() {
   for (let n = 1; n <= N; n++) await shot(levelHtml(n), `lvl-${n}.jpg`);
   await shot(ladderHtml(), 'ladder.jpg');
   await shot(xpHtml(), 'xp.jpg');
+  fs.mkdirSync(JP_OUT, { recursive: true });
+  for (const k of Object.keys(JP_KINDS)) {
+    await page.setContent(jackpotHtml(k), { waitUntil: 'load' });
+    await page.evaluate(() => document.fonts && document.fonts.ready);
+    await page.screenshot({ path: path.join(JP_OUT, 'jp-' + k + '.jpg'), type: 'jpeg', quality: 86 });
+    console.log('✓ jackpot/jp-' + k + '.jpg');
+  }
   await browser.close();
 })().catch(e => { console.error(e); process.exit(1); });

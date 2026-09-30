@@ -466,31 +466,59 @@ function createChat(bot, opts) {
   // ═══════════════════════ 🎰 ДЖЕКПОТ ВІД АДМІНА ═══════════════════════
   // Адмін у приваті вставляє посилання на повідомлення — бот відповідає на
   // нього в чаті «ДЖЕКПОТ!», ставить 🎉 і закликає всіх спілкуватись.
-  async function jackpot(msgId, winner, prizeLabel) {
+  // opts.kind — bear | gift | stars | tickets | xp (картинка jp-<kind>.jpg);
+  // opts.auto — подарунок бот уже надіслав сам (Мішка/Подарунок через sendGift).
+  // Щоб усі помітили: спершу 🎰 «барабан» у відповідь переможцю, потім яскрава
+  // картка JACKPOT, закріплення зі сповіщенням і реакції на повідомленні.
+  const jpUnpin = new Map();
+  async function jackpot(msgId, winner, prizeLabel, opts) {
     if (!chatId) return false;
-    const caption = card('crown', 'ДЖЕКПОТ!', [
-      E('crown', '👑') + ' <b>' + winner.name + '</b>, ти виграв <b>' + prizeLabel + '</b>!',
-      E('check', '✅') + ' Приз уже чекає на тебе в боті',
-      '',
-      E('almost', '🔥') + ' <b>Хочеш так само? Спілкуйся в чаті!</b>',
-      'Бот стежить за активністю й роздає призи найактивнішим',
-    ]);
-    const extra = { caption, parse_mode: 'HTML', reply_to_message_id: msgId, allow_sending_without_reply: true };
-    // Картинку завантажуємо один раз, далі шлемо за file_id — швидше й без повторного завантаження.
-    let m = null;
-    const cached = st().jpFileId;
-    const jpFile = require('path').join(__dirname, '..', '..', 'web', 'img', 'jackpot.jpg');
+    const o = opts || {};
+    const reply = { reply_to_message_id: msgId, allow_sending_without_reply: true };
     try {
-      // Файлу картинки може не бути в деплої — тоді одразу текстом, без помилки.
-      if (!cached && !require('fs').existsSync(jpFile)) throw new Error('no jackpot.jpg');
-      m = await bot.telegram.sendPhoto(chatId, cached || { source: jpFile }, extra);
+      await bot.telegram.sendDice(chatId, { emoji: '🎰', ...reply });
+      await new Promise(r => setTimeout(r, o.noDrumroll ? 0 : 2600));
+    } catch (e) { /* без барабана — не страшно */ }
+    const gift = o.kind === 'bear' || o.kind === 'gift';
+    const caption = card('crown', 'ДЖЕКПОТ! 🎰', [
+      E('crown', '👑') + ' <b>' + winner.name + '</b> зірвав джекпот — <b>' + prizeLabel + '</b>!',
+      o.auto && gift
+        ? E('lightning', '⚡') + ' <b>Бот уже видав приз сам — без черги й очікування!</b>\n' + E('giftBox', '🎁') + ' Подарунок уже в профілі переможця → «Подарунки»'
+        : E('check', '✅') + ' <b>Приз уже зараховано</b> — забирай у боті',
+      '',
+      E('almost', '🔥') + ' <b>Хочеш так само? Будь активним у чаті!</b>',
+      'Бот стежить за активністю й роздає джекпоти найактивнішим — наступним можеш бути ти ' + E('eye', '👀'),
+    ]);
+    const link = botLink('games');
+    const tryBtn = { text: '🎰 СПРОБУВАТИ УДАЧУ', url: link, style: 'danger' };
+    if (EM.lightning && EM.lightning.id) tryBtn.icon_custom_emoji_id = EM.lightning.id;
+    const kb = link ? { reply_markup: { inline_keyboard: [[tryBtn]] } } : {};
+    let m = null;
+    const fs = require('fs'), path = require('path');
+    const kindFile = path.join(__dirname, '..', '..', 'web', 'img', 'jackpot', 'jp-' + (o.kind || 'stars') + '.jpg');
+    const oldFile = path.join(__dirname, '..', '..', 'web', 'img', 'jackpot.jpg');
+    const file = fs.existsSync(kindFile) ? kindFile : oldFile;
+    const key = path.basename(file);
+    const ids = st().jpFileIds || {};
+    try {
+      // Картинку вантажимо один раз, далі шлемо за file_id.
+      if (!ids[key] && !fs.existsSync(file)) throw new Error('no jackpot image');
+      m = await bot.telegram.sendPhoto(chatId, ids[key] || { source: file }, { caption, parse_mode: 'HTML', ...reply, ...kb });
       const ph = m && m.photo && m.photo[m.photo.length - 1];
-      if (ph && ph.file_id && ph.file_id !== cached) setSt({ jpFileId: ph.file_id });
+      if (ph && ph.file_id && ph.file_id !== ids[key]) setSt({ jpFileIds: { ...ids, [key]: ph.file_id } });
     } catch (e) {
-      // Якщо картинка з якоїсь причини не пішла — оголошуємо текстом, щоб джекпот не загубився.
-      m = await send(caption, { reply_to_message_id: msgId, allow_sending_without_reply: true });
+      // Картинка не пішла — оголошуємо текстом, щоб джекпот не загубився.
+      m = await send(caption, { ...reply, ...kb });
     }
     react(msgId, '🎉');
+    // Закріпити зі сповіщенням — бачать усі; через 3 год прибираємо.
+    if (m && m.message_id && !o.noPin) {
+      bot.telegram.pinChatMessage(chatId, m.message_id, { disable_notification: false }).then(() => {
+        const t = setTimeout(() => { bot.telegram.unpinChatMessage(chatId, { message_id: m.message_id }).catch(() => {}); jpUnpin.delete(m.message_id); }, 3 * 3600e3);
+        if (t.unref) t.unref();
+        jpUnpin.set(m.message_id, t);
+      }).catch(() => {});
+    }
     return !!m;
   }
 
