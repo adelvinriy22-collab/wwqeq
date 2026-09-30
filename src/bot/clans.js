@@ -6,7 +6,10 @@
 const users = require('../core/users');
 const clans = require('../features/clans');
 
-function register(bot) {
+function register(bot, hooks) {
+  // Назва клану після кнопки «Свій клан» і автовступ після /start clan_…
+  hooks.onText.push((ctx, uid, text) => clans.onPrivateText(ctx, uid, text));
+  hooks.onStartPayload.push((ctx, uid, payload) => clans.onStart(ctx, uid, payload));
   const names = clans.COMMANDS.map(c => c.slice(1));
   bot.command(names, async (ctx) => {
     if (ctx.chat && ctx.chat.type !== 'private') return;

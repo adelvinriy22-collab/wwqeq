@@ -1159,8 +1159,8 @@ function createChat(bot, opts) {
       sec('crown', 'ЩАСЛИВЕ ПОВІДОМЛЕННЯ', 'Бот випадково обирає повідомлення в чаті й дає бонус. <b>Кожне твоє повідомлення може стати щасливим.</b>', '+' + CFG.luckyPts + ' XP') + '\n' +
       sec('almost', 'СЕРІЯ В ЧАТІ', 'Пиши щодня хоча б ' + CFG.streakMinMsgs + ' повідомлень — і серія росте. На 3, 7, 14 і 30 днях — великі бонуси.', 'до +300 XP') + '\n' +
       sec('almost', 'ІГРИ НА БІЛЕТИ', 'Слот, кубик, баскетбол, футбол, дартс, боулінг — просто в чаті. <code>/games</code> — усі правила й коефіцієнти.', 'до ×20 ставки') + '\n' +
-      sec('trophy', 'КЛАНОВА ВІЙНА', 'Вступи в клан або створи свій — XP учасників стає очками клану. <b>У фіналі топ-3 клани отримують призи.</b> <code>/clan</code> — усе про війну.',
-        '🥇 власнику 🎁 25' + S + ' + кожному ' + econ.CLANS.rewards[0].stars + S + ' ' + econ.CLANS.rewards[0].tickets + ' ' + TIX) + '\n' +
+      sec('trophy', 'КЛАНОВА ВІЙНА', 'Вступи в клан за 1 клік (<b>+' + econ.CLANS.joinBonus + ' ' + TIX + ' одразу</b>) або створи свій за ' + econ.CLANS.createCost + ' ' + TIX + '. XP учасників — очки клану: клан відкриває скрині з білетами для всіх, а у фіналі топ-3 отримують призи. <code>/clan</code> — усе про війну.',
+        'скрині кожному + у фіналі до ' + econ.CLANS.rewards[0].stars + S + ' ' + econ.CLANS.rewards[0].tickets + ' ' + TIX + ', лідеру 🎁 25' + S) + '\n' +
       sec('almost', 'ГАРЯЧА ГОДИНА', 'Раз на день у випадковий момент між ' + CFG.hhFromHour + ':00 і ' + CFG.hhToHour + ':00 на ' + CFG.hhMinutes + ' хв.', 'XP ×2 — рівень росте удвічі швидше') + '\n' +
       E('crown', '👑') + ' <b>ЗА ЩО XP У ЧАТІ</b>\n<blockquote expandable>• повідомлення — 1 (у гарячу годину 2), до ' + econ.XP.chat.dayCap + ' XP з чату на день\n• дроп, вікторина — 5\n• дуель — 3, перемога — ще 3\n• /bonus — 2 · квест дня — 10\n• активісти дня й спільна ціль — див. вище</blockquote>\n' +
       '<b>Команди:</b> /quests · /bonus · /games · /rank · /me · /goal · /duel · /clan\n\n' +
@@ -1659,7 +1659,7 @@ function createChat(bot, opts) {
       cs ? E('trophy', '🏆') + ' Змагання: <b>' + cs.pts + '</b> балів' : null,
       (function () {
         const cl = clans.summaryOf(uid);
-        return cl ? cl.emoji + ' Клан: <b>' + esc(cl.name) + '</b> [' + esc(cl.tag) + '] · /clan' : '⚔️ Без клану · /clan — кланова війна';
+        return cl ? cl.emoji + ' Клан: <b>' + esc(cl.name) + '</b> [' + esc(cl.tag) + '] · /clan' : '⚔️ Без клану · /clan — вступ за 1 клік, +' + econ.CLANS.joinBonus + ' ' + TIX + ' одразу';
       })(),
       '',
       TIX + ' Білетів: <b>' + ticketsOf(u) + '</b>',
@@ -1825,6 +1825,7 @@ function createChat(bot, opts) {
               'Твій внесок: <b>' + mine + '</b>' + (mine < CFG.goalMinPer ? ' (ще ' + (CFG.goalMinPer - mine) + ' до бонусу)' : ' ' + E('check', '✅')),
             ]), { parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id }).catch(() => {});
           }
+          if (!cmd && ctx.message.reply_to_message && clans.onReply(ctx)) return;   // назва нового клану у відповідь боту
           if (!cmd && ctx.from && !ctx.from.is_bot) onChatMessage(ctx);
         }
       } catch (e) { console.error('chat router:', e.message); }
