@@ -94,6 +94,7 @@ function createBot(token) {
   require('./levels').register(bot);
   require('./autogift').register(bot, hooks);
   require('./firstcomment').register(bot);
+  require('./clans').register(bot);
   campaigns.register(bot, hooks);
   apps.register(bot, hooks);
   ops.register(bot);
@@ -128,6 +129,8 @@ async function setupUi(bot) {
     { command: 'games', description: '🎲 Ігри на зірки' },
     { command: 'level', description: '🏅 Мій рівень і привілеї' },
     { command: 'friends', description: '👥 Запросити друзів' },
+    { command: 'clans', description: '🛡 Клани й кланова війна' },
+    { command: 'clan', description: '🏰 Мій клан' },
     { command: 'promo', description: '🎁 Ввести промокод' },
     { command: 'lang', description: '🌐 Мова' },
     { command: 'help', description: '❓ Допомога' },
@@ -146,6 +149,7 @@ async function setupUi(bot) {
       { command: 'say', description: 'Пост у чат від імені бота: /say текст' },
       { command: 'autowd', description: 'Автовивід Мішки гравцю (один раз): /autowd @нік' },
       { command: 'first_gift', description: 'Пост у канал: першому коментарю — гіфт 15⭐' },
+      { command: 'clanwar', description: 'Клани: стан війни, finish — підсумки зараз' },
       { command: 'chat_status', description: 'Стан чату' },
       { command: 'version', description: 'Версія' },
     ], { scope: { type: 'chat', chat_id: Number(id) } }).catch(e => console.error('setMyCommands(admin):', e.message));

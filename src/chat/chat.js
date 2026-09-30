@@ -23,6 +23,7 @@ const notify = require('../core/notify');
 const time = require('../lib/time');
 const econ = require('../economy');
 const { EMOJI } = require('../emoji');
+const clans = require('../features/clans');
 
 const CFG = {
   dropMinGapMin: 70,          // між дропами — від 70 хв
@@ -30,7 +31,7 @@ const CFG = {
   quizEveryMin: 150,          // вікторина приблизно раз на 2,5 год
   activeFromHour: 10,         // працюємо з 10:00
   activeToHour: 23,           // до 23:00 за Києвом
-  // ЕКОНОМІКА. Білети обмінюються на зірки (10🎫 = 2⭐), тож кожен білет — це
+  // ЕКОНОМІКА. Білети обмінюються на зірки (10🎫 = 1⭐), тож кожен білет — це
   // реальні гроші. Масові щоденні нагороди тепер дають ОЧКИ РІВНЯ (безкоштовно),
   // а зірки й білети лишились там, де вони рідкісні й помітні.
   dropPrizes: [               // шанс → нагорода
@@ -722,7 +723,8 @@ function createChat(bot, opts) {
     if (!rows.length) lines.push('Поки порожньо — пиши, і ти перший!');
     rows.slice(0, 10).forEach((r, i) => {
       const L = LEVELS[levelOf(r.p)];
-      lines.push(medal(i) + ' ' + whoName(r.id) + ' — ' + L.e + ' ' + L.t + ' · <b>' + r.p + '</b>');
+      const cb = clans.badgeOf(r.id);
+      lines.push(medal(i) + ' ' + (cb ? cb + ' ' : '') + whoName(r.id) + ' — ' + L.e + ' ' + L.t + ' · <b>' + r.p + '</b>');
     });
     const me = rows.findIndex(r => r.id === String(ctx.from.id));
     if (me >= 10) lines.push('\n' + E('crown', '👑') + ' Ти: <b>#' + (me + 1) + '</b> · ' + rows[me].p);
@@ -909,6 +911,13 @@ function createChat(bot, opts) {
       { command: 'goal',    description: '🎯 Спільна ціль чату' },
       { command: 'contest', description: '🏅 Змагання чату' },
       { command: 'duel',    description: '⚔️ Дуель на білети: /duel 5' },
+      { command: 'clans',   description: '🛡 Усі клани чату' },
+      { command: 'clan',    description: '🏰 Мій клан' },
+      { command: 'clan_top', description: '🏆 Кланова війна тижня й призи' },
+      { command: 'clan_members', description: '📊 Лідерборд мого клану' },
+      { command: 'clan_create', description: '⚔️ Створити клан: /clan_create 🐺 Назва' },
+      { command: 'clan_join', description: '🤝 Вступити: /clan_join ТЕГ' },
+      { command: 'clan_help', description: '❓ Як працюють клани' },
     ], { scope: { type: 'chat', chat_id: chatId } });
   }
 
@@ -1155,9 +1164,11 @@ function createChat(bot, opts) {
       sec('crown', 'ЩАСЛИВЕ ПОВІДОМЛЕННЯ', 'Бот випадково обирає повідомлення в чаті й дає бонус. <b>Кожне твоє повідомлення може стати щасливим.</b>', '+' + CFG.luckyPts + ' XP') + '\n' +
       sec('almost', 'СЕРІЯ В ЧАТІ', 'Пиши щодня хоча б ' + CFG.streakMinMsgs + ' повідомлень — і серія росте. На 3, 7, 14 і 30 днях — великі бонуси.', 'до +300 XP') + '\n' +
       sec('almost', 'ІГРИ НА БІЛЕТИ', 'Слот, кубик, баскетбол, футбол, дартс, боулінг — просто в чаті. <code>/games</code> — усі правила й коефіцієнти.', 'до ×20 ставки') + '\n' +
+      sec('trophy', 'КЛАНИ', 'Створи клан (<code>/clan_create 🐺 Назва</code>) або вступи в наявний (<code>/clans</code>). XP учасників — очки клану. <b>Щопонеділка топ-3 клани тижня отримують призи.</b> <code>/clan_top</code> — таблиця, <code>/clan_help</code> — усе про клани.',
+        '🥇 власнику 🎁 за 25' + S + ' + кожному ' + econ.CLANS.rewards[0].stars + S + ' ' + econ.CLANS.rewards[0].tickets + ' ' + TIX + ' ' + econ.CLANS.rewards[0].xp + ' XP') + '\n' +
       sec('almost', 'ГАРЯЧА ГОДИНА', 'Раз на день у випадковий момент між ' + CFG.hhFromHour + ':00 і ' + CFG.hhToHour + ':00 на ' + CFG.hhMinutes + ' хв.', 'XP ×2 — рівень росте удвічі швидше') + '\n' +
       E('crown', '👑') + ' <b>ЗА ЩО XP У ЧАТІ</b>\n<blockquote expandable>• повідомлення — 1 (у гарячу годину 2), до ' + econ.XP.chat.dayCap + ' XP з чату на день\n• дроп, вікторина — 5\n• дуель — 3, перемога — ще 3\n• /bonus — 2 · квест дня — 10\n• активісти дня й спільна ціль — див. вище</blockquote>\n' +
-      '<b>Команди:</b> /quests · /bonus · /games · /rank · /me · /goal · /duel\n\n' +
+      '<b>Команди:</b> /quests · /bonus · /games · /rank · /me · /goal · /duel · /clans · /clan_top\n\n' +
       '<i>Брати участь можуть ті, хто запустив @' + (getBotUsername() || 'StarForgeX_bot') + '</i>';
     await ctx.reply(t, { parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id, disable_web_page_preview: true }).catch(() => {});
   }
@@ -1651,6 +1662,10 @@ function createChat(bot, opts) {
       n < CFG.activistMinMsgs ? '      до активіста дня — ще ' + (CFG.activistMinMsgs - n) : null,
       E('statsIcon', '📊') + ' Ціль чату: <b>' + g.count + ' / ' + CFG.goalTarget + '</b>' + (g.done ? ' ' + E('check', '✅') : ''),
       cs ? E('trophy', '🏆') + ' Змагання: <b>' + cs.pts + '</b> балів' : null,
+      (function () {
+        const cl = clans.summaryOf(uid);
+        return cl ? cl.emoji + ' Клан: <b>' + esc(cl.name) + '</b> [' + esc(cl.tag) + '] · /clan' : '⚔️ Без клану · /clans — знайди свій';
+      })(),
       '',
       TIX + ' Білетів: <b>' + ticketsOf(u) + '</b>',
       E('starIcon', '⭐') + ' Зірок: <b>' + users.stars(u) + '</b>',
@@ -1779,6 +1794,7 @@ function createChat(bot, opts) {
           if (data.startsWith('bx:')) { const [, id, i] = data.split(':'); return onBoxClick(ctx, id, +i); }
           if (data.startsWith('cq:')) { const [, id, ch] = data.split(':'); return onQuizClick(ctx, id, +ch); }
           if (data.startsWith('dl:')) { const [, act, id] = data.split(':'); return onDuelClick(ctx, act, id); }
+          if (data.startsWith('cl:')) return clans.callback(ctx);
           return ctx.answerCbQuery().catch(() => {});
         }
         if (ctx.updateType === 'message' && ctx.message) {
@@ -1787,6 +1803,7 @@ function createChat(bot, opts) {
           const text = ctx.message.text || '';
           const cmd = text.startsWith('/') ? text.split(/\s|@/)[0].toLowerCase() : null;
           if (cmd === '/duel') return onDuelCmd(ctx);
+          if (cmd && clans.isClanCommand(cmd)) return clans.command(ctx, cmd);
           if (cmd === '/top') return onRankCmd(ctx);   // ліга вимкнена — показуємо легенд чату
           if (cmd === '/me') return onMeCmd(ctx);
           if (cmd === '/help' || cmd === '/start') return onHelpCmd(ctx);
@@ -1827,7 +1844,7 @@ function createChat(bot, opts) {
     jackpot,
     levelOf: (pts) => LEVELS[levelOf(pts || 0)],
     levelInfo: (pts) => progress.levelInfo(pts || 0, 'uk'),
-    announce, postDrop, postQuiz, postLeagueTop, refundStaleDuels,
+    announce, say: (text, extra) => send(text, extra), postDrop, postQuiz, postLeagueTop, refundStaleDuels,
     postBoxes, startContest, finishContest, contestRows: () => { const k = st().contest; return k ? contestRows(k) : []; },
     E, card, status() { return { chatId, chatRef, ...st() }; },
     pause() { setSt({ paused: true }); },

@@ -52,6 +52,9 @@ function seedV2() {
       985: U('985', {}),
       // Перший коментар під постом каналу.
       986: U('986', {}), 987: U('987', {}),
+      // Клани: лідер (3-й рівень, 150🎫), учасники, заявка в закритий клан.
+      990: U('990', { tickets: 150, ticketsUsed: 0, starBalance: 100, chatPts: 100 }), 991: U('991', { starBalance: 100 }),
+      992: U('992', { starBalance: 100 }), 993: U('993', {}),
     },
     giveaways: {}, applications: [], nextApplicationId: 1,
     featureFlags: {
@@ -269,7 +272,7 @@ test('ризик ×2: не можна ризикнути витраченим, �
 test('обмін білетів і ігри на зірки', async () => {
   const ex = await api('POST', '/wallet/exchange', { tickets: 10 });
   assert.strictEqual(ex.status, 200, JSON.stringify(ex.d));
-  assert.strictEqual(ex.d.stars, 2);
+  assert.strictEqual(ex.d.stars, 1, 'курс: 10🎫 = 1⭐');
   assert.strictEqual((await api('POST', '/wallet/exchange', { tickets: 7 })).d.error, 'bad_amount');
   const bad = await api('POST', '/games/play', { game: 'dice', bet: 'even', stake: 0 }, '700');
   assert.strictEqual(bad.d.error, 'bad_bet');
@@ -524,6 +527,109 @@ test('перший коментар у каналі: бот ловить пер�
   assert.strictEqual(tg.calls.slice(n0).filter(c => c.method === 'sendGift').length, 1, 'подвійне натискання — один подарунок');
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'editMessageText' && /уже надіслано/.test(c.payload.text || '')), 'відповідь «подарунок надіслано»');
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'editMessageText' && c.payload.chat_id === '@starforge_news' && /Забрав/.test(c.payload.text || '')), 'у пості каналу — хто забрав');
+});
+
+test('клани: створення, вступ, заявка, лідерборди, кланова війна з призами', async () => {
+  const GROUP = -1001;
+  const waitFor = async (pred) => { for (let i = 0; i < 40; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  const who = (id) => ({ id, is_bot: false, first_name: 'U' + id, username: 'user' + id });
+  const gmsg = (id, text) => tg.push({ message: { message_id: Math.floor(Math.random() * 1e6), date: Math.floor(Date.now() / 1000), chat: { id: GROUP, type: 'supergroup', title: 'G' }, from: who(id), text, entities: [{ type: 'bot_command', offset: 0, length: text.split(' ')[0].length }] } });
+  const pmsg = (id, text) => tg.push({ message: { message_id: Math.floor(Math.random() * 1e6), date: Math.floor(Date.now() / 1000), chat: { id, type: 'private' }, from: who(id), text, entities: [{ type: 'bot_command', offset: 0, length: text.split(' ')[0].length }] } });
+  const click = (id, data, chatId) => tg.push({ callback_query: { id: 'c' + id + Math.random(), from: who(id), chat_instance: 'x', data, message: { message_id: 5, date: 0, chat: { id: chatId || id, type: chatId ? 'supergroup' : 'private' } } } });
+  const sent = (n0, chat, re) => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === String(chat) && re.test(c.payload.text || ''));
+  const clan = () => Object.values((readDb().featureFlags.clans || { list: {} }).list)[0];
+
+  // Бот сам шукає чат через 3 с після старту — прив'язуємо після цього.
+  await waitFor(() => tg.calls.some(c => c.method === 'getChat'));
+  await sleep(300);
+  let n0 = tg.calls.length;
+  tg.push({ message: { message_id: 1, date: Math.floor(Date.now() / 1000), chat: { id: GROUP, type: 'supergroup', title: 'G' }, from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, text: '/chat_here', entities: [{ type: 'bot_command', offset: 0, length: 10 }] } });
+  await waitFor(() => sent(n0, GROUP, /прив/));
+  // Без 3-го рівня клан не створити.
+  gmsg(992, '/clan_create Слабаки');
+  assert.ok(await waitFor(() => sent(n0, GROUP, /з 3-го рівня/)), 'низький рівень — відмова');
+
+  gmsg(990, '/clan_create 🐺 Вовки');
+  assert.ok(await waitFor(() => sent(n0, GROUP, /Клан .*Вовки.* створено/)), 'клан створено');
+  await sleep(300);
+  let c = clan();
+  assert.strictEqual(c.tag, 'ВОВК');
+  assert.strictEqual(c.emoji, '🐺');
+  assert.strictEqual(c.owner, '990');
+  assert.strictEqual(readDb().users['990'].tickets, 50, 'створення коштує 100🎫');
+
+  // Відкритий клан — одразу; закритий — заявка лідеру з кнопками.
+  gmsg(991, '/clan_join ВОВК');
+  assert.ok(await waitFor(() => sent(n0, GROUP, /вступив у клан/)), '991 у клані');
+  gmsg(990, '/clan_close');
+  assert.ok(await waitFor(() => sent(n0, GROUP, /лише за заявкою/)));
+  gmsg(993, '/clan_join вовки');
+  const req = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '990' && /cl:a:/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  assert.ok(req, 'лідеру — заявка з кнопками');
+  assert.ok(sent(n0, GROUP, /Заявку в клан/), 'гравцю — «заявку надіслано»');
+  click(991, req.payload.reply_markup.inline_keyboard[0][0].callback_data);
+  assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'answerCallbackQuery' && /Недостатньо прав/.test(c.payload.text || ''))), 'учасник не приймає заявки');
+  click(990, req.payload.reply_markup.inline_keyboard[0][0].callback_data);
+  assert.ok(await waitFor(() => sent(n0, 993, /прийнято в клан/)), '993 прийнято');
+  gmsg(990, '/clan_open');
+  await waitFor(() => sent(n0, GROUP, /Клан відкритий/));
+  // Кнопка «вступити» з картки клану.
+  click(992, 'cl:j:' + c.id, GROUP);
+  assert.ok(await waitFor(() => sent(n0, GROUP, /user992.*вступив/)), '992 вступив кнопкою');
+  await sleep(300);
+  c = clan();
+  assert.deepStrictEqual(c.members.slice().sort(), ['990', '991', '992', '993']);
+
+  // Очки клану — XP учасників (ігри на зірки: 2 XP за ⭐).
+  for (const id of ['990', '991', '992']) {
+    const g = await api('POST', '/games/play', { game: 'dice', bet: 'even', stake: 20 }, id);
+    assert.strictEqual(g.status, 200, JSON.stringify(g.d));
+  }
+  await sleep(300);
+  c = clan();
+  assert.strictEqual(c.week.pts, 120, 'очки тижня = XP учасників');
+  assert.strictEqual(c.week.contrib['991'], 40);
+
+  gmsg(991, '/clans');
+  assert.ok(await waitFor(() => sent(n0, GROUP, /КЛАНИ · 1[\s\S]*Вовки/)), 'список кланів');
+  gmsg(991, '/clan_members');
+  const lb = await waitFor(() => sent(n0, GROUP, /ЛІДЕРБОРД КЛАНУ/));
+  assert.ok(lb, 'лідерборд клану');
+  assert.match(lb.payload.text, /<tg-emoji emoji-id="\d+">/, 'преміум-емодзі');
+  gmsg(991, '/clan_top');
+  assert.ok(await waitFor(() => sent(n0, GROUP, /КЛАНОВА ВІЙНА ТИЖНЯ[\s\S]*Вовки[\s\S]*120/)), 'таблиця війни');
+
+  // Підсумки: активним (від 30 очок) — 7⭐ + 30🎫 + 100 XP, власнику — 🎁 за 25⭐.
+  n0 = tg.calls.length;
+  adminCmd('/clanwar finish');
+  assert.ok(await waitFor(() => sent(n0, ADMIN, /Підсумки війни підбито/)), 'адміну — підсумки');
+  const gift = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendGift'));
+  assert.ok(gift, 'власнику — справжній подарунок');
+  assert.strictEqual(gift.payload.user_id, 990);
+  assert.strictEqual(gift.payload.gift_id, '5170250947678437525', '🎁 за 25⭐');
+  assert.ok(await waitFor(() => sent(n0, GROUP, /ПІДСУМКИ КЛАНОВОЇ ВІЙНИ/)), 'оголошення в чаті');
+  await sleep(300);
+  const war = (uid) => ledger(uid).filter(e => e.r === 'clan_war');
+  for (const id of ['990', '991', '992']) {
+    assert.strictEqual(war(id).length, 1, id + ' нагороджено');
+    assert.strictEqual(war(id)[0].s, 7);
+    assert.strictEqual(war(id)[0].t, 30);
+  }
+  assert.strictEqual(war('993').length, 0, 'неактивний без призу');
+  c = clan();
+  assert.strictEqual(c.week.pts, 0, 'XP-нагорода не рахується в очки, тиждень обнулено');
+  assert.strictEqual(c.wins, 1);
+  // Повторно — нікого (очки обнулено).
+  adminCmd('/clanwar finish');
+  assert.ok(await waitFor(() => sent(n0, ADMIN, /Нікого нагороджувати/)));
+  assert.strictEqual(war('991').length, 1, 'без подвійних нагород');
+
+  // Вихід: повернутись одразу не можна.
+  n0 = tg.calls.length;
+  pmsg(993, '/clan_leave');
+  assert.ok(await waitFor(() => sent(n0, 993, /Ти вийшов із клану/)), 'вийшов (у приваті з ботом)');
+  pmsg(993, '/clan_join ВОВК');
+  assert.ok(await waitFor(() => sent(n0, 993, /через 24 год/)), 'повернення — через 24 год');
 });
 
 test('пас: закритий рівень не видається; промокод один раз', async () => {

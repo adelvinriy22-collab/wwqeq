@@ -31,6 +31,7 @@ const SOURCE = {
   external_ref: { uk: 'партнерське завдання', en: 'partner task', ru: 'партнёрское задание' },
   chat_contest: { uk: 'змагання чату', en: 'chat contest', ru: 'соревнование чата' },
   chat_jackpot: { uk: 'джекпот у чаті', en: 'chat jackpot', ru: 'джекпот в чате' },
+  clan_war: { uk: 'кланова війна', en: 'clan war', ru: 'клановая война' },
   temu: { uk: 'завдання Temu', en: 'Temu task', ru: 'задание Temu' },
 };
 function sourceLabel(src, lang) { const s = SOURCE[src]; return s ? (s[lang] || s.uk) : (src || '—'); }

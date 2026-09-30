@@ -13,7 +13,8 @@ const E = require('../economy');
 const time = require('../lib/time');
 const users = require('./users');
 
-const hooks = { onLevelUp: [] };
+// onXp(uid, src, gain) — кожне нарахування (клани рахують із нього свої очки).
+const hooks = { onLevelUp: [], onXp: [] };
 
 function seasonIndex(now) { return Math.floor(((now || Date.now()) - E.PASS.epoch) / (E.PASS.seasonDays * time.DAY_MS)); }
 function seasonId(now) { return 'S' + (seasonIndex(now) + 1); }
@@ -82,6 +83,7 @@ function addXp(uid, src, amount, opts) {
   x.week = { ...x.week, xp: Math.round((x.week.xp + gain) * 100) / 100, lastAt: now };
   x.day = { ...x.day, src: { ...x.day.src, [src]: (x.day.src[src] || 0) + gain } };
   users.patch(uid, { xp: x });
+  for (const h of hooks.onXp) { try { h(uid, src, gain); } catch (e) { console.error('onXp hook:', e.message); } }
   const after = levelIndex(x.total);
   if (after > before) {
     // Нагорода — за КОЖЕН пройдений рівень, а сповіщення одне: про останній,

@@ -18,6 +18,7 @@ const bank = require('./features/bank');
 const league = require('./features/league');
 const promo = require('./features/promo');
 const reminders = require('./features/reminders');
+const clans = require('./features/clans');
 const { createApp } = require('./http/server');
 
 // Дрібна помилка не повинна вбивати весь процес (і застосунок разом з ним).
@@ -41,6 +42,9 @@ progress.hooks.onLevelUp.push((uid, info, rw, opts) => {
   // З картинкою нового рівня (web/img/levels), без неї — текстом.
   require('./bot/levels').sendLevelUp(uid, u.lang, info, rw, opts.from).catch(() => {});
 });
+
+// XP учасника клану — очки його клану у війні тижня.
+progress.hooks.onXp.push((uid, src, gain) => clans.onXp(uid, src, gain));
 
 const app = createApp();
 notify.tg.build = app.locals.build;
@@ -72,6 +76,7 @@ function every(ms, name, fn) {
 if (!config.NO_SCHEDULERS) {
   every(60 * 1000, 'bank.tick', () => bank.tick());
   every(60 * 1000, 'league.tick', () => league.tick());
+  every(60 * 1000, 'clans.tick', () => notify.tg.telegram ? clans.tick() : null);   // підсумки кланової війни щопонеділка
   every(60 * 1000, 'chat.tick', () => chat && notify.tg.telegram ? chat.tick() : null);
   every(30 * 60 * 1000, 'reminders', () => reminders.run());
 }
