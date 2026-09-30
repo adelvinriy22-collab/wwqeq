@@ -113,7 +113,7 @@ before(async () => {
     env: {
       ...process.env, BOT_TOKEN: TOKEN, ADMIN_CHAT_ID: ADMIN, DATA_DIR: dataDir, PORT: String(port),
       TELEGRAM_API_ROOT: 'http://127.0.0.1:' + tg.port, WEBAPP_URL: 'https://example.com/app',
-      SPIN_MIN_GAP_MS: '0', ADVANCED_UNLOCK_PASSWORD: 'secret', NO_SCHEDULERS: '1',
+      SPIN_MIN_GAP_MS: '0', ADVANCED_UNLOCK_PASSWORD: 'secret', NO_SCHEDULERS: '1', USERGIFT_DRY_RUN: '1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -797,11 +797,29 @@ test('техроботи full блокують дії через API', async () 
   adminCmd('/maint off');
 });
 
-test('/ugift без TG_SESSION — підказка, як налаштувати, і жодного подарунка', async () => {
-  const n0 = tg.calls.length;
-  adminCmd('/ugift @user985 bear Привіт!');
-  let r;
-  for (let i = 0; i < 20 && !r; i++) { await sleep(150); r = tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /TG_SESSION/.test(c.payload.text || '')); }
-  assert.ok(r, 'адміну — що налаштувати');
-  assert.ok(!tg.calls.slice(n0).some(c => c.method === 'sendGift'));
+test('/ugift: прев\'ю → зміна підпису → надсилання рівно раз, гравцю — привітання', async () => {
+  const waitFor = async (pred) => { for (let i = 0; i < 30; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  const click = (data) => tg.push({ callback_query: { id: 'u' + Math.random(), from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, chat_instance: 'a', data, message: { message_id: 4, date: 0, chat: { id: Number(ADMIN), type: 'private' } } } });
+  const toAdmin = (n0, re) => tg.calls.slice(n0).filter(c => c.method === 'sendMessage' && String(c.payload.chat_id) === ADMIN && re.test(c.payload.text || ''));
+  let n0 = tg.calls.length;
+  adminCmd('/ugift @user985 heart Привіт <3');
+  const pv = await waitFor(() => toAdmin(n0, /ПОДАРУНОК ВІД ВАШОГО АКАУНТА/)[0]);
+  assert.ok(pv, 'прев\'ю');
+  assert.match(pv.payload.text, /Серце/);
+  assert.match(pv.payload.text, /<blockquote>Привіт &lt;3<\/blockquote>/);
+  assert.match(JSON.stringify(pv.payload.reply_markup), /ug:send/);
+  n0 = tg.calls.length;
+  click('ug:text');
+  await waitFor(() => toAdmin(n0, /Напишіть підпис/)[0]);
+  tg.push({ message: { message_id: 3001, date: Math.floor(Date.now() / 1000), chat: { id: Number(ADMIN), type: 'private' }, from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, text: 'Ти топ!', entities: [{ type: 'bold', offset: 0, length: 2 }] } });
+  const pv2 = await waitFor(() => toAdmin(n0, /<blockquote><b>Ти<\/b> топ!<\/blockquote>/)[0]);
+  assert.ok(pv2, 'новий підпис з форматуванням');
+  n0 = tg.calls.length;
+  click('ug:send'); click('ug:send');
+  assert.ok(await waitFor(() => toAdmin(n0, /ПОДАРУНОК НАДІСЛАНО/)[0]), 'картка успіху');
+  const dm = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '985' && /ТОБІ ПОДАРУНОК/.test(c.payload.text || '')));
+  assert.ok(dm, 'гравцю — привітання');
+  assert.match(dm.payload.text, /<b>Ти<\/b> топ!/);
+  await sleep(500);
+  assert.strictEqual(toAdmin(n0, /ПОДАРУНОК НАДІСЛАНО/).length, 1, 'подвійне натискання — один подарунок');
 });

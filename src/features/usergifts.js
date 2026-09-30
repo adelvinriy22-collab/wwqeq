@@ -8,7 +8,8 @@ const config = require('../config');
 const tggifts = require('./tggifts');
 
 const TEXT_MAX = 255;   // ліміт підпису подарунка для акаунтів
-const enabled = () => !!(config.TG_API_ID && config.TG_API_HASH && config.TG_SESSION);
+const dryRun = () => config.USERGIFT_DRY_RUN;
+const enabled = () => dryRun() || !!(config.TG_API_ID && config.TG_API_HASH && config.TG_SESSION);
 
 let clientP = null;
 function client() {
@@ -42,11 +43,21 @@ async function findGift(c, tierId) {
   return t.fallbackId;
 }
 
+// Форматування підпису: Bot API → MTProto (жирний, курсив, преміум-емодзі…).
+const ENT = { bold: 'MessageEntityBold', italic: 'MessageEntityItalic', underline: 'MessageEntityUnderline',
+  strikethrough: 'MessageEntityStrike', spoiler: 'MessageEntitySpoiler', custom_emoji: 'MessageEntityCustomEmoji' };
+function toMtEntities(Api, bigInt, ents) {
+  return tggifts.cleanEntities(ents).filter(e => ENT[e.type]).map(e => new Api[ENT[e.type]]({
+    offset: e.offset, length: e.length, ...(e.type === 'custom_emoji' ? { documentId: bigInt(String(e.custom_emoji_id)) } : {}),
+  }));
+}
+
 // Надіслати подарунок від акаунта. target — @нік або числовий id.
 // → { ok: true, stars } або { ok: false, error }
-async function send(target, tierId, text) {
+async function send(target, tierId, text, entities) {
   if (!enabled()) return { ok: false, error: 'not_configured' };
   if (!tggifts.CATALOG[tierId]) return { ok: false, error: 'unknown_gift' };
+  if (dryRun()) return { ok: true, stars: tggifts.CATALOG[tierId].stars, dry: true };
   try {
     const { Api } = require('telegram');
     const bigInt = require('big-integer');
@@ -56,7 +67,7 @@ async function send(target, tierId, text) {
     const t = String(text || '').slice(0, TEXT_MAX);
     const invoice = new Api.InputInvoiceStarGift({
       peer, giftId: bigInt(String(id)),
-      message: t ? new Api.TextWithEntities({ text: t, entities: [] }) : undefined,
+      message: t ? new Api.TextWithEntities({ text: t, entities: toMtEntities(Api, bigInt, (entities || []).filter(e => e.offset + e.length <= t.length)) }) : undefined,
     });
     const form = await c.invoke(new Api.payments.GetPaymentForm({ invoice }));
     await c.invoke(new Api.payments.SendStarsForm({ formId: form.formId, invoice }));
@@ -66,4 +77,4 @@ async function send(target, tierId, text) {
   }
 }
 
-module.exports = { send, enabled, TEXT_MAX };
+module.exports = { send, enabled, dryRun, TEXT_MAX };

@@ -28,6 +28,8 @@ const config = {
   TG_API_ID: env.TG_API_ID || '',
   TG_API_HASH: env.TG_API_HASH || '',
   TG_SESSION: env.TG_SESSION || '',
+  // Сухий прогін /ugift: усі повідомлення, але без MTProto і без витрати зірок.
+  USERGIFT_DRY_RUN: env.USERGIFT_DRY_RUN === '1',
 
   CHANNEL_USERNAME: env.CHANNEL_USERNAME || '@starforge_news',
   CHAT_USERNAME: env.CHAT_USERNAME || '@starforge_chat',

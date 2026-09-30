@@ -15,8 +15,6 @@ const maintenance = require('../../features/maintenance');
 const goal = require('../../features/goal');
 const reminders = require('../../features/reminders');
 const wheels = require('../../features/wheels');
-const tggifts = require('../../features/tggifts');
-const usergifts = require('../../features/usergifts');
 const ui = require('../ui');
 const { isAdminCtx, ask, takePending, broadcast, audience, argsOf, yes } = require('./shared');
 const { fmtStars, esc, round2 } = require('../../lib/util');
@@ -37,40 +35,13 @@ const HELP = `<b>Адмін</b> — найзручніше в застосунк
 <b>Події</b>: /event_status · /event_stop … · /giveaway_start · /giveaway_solo_start 21 00 · /joint_giveaway_start · /giveaway_stats · /deleteticket @нік 1 · /password_challenge_start · /external_ref_announce посилання · /unlock_event · /goal_reset · /goal_stats
 <b>Завдання</b>: /accept @нік завдання · /task_check · /task_revoke @нік · /partner_stats · /partner_on · /partner_off · /partner_announce так · /top_refs
 <b>Чат</b>: /chat_status · /chats · /chat_drop · /chat_boxes · /chat_quiz · /chat_word · /chat_top · /chat_contest 21:30 3 · /chat_contest_status · /chat_contest_end · /chat_pause · /chat_resume · /chat_debug · /jackpot (посилання) — 🧸 Мішка й 🎁 Подарунок видаються одразу подарунком Telegram
-<b>Подарунок від мого акаунта (тест)</b>: /ugift @нік [bear] текст підпису — надсилає 🧸 Мішку (або інший: heart, rose…) від вашого акаунта з вашим текстом
+<b>Подарунок від мого акаунта (тест)</b>: /ugift @нік [bear|heart|rose…] [підпис] — картка-прев'ю, зміна підпису, надсилання від вашого акаунта, гравцю — привітання
 <b>Інше</b>: /spin_notify on|off · /autowithdraw 73 · /test · /version · /season`;
 
 function register(bot) {
   bot.command(['help_admin', 'admin'], async (ctx) => {
     if (!isAdminCtx(ctx)) return;
     await ctx.reply(HELP, { parse_mode: 'HTML', ...ui.openApp('uk', 'admin') }).catch(() => {});
-  });
-
-  // ТЕСТ: подарунок від акаунта власника (MTProto). /ugift @нік [тип] текст
-  const ugiftBusy = new Set();
-  bot.command('ugift', async (ctx) => {
-    if (!isAdminCtx(ctx)) return;
-    if (!usergifts.enabled()) return ctx.reply('❌ Не налаштовано: задайте TG_API_ID, TG_API_HASH і TG_SESSION (сесію дає node scripts/tg-login.js).');
-    const m = String(ctx.message.text || '').match(/^\/\S+\s+(\S+)(?:\s+([\s\S]*))?$/);
-    if (!m) return ctx.reply('Формат: /ugift @нік [bear|heart|rose…] текст підпису\nБез типу — 🧸 Мішка.');
-    let rest = (m[2] || '').trim();
-    let tier = 'bear';
-    const w = rest.split(/\s+/)[0];
-    if (w && tggifts.CATALOG[w.toLowerCase()]) { tier = w.toLowerCase(); rest = rest.slice(w.length).trim(); }
-    const u = users.findByUsernameOrId(m[1]);
-    const target = u && u.username ? '@' + u.username : m[1].replace(/^@?/, /^\d+$/.test(m[1]) ? '' : '@');
-    if (rest.length > usergifts.TEXT_MAX) return ctx.reply(`❌ Підпис задовгий: ${rest.length}/${usergifts.TEXT_MAX} символів.`);
-    // Захист від подвійного надсилання — прапорець до першого await.
-    const key = target + ':' + tier;
-    if (ugiftBusy.has(key)) return;
-    ugiftBusy.add(key);
-    try {
-      await ctx.reply(`⏳ Надсилаю ${tggifts.CATALOG[tier].emoji} → ${target}…`).catch(() => {});
-      const r = await usergifts.send(target, tier, rest);
-      await ctx.reply(r.ok
-        ? `✅ ${tggifts.CATALOG[tier].emoji} надіслано ${target} від вашого акаунта (−${r.stars}⭐)${rest ? '\nПідпис: ' + rest : ''}`
-        : `❌ Не вдалося: ${r.error}`).catch(() => {});
-    } finally { ugiftBusy.delete(key); }
   });
 
   bot.command('dbstats', async (ctx) => {
