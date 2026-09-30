@@ -329,6 +329,8 @@ button.row:active, a.row:active { background: var(--tint); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }
 .muted { color: var(--hint); }
 .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Картинка рівня (web/img/levels, 16:9) */
+.lvl-banner { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 12px; margin-bottom: 12px; background: var(--hint-t); }
 .ok-text { color: var(--ok); }
 .bad-text { color: var(--danger); }
 .num { font-variant-numeric: tabular-nums; }

@@ -39,6 +39,7 @@ function draw(nav, body, d) {
 function levelCard() {
   const lv = S.me.progress.level;
   return el('div', { class: 'card pad' },
+    el('img', { class: 'lvl-banner', src: '/img/levels/lvl-' + lv.n + '.jpg', alt: '', loading: 'lazy' }),
     el('div', { class: 'gap8', style: { flexWrap: 'nowrap' } },
       el('div', { style: { fontSize: '36px' } }, lv.e),
       el('div', { style: { flex: 1, minWidth: 0 } },
@@ -79,6 +80,7 @@ async function levelsSheet() {
   const cur = S.me.progress.level.n;
   sheet(() => [
     el('h3', null, t('lvl.title')),
+    el('img', { class: 'lvl-banner', src: '/img/levels/ladder.jpg', alt: '', loading: 'lazy' }),
     el('p', null, t('lvl.lead')),
     list(d.levels.map(L => row({
       icon: L.e,

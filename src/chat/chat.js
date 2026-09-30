@@ -671,8 +671,13 @@ function createChat(bot, opts) {
     const perk = un.withdrawFee != null ? 'комісія виводу тепер ' + un.withdrawFee + '%'
       : un.topupBonus != null ? '+' + un.topupBonus + '% до кожного поповнення'
       : un.chatBonus != null ? '+' + un.chatBonus + ' ' + TIX + ' до щоденного бонусу' : '';
-    send(E('crown', '👑') + ' <b>' + whoName(uid) + '</b> тепер <b>' + info.e + ' ' + esc(info.t) + '</b> — рівень ' + info.n + '!' +
-      (prize ? '\n🎁 Нагорода: <b>' + prize + '</b>' : '') + (perk ? '\n✨ Новий привілей: <b>' + perk + '</b>' : ''));
+    const text = E('crown', '👑') + ' <b>' + whoName(uid) + '</b> тепер <b>' + info.e + ' ' + esc(info.t) + '</b> — рівень ' + info.n + '!' +
+      (prize ? '\n' + E('giftBox', '🎁') + ' Нагорода: <b>' + prize + '</b>' : '') + (perk ? '\n' + E('starIcon', '✨') + ' Новий привілей: <b>' + perk + '</b>' : '');
+    // Великий рівень — з картинкою рівня, щоб усі бачили, що він вартий.
+    const img = require('path').join(__dirname, '..', '..', 'web', 'img', 'levels', 'lvl-' + info.n + '.jpg');
+    if (info.n >= 6 && chatId && !st().paused && require('fs').existsSync(img)) {
+      bot.telegram.sendPhoto(chatId, { source: img }, { caption: text, parse_mode: 'HTML' }).catch(() => send(text));
+    } else send(text);
   });
 
   async function onRankCmd(ctx) {

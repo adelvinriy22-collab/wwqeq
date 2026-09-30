@@ -368,6 +368,22 @@ test('ігри в боті: Telegram кидає кубик, результат �
   assert.strictEqual(readDb().users['970'].diceGames, 2, 'після «Назад» число вже не ставка');
 });
 
+test('рівень у боті: фото рівня, сторінки гортаються в тому самому повідомленні', async () => {
+  const from = { id: 970, is_bot: false, first_name: 'U970', username: 'user970' };
+  const cb = (data, photo) => tg.push({ callback_query: { id: 'l' + Math.random(), from, chat_instance: 'x', data, message: { message_id: 7, date: 0, chat: { id: 970, type: 'private' }, ...(photo ? { photo: [{ file_id: 'F', width: 1280, height: 720 }] } : {}) } } });
+  const n0 = tg.calls.length;
+  cb('my_level');
+  let ph;
+  for (let i = 0; i < 20 && !ph; i++) { await sleep(150); ph = tg.calls.slice(n0).find(c => c.method === 'sendPhoto'); }
+  assert.ok(ph, 'картка рівня — фото');
+  const n1 = tg.calls.length;
+  cb('lv:all:1', true);
+  let ed;
+  for (let i = 0; i < 20 && !ed; i++) { await sleep(150); ed = tg.calls.slice(n1).find(c => c.method === 'editMessageMedia'); }
+  assert.ok(ed, 'сторінка «Усі рівні» — у тому самому повідомленні');
+  assert.ok(!tg.calls.slice(n1).some(c => c.method === 'sendPhoto' || c.method === 'sendMessage'), 'без нових повідомлень');
+});
+
 test('скриньки в чаті: одна спроба на людину, головний приз — одному', async () => {
   const GROUP = -1001;
   const wait = async (pred) => { for (let i = 0; i < 30; i++) { await sleep(150); try { if (pred()) return true; } catch (e) {} } return false; };
