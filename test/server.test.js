@@ -50,6 +50,8 @@ function seedV2() {
       980: U('980', { tickets: 0 }), 981: U('981', { tickets: 0 }),
       // Автовивід Мішки.
       985: U('985', {}),
+      // Перший коментар під постом каналу.
+      986: U('986', {}), 987: U('987', {}),
     },
     giveaways: {}, applications: [], nextApplicationId: 1,
     featureFlags: {
@@ -484,6 +486,44 @@ test('джекпот за активність: адмін обирає, Міш�
   await sleep(500);
   const app = readDb().applications.find(a => a.uid === '960' && a.source === 'chat_jackpot');
   assert.ok(app && app.status === 'approved' && app.autoSent, 'в історії — видано автоматично');
+});
+
+test('перший коментар у каналі: бот ловить першого, кнопки лише для нього, подарунок одразу', async () => {
+  const G = -2002;
+  const waitFor = async (pred) => { for (let i = 0; i < 30; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  const n0 = tg.calls.length;
+  adminCmd('/first_gift');
+  const post = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && c.payload.chat_id === '@starforge_news'));
+  assert.ok(post, 'пост у каналі');
+  assert.match(post.payload.text, /Першому коментарю — будь-який гіфт за 15⭐️/);
+  const now = Math.floor(Date.now() / 1000);
+  // Telegram копіює пост у групу обговорення.
+  tg.push({ message: { message_id: 70, date: now, chat: { id: G, type: 'supergroup', title: 'Обговорення' }, from: { id: 777000, is_bot: false, first_name: 'Telegram' },
+    sender_chat: { id: -100555, type: 'channel', title: 'Канал' }, is_automatic_forward: true, forward_origin: { type: 'channel', chat: { id: -100555, type: 'channel' }, message_id: post.payload.chat_id ? 1 : 1, date: now }, text: 'пост' } });
+  await sleep(400);
+  const comment = (id, mid, text) => tg.push({ message: { message_id: mid, date: now, chat: { id: G, type: 'supergroup' }, from: { id, is_bot: false, first_name: 'U' + id, username: 'user' + id },
+    reply_to_message: { message_id: 70, date: now, chat: { id: G, type: 'supergroup' } }, message_thread_id: 70, text } });
+  comment(986, 71, 'Я перший!');
+  comment(987, 72, 'А я другий');
+  const reply = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === String(G) && /fc:/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  assert.ok(reply, 'бот відповів першому');
+  assert.strictEqual(reply.payload.reply_to_message_id, 71, 'саме на перший коментар');
+  await sleep(400);
+  assert.strictEqual(tg.calls.slice(n0).filter(c => c.method === 'sendMessage' && String(c.payload.chat_id) === String(G) && /fc:/.test(JSON.stringify(c.payload.reply_markup || {}))).length, 1, 'другий коментар — без кнопок');
+  const data = reply.payload.reply_markup.inline_keyboard[0][1].callback_data;
+  assert.match(data, /^fc:\w+:heart$/);
+  const click = (id) => tg.push({ callback_query: { id: 'f' + id + Math.random(), from: { id, is_bot: false, first_name: 'U' + id }, chat_instance: 'g', data, message: { message_id: 90, date: now, chat: { id: G, type: 'supergroup' } } } });
+  click(987);
+  const alien = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'answerCallbackQuery' && /для переможця/.test(c.payload.text || '')));
+  assert.ok(alien, 'чужий не може натиснути');
+  click(986); click(986);
+  const gift = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendGift'));
+  assert.ok(gift, 'подарунок надіслано');
+  assert.strictEqual(gift.payload.user_id, 986);
+  await sleep(600);
+  assert.strictEqual(tg.calls.slice(n0).filter(c => c.method === 'sendGift').length, 1, 'подвійне натискання — один подарунок');
+  assert.ok(tg.calls.slice(n0).some(c => c.method === 'editMessageText' && /уже надіслано/.test(c.payload.text || '')), 'відповідь «подарунок надіслано»');
+  assert.ok(tg.calls.slice(n0).some(c => c.method === 'editMessageText' && c.payload.chat_id === '@starforge_news' && /Забрав/.test(c.payload.text || '')), 'у пості каналу — хто забрав');
 });
 
 test('пас: закритий рівень не видається; промокод один раз', async () => {

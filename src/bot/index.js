@@ -77,7 +77,9 @@ function createBot(token) {
     return next();
   });
 
-  // 2. Групи.
+  // 2. Групи. «Перший коментар» у групі обговорення каналу — раніше за модуль
+  // чату (той ігнорує чужі групи).
+  bot.use(require('./firstcomment').middleware());
   const chat = createChat(bot);
   notify.tg.chat = chat;
   bot.use(chat.middleware());
@@ -91,6 +93,7 @@ function createBot(token) {
   require('./menu').register(bot, hooks, start.gate);
   require('./levels').register(bot);
   require('./autogift').register(bot, hooks);
+  require('./firstcomment').register(bot);
   campaigns.register(bot, hooks);
   apps.register(bot, hooks);
   ops.register(bot);
@@ -142,6 +145,7 @@ async function setupUi(bot) {
       { command: 'broadcast', description: 'Розсилка (відповіддю на повідомлення)' },
       { command: 'say', description: 'Пост у чат від імені бота: /say текст' },
       { command: 'autowd', description: 'Автовивід Мішки гравцю (один раз): /autowd @нік' },
+      { command: 'first_gift', description: 'Пост у канал: першому коментарю — гіфт 15⭐' },
       { command: 'chat_status', description: 'Стан чату' },
       { command: 'version', description: 'Версія' },
     ], { scope: { type: 'chat', chat_id: Number(id) } }).catch(e => console.error('setMyCommands(admin):', e.message));
