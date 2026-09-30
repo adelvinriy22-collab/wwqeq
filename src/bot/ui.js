@@ -16,13 +16,17 @@ function url(text, href, style, emojiKey) {
   if (emojiKey && EMOJI[emojiKey] && EMOJI[emojiKey].id) b.icon_custom_emoji_id = EMOJI[emojiKey].id;
   return b;
 }
-function app(text, tab, style) {
+function app(text, tab, style, emojiKey) {
   const b = notify.appButton(text, tab);
   if (b && style) b.style = style;
+  if (b && emojiKey && EMOJI[emojiKey] && EMOJI[emojiKey].id) b.icon_custom_emoji_id = EMOJI[emojiKey].id;
   return b;
 }
+// «🔙 НАЗАД» — однакова кнопка на всіх екранах бота.
+const BACK = { uk: 'НАЗАД', en: 'BACK', ru: 'НАЗАД' };
+function back(lang, data) { return cb(BACK[lang] || BACK.uk, data || 'back_to_menu', undefined, 'back'); }
 function kb(rows) {
-  const clean = rows.map(r => r.filter(Boolean)).filter(r => r.length);
+  const clean = rows.filter(Boolean).map(r => r.filter(Boolean)).filter(r => r.length);
   return clean.length ? { reply_markup: { inline_keyboard: clean } } : {};
 }
 function openApp(lang, tab, extraRows) {
@@ -46,4 +50,4 @@ async function replyLong(ctx, text, extra) {
   }
 }
 
-module.exports = { cb, url, app, kb, openApp, card, replyLong, E, LINE };
+module.exports = { cb, url, app, back, kb, openApp, card, replyLong, E, LINE };

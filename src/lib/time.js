@@ -52,8 +52,10 @@ function weekStart(ts) {
 function weekKey(ts) { return 'W' + dayKey(weekStart(ts) + 3600000); }
 function weekEnd(ts) { return weekStart(weekStart(ts) + 8 * DAY_MS); }
 
-function fmtKyiv(ts, opts) {
-  return new Date(ts).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv', ...(opts || {}) });
+// lang — мова гравця (uk/en/ru); без неї — українською.
+function fmtKyiv(ts, opts, lang) {
+  const loc = lang === 'en' ? 'en-GB' : lang === 'ru' ? 'ru-RU' : 'uk-UA';
+  return new Date(ts).toLocaleString(loc, { timeZone: 'Europe/Kyiv', ...(opts || {}) });
 }
 
 // «2 год 15 хв», «3 дн 4 год».

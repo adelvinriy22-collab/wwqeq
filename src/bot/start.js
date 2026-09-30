@@ -13,6 +13,7 @@ const wallet = require('../features/wallet');
 const maintenance = require('../features/maintenance');
 const ui = require('./ui');
 const { esc } = require('../lib/util');
+const { withEmoji } = require('../emoji');
 const time = require('../lib/time');
 
 const awaitingPromo = new Set();
@@ -41,8 +42,18 @@ async function sendSubscribe(ctx, uid) {
   const lang = (users.get(uid) || {}).lang || 'uk';
   await ctx.reply(i18n.t(lang, 'start.subscribe', { channel: esc(config.CHANNEL_USERNAME) }), {
     parse_mode: 'HTML',
-    ...ui.kb([[ui.url(i18n.t(lang, 'btn.subscribe'), config.CHANNEL_URL, 'primary')], [ui.cb(i18n.t(lang, 'btn.checkSub'), 'check_sub', 'success')]]),
+    ...ui.kb([[ui.url(i18n.t(lang, 'btn.subscribe'), config.CHANNEL_URL, 'primary', 'megaphone')], [ui.cb(i18n.t(lang, 'btn.checkSub'), 'check_sub', 'success', 'check')]]),
   }).catch(() => {});
+}
+
+// Вибір мови — як у попередній версії: прапори преміум-емодзі.
+async function sendLangPicker(ctx) {
+  const text = withEmoji('{:flagUk} Українська\n{:flagEn} English\n{:flagRu} Русский\n\n<b>Обери мову / Choose language / Выбери язык</b>');
+  await ctx.reply(text, { parse_mode: 'HTML', ...ui.kb([
+    [ui.cb('УКРАЇНСЬКА', 'lang_uk', 'primary', 'flagUk')],
+    [ui.cb('ENGLISH', 'lang_en', 'primary', 'flagEn')],
+    [ui.cb('РУССКИЙ', 'lang_ru', 'primary', 'flagRu')],
+  ]) }).catch(() => {});
 }
 
 // Спільна перевірка: підписаний → зараховуємо реферала й пускаємо далі.
@@ -87,7 +98,7 @@ function register(bot, hooks) {
 
   bot.action('lang_menu', async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
-    await ctx.reply(i18n.t('uk', 'lang.pick'), ui.kb([[ui.cb('🇺🇦 Українська', 'lang_uk'), ui.cb('🇬🇧 English', 'lang_en'), ui.cb('🇷🇺 Русский', 'lang_ru')]])).catch(() => {});
+    await sendLangPicker(ctx);
   });
   bot.action(/^lang_(uk|en|ru)$/, async (ctx) => {
     const uid = String(ctx.from.id);
@@ -118,9 +129,7 @@ function register(bot, hooks) {
     const lang = users.get(uid).lang || 'uk';
     await ctx.reply(i18n.t(lang, 'start.help', { support: config.SUPPORT }), { parse_mode: 'HTML', ...ui.openApp(lang) }).catch(() => {});
   });
-  bot.command('lang', async (ctx) => {
-    await ctx.reply(i18n.t('uk', 'lang.pick'), ui.kb([[ui.cb('🇺🇦 Українська', 'lang_uk'), ui.cb('🇬🇧 English', 'lang_en'), ui.cb('🇷🇺 Русский', 'lang_ru')]])).catch(() => {});
-  });
+  bot.command('lang', async (ctx) => { await sendLangPicker(ctx); });
 
   // Промокод: /promo КОД або кнопкою, потім текстом.
   bot.command('promo', async (ctx, next) => {
@@ -129,21 +138,31 @@ function register(bot, hooks) {
     const uid = String(ctx.from.id);
     users.ensure(ctx.from);
     const code = ctx.message.text.split(/\s+/)[1];
-    if (!code) { awaitingPromo.add(uid); return ctx.reply(i18n.t(users.get(uid).lang, 'promo.ask')).catch(() => {}); }
+    if (!code) return askPromo(ctx, uid);
     await redeem(ctx, uid, code);
   });
+  async function askPromo(ctx, uid) {
+    awaitingPromo.add(uid);
+    const lang = (users.get(uid) || {}).lang || 'uk';
+    await ctx.reply(i18n.t(lang, 'promo.ask'), { parse_mode: 'HTML', ...ui.kb([[ui.back(lang)]]) }).catch(() => {});
+    await require('./menu').ensureBackKeyboard(ctx, uid);
+  }
   bot.action('promo_code_start', async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
-    const uid = String(ctx.from.id);
-    awaitingPromo.add(uid);
-    await ctx.reply(i18n.t((users.get(uid) || {}).lang, 'promo.ask')).catch(() => {});
+    await askPromo(ctx, String(ctx.from.id));
   });
   async function redeem(ctx, uid, code) {
     if (!(await gate(ctx, uid))) return;
     const lang = users.get(uid).lang || 'uk';
     const r = await promo.redeem(uid, code);
-    if (!r.ok) return ctx.reply(i18n.t(lang, r.error === 'used' ? 'promo.used' : r.error === 'limit' ? 'promo.limit' : 'promo.bad')).catch(() => {});
-    await ctx.reply(i18n.t(lang, 'promo.ok', { what: r.what }), ui.openApp(lang)).catch(() => {});
+    if (!r.ok) {
+      return ctx.reply(i18n.t(lang, r.error === 'used' ? 'promo.used' : r.error === 'limit' ? 'promo.limit' : 'promo.bad'), { parse_mode: 'HTML', ...ui.kb([
+        [ui.cb(i18n.t(lang, 'btn.promoAgain'), 'promo_code_start', 'primary', 'promoCode')], [ui.back(lang)],
+      ]) }).catch(() => {});
+    }
+    await ctx.reply(i18n.t(lang, 'promo.ok', { what: esc(r.what) }), { parse_mode: 'HTML', ...ui.kb([
+      [ui.app(i18n.t(lang, 'btn.open'), null, 'success', 'rocket')], [ui.back(lang)],
+    ]) }).catch(() => {});
   }
   hooks.onText.push(async (ctx, uid, text) => {
     if (!awaitingPromo.has(uid)) return false;
@@ -200,4 +219,4 @@ function legacyCallbacks(bot) {
   });
 }
 
-module.exports = { register, maintenanceGate, legacyCallbacks, sendWelcome, gate, shareUrl, langFromTg };
+module.exports = { register, maintenanceGate, legacyCallbacks, sendWelcome, sendLangPicker, gate, shareUrl, langFromTg };

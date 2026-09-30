@@ -2,12 +2,15 @@
 // ГОЛОВНЕ МЕНЮ В БОТІ — як у попередній версії: нагороди за друзів, ігри,
 // спільний банк, поповнення, профіль, промокод, заявки, налаштування,
 // активні розіграші й події. Усе те саме є й у застосунку.
+//
+// Оформлення — як у старому боті: преміум-емодзі в тексті ({:ключ} → анімований
+// емодзі з src/emoji.js), кольорові кнопки великими літерами з преміум-іконкою,
+// на кожному екрані «🔙 НАЗАД», а під полем вводу — постійна кнопка «Назад».
 // ==========================================================================
 const E = require('../economy');
 const store = require('../store');
 const users = require('../core/users');
 const progress = require('../core/progress');
-const notify = require('../core/notify');
 const time = require('../lib/time');
 const bank = require('../features/bank');
 const wallet = require('../features/wallet');
@@ -15,73 +18,113 @@ const profile = require('../features/profile');
 const referrals = require('../features/referrals');
 const applications = require('../features/applications');
 const ui = require('./ui');
+const { EMOJI, withEmoji } = require('../emoji');
 const { esc, fmtStars } = require('../lib/util');
 
 const T = {
   uk: {
-    hi: '👋 <b>Привіт, {name}!</b>', bal: '⭐ Баланс: <b>{s}</b> · 🎫 Білети: <b>{t}</b>', lvl: '{e} {title} · рівень {n}',
-    bankLine: '🏦 У банку зараз <b>{p}⭐</b> — розіграш {when}', open: '🎰 Відкрити StarForge',
-    rewards: '🎁 Нагороди за друзів', games: '🎲 Ігри на зірки', bank: '🏦 Спільний банк — {p}⭐', topup: '⭐ Поповнити баланс',
-    profile: '👤 Мій профіль', promo: '🎟 Промокод', withdraw: '💸 Вивести зірки', settings: '⚙️ Налаштування', apps: '📦 Мої заявки',
-    giveaway: '🎁 Розіграш: {n}', extref: '🧸 Шанс на мішку ({w}/{m})', event: '🏆 Подія: запроси друзів', admin: '🛠 Адмін-панель', back: '⬅️ Меню',
-    rwTitle: '🎁 <b>Нагороди за друзів</b>\nЗапрошено: <b>{n}</b>\n\nТвоє посилання:\n<code>{link}</code>\n\nДруг рахується, коли підписався на канал. Кожна сходинка — один раз.',
-    share: '⚡ Поділитися посиланням', claim: '✅ Забрати {name}', stDone: '✅ видано', stPend: '⏳ в черзі', stRej: '❌ відхилено', stOk: '🟢 можна забрати', stLock: 'ще {n}',
-    claimed: '✅ Заявку #{id} на {name} створено — видамо найближчим часом.', claimErr: { already: 'Заявка на цей приз уже є.', need_username: 'Спершу додай @username у налаштуваннях Telegram.', not_enough_friends: 'Поки не вистачає друзів.' },
-    pfTitle: '👤 <b>Твій профіль</b>', pf: '🎰 Спінів: <b>{spins}</b> (платних {paid})\n🎁 Призів: <b>{prizes}</b>\n💎 Найкращий виграш: <b>{best}</b>\n\n⭐ Баланс: <b>{s}</b> · 🎫 <b>{t}</b>\n📈 Виграно за весь час: <b>{earned}⭐</b>\n🎲 Ігор: <b>{games}</b>\n\n🔥 Серія: <b>{streak}</b> дн. (рекорд {best2})\n👥 Друзів: <b>{friends}</b>\n{lvl} · {xp} XP',
-    lastWins: '📜 <b>Останні виграші:</b>', nothing: 'ще нічого',
-    apTitle: '📦 <b>Мої заявки</b>', apNone: 'Тут поки порожньо.', fPend: '⏳ В черзі', fOk: '✅ Видані', fRej: '❌ Відхилені',
-    stTitle: '⚙️ <b>Налаштування</b>', lang: '🌐 Мова: {l}', anon: '🕶 Анонімно в таблицях: {v}', ref: '🔔 Про нових друзів: {v}', rem: '⏰ Нагадування про спін: {v}', on: 'так', off: 'ні',
-    bkTitle: '🏦 <b>Спільний банк</b>', bkNone: 'Зараз банку немає — новий відкриється скоро.', bk: 'У банку: <b>{p}⭐</b>{tx} · учасників: <b>{n}</b>\nРозіграш: <b>{when}</b> (через {left})\n\n{mine}\n{top}\nКолесо крутиться один раз — переможець забирає весь банк. Кожен учасник отримує втішні білети.',
-    bkMine: 'Твоя ставка: <b>{w}</b> → шанс <b>{c}%</b>', bkNotIn: 'Ти ще не в грі — що більша ставка, то більший твій сектор.', bkTop: '<b>Сектори:</b>', bkOwn: '✏️ Своя ставка', bkApp: '🎡 Колесо банку в застосунку',
-    bkAsk: 'Напиши ставку зірками числом. Баланс: <b>{b}⭐</b>', bkOk: '✅ Поставлено <b>{s}⭐</b>. Шанс: <b>{c}%</b>. Банк: <b>{p}⭐</b>', bkErr: { no_bank: 'Зараз розіграшу немає.', too_late: 'Прийом ставок закрито — колесо ось-ось крутиться.', not_enough_stars: 'Замало зірок.', bad_amount: 'Вкажи ставку числом.' },
-    tpTitle: '⭐ <b>Поповнення</b>\n\nБаланс: <b>{b}⭐</b>\nОплата — реальними Telegram Stars.{bonus}\n\nОбери суму:', tpBonus: '\n🎁 Бонус <b>+{p}%</b> ще на {n} поповнення.', tpLvl: '\n🏅 Бонус твого рівня: <b>+{p}%</b> до кожного поповнення.', tpOwn: '✏️ Своя сума',
-    tpAsk: 'Напиши суму числом, наприклад <code>75</code>.', tpPay: '💳 Оплатити {a}⭐', tpReady: '⭐ Рахунок на <b>{a}⭐</b> готовий:', tpErr: 'Не вдалось створити рахунок, спробуй ще раз.',
-    evTitle: '🏆 <b>Подія: запроси друзів</b>', ev: 'До {when}.\nТвоїх нових друзів: <b>{mine}</b>\n\n{top}\n\nТоп-3 отримають 🚀 Ракету, 🎁 Подарунок і 🧸 Мішку.',
+    hi: '{:lightning} <b>Привіт, {name}!</b>', lead: 'Колеса удачі, ігри на зірки, спільний банк і <b>справжні Telegram-подарунки</b> {:giftBox}',
+    bal: '{:starIcon} Баланс: <b>{s}</b> ⭐', tix: '🎫 Білети: <b>{t}</b>', lvl: '{:crown} Рівень {n}: <b>{e} {title}</b>',
+    bankLine: '{:almost} У банку <b>{p}⭐</b> — розіграш {when}', tease: '<i>А що буде далі...</i> {:eye}',
+    open: 'ВІДКРИТИ STARFORGE', rewards: 'МОЇ НАГОРОДИ', games: '🎲 ІГРИ НА ЗІРКИ', bank: '🏦 СПІЛЬНИЙ БАНК — {p}⭐', topup: 'ПОПОВНИТИ БАЛАНС',
+    profile: 'МІЙ ПРОФІЛЬ', promo: 'ПРОМОКОД', withdraw: 'ВИВЕСТИ ЗІРКИ', settings: '⚙️ НАЛАШТУВАННЯ', apps: 'МОЇ ЗАЯВКИ',
+    giveaway: 'РОЗІГРАШ: {n}', extref: 'ШАНС НА МІШКУ ({w}/{m})', event: 'ПОДІЯ: ЗАПРОСИ ДРУЗІВ', admin: 'АДМІН-ПАНЕЛЬ',
+    rwTitle: 'МОЇ НАГОРОДИ', rwInvited: '👥 Запрошено друзів: <b>{n}</b>', rwLink: '{:lightning} Твоє посилання:',
+    rwFoot: 'Друг рахується, коли підписався на канал. Кожна сходинка — один раз, видача вручну.',
+    share: 'ПОДІЛИТИСЯ ПОСИЛАННЯМ', claim: 'ЗАБРАТИ: {name}', stDone: '{:check} видано', stPend: '{:pendingIcon} в черзі', stRej: '{:redCircle} відхилено', stOk: '{:greenCircle} <b>можна забрати!</b>', stLock: '{:lockIcon} ще {n}',
+    claimed: '{:check} <b>Заявку #{id} створено</b>\n{name} — видамо найближчим часом.', claimErr: { already: 'Заявка на цей приз уже є.', need_username: 'Спершу додай @username у налаштуваннях Telegram.', not_enough_friends: 'Поки не вистачає друзів.' },
+    pfTitle: 'МІЙ ПРОФІЛЬ', pfSpins: '🎰 Спінів: <b>{spins}</b> (платних {paid})', pfPrizes: '{:giftBox} Призів: <b>{prizes}</b>', pfBest: '{:trophy} Найкращий виграш: <b>{best}</b>',
+    pfBal: '{:starIcon} Баланс: <b>{s}⭐</b> · 🎫 <b>{t}</b>', pfEarned: '{:statsIcon} Виграно за весь час: <b>{earned}⭐</b>', pfGames: '🎲 Ігор: <b>{games}</b>',
+    pfStreak: '{:almost} Серія: <b>{streak}</b> дн. (рекорд {best2})', pfFriends: '👥 Друзів: <b>{friends}</b>', pfLvl: '{:crown} {lvl} · {xp} XP',
+    lastWins: '{:inventoryBag} <b>Останні виграші:</b>', nothing: 'ще нічого',
+    apTitle: 'МОЇ ЗАЯВКИ', apNone: 'Тут поки порожньо.', fPend: 'В ЧЕРЗІ', fOk: 'ВИДАНІ', fRej: 'ВІДХИЛЕНІ',
+    stTitle: 'НАЛАШТУВАННЯ', stLead: 'Тут можна змінити мову, анонімність і сповіщення.',
+    lang: 'МОВА: {l}', anon: 'АНОНІМНО В ТАБЛИЦЯХ: {v}', ref: 'ПРО НОВИХ ДРУЗІВ: {v}', rem: 'НАГАДУВАННЯ ПРО СПІН: {v}', on: 'ТАК', off: 'НІ',
+    bkTitle: 'СПІЛЬНИЙ БАНК', bkNone: 'Зараз банку немає — новий відкриється скоро.', bkPot: '{:starIcon} У банку: <b>{p}⭐</b>{tx}', bkPlayers: '👥 Учасників: <b>{n}</b>',
+    bkWhen: '{:clockIcon} Розіграш: <b>{when}</b> (через {left})', bkMine: '{:check} Твоя ставка: <b>{w}</b> → шанс <b>{c}%</b>', bkNotIn: '{:lightning} Ти ще не в грі — що більша ставка, то більший твій сектор.',
+    bkTop: '{:trophy} <b>Сектори:</b>', bkFoot: 'Колесо крутиться один раз — переможець забирає весь банк. Кожен учасник отримує втішні білети.',
+    bkOwn: 'СВОЯ СТАВКА', bkApp: 'КОЛЕСО БАНКУ', bkAsk: '{:starIcon} Напиши ставку зірками числом.\nБаланс: <b>{b}⭐</b>',
+    bkOk: '{:check} Поставлено <b>{s}⭐</b>\nШанс: <b>{c}%</b> · банк: <b>{p}⭐</b>', bkErr: { no_bank: 'Зараз розіграшу немає.', too_late: 'Прийом ставок закрито — колесо ось-ось крутиться.', not_enough_stars: 'Замало зірок.', bad_amount: 'Вкажи ставку числом.' },
+    tpTitle: 'ПОПОВНЕННЯ', tpBal: '{:starIcon} Баланс: <b>{b}⭐</b>', tpLead: 'Оплата — реальними Telegram Stars, зараховується одразу.',
+    tpBonus: '{:giftBox} Бонус <b>+{p}%</b> ще на {n} поповнення.', tpLvl: '{:crown} Бонус твого рівня: <b>+{p}%</b> до кожного поповнення.', tpPick: 'Обери суму 👇', tpOwn: 'СВОЯ СУМА',
+    tpAsk: '{:starIcon} Напиши суму числом, наприклад <code>75</code>.', tpPay: 'ОПЛАТИТИ {a}⭐', tpReady: '{:check} Рахунок на <b>{a}⭐</b> готовий:', tpErr: 'Не вдалось створити рахунок, спробуй ще раз.',
+    evTitle: 'ПОДІЯ: ЗАПРОСИ ДРУЗІВ', evWhen: '{:clockIcon} До {when}', evMine: '👥 Твоїх нових друзів: <b>{mine}</b>', evFoot: 'Топ-3 отримають 🚀 Ракету, 🎁 Подарунок і 🧸 Мішку.',
+    wdLead: '{:withdrawBox} Вивід зірок — у застосунку: там видно комісію й умови.',
+    backHint: '👇 Кнопка «Назад» унизу завжди поверне в меню', backKey: 'Назад',
   },
   en: {
-    hi: '👋 <b>Hi, {name}!</b>', bal: '⭐ Balance: <b>{s}</b> · 🎫 Tickets: <b>{t}</b>', lvl: '{e} {title} · level {n}',
-    bankLine: '🏦 The bank holds <b>{p}⭐</b> — draw {when}', open: '🎰 Open StarForge',
-    rewards: '🎁 Rewards for friends', games: '🎲 Star games', bank: '🏦 Shared bank — {p}⭐', topup: '⭐ Top up',
-    profile: '👤 My profile', promo: '🎟 Promo code', withdraw: '💸 Withdraw stars', settings: '⚙️ Settings', apps: '📦 My requests',
-    giveaway: '🎁 Giveaway: {n}', extref: '🧸 Teddy chance ({w}/{m})', event: '🏆 Event: invite friends', admin: '🛠 Admin panel', back: '⬅️ Menu',
-    rwTitle: '🎁 <b>Rewards for friends</b>\nInvited: <b>{n}</b>\n\nYour link:\n<code>{link}</code>\n\nA friend counts once subscribed to the channel. Each step once.',
-    share: '⚡ Share the link', claim: '✅ Claim {name}', stDone: '✅ sent', stPend: '⏳ queued', stRej: '❌ rejected', stOk: '🟢 claimable', stLock: '{n} more',
-    claimed: '✅ Request #{id} for {name} created — we’ll send it soon.', claimErr: { already: 'You already have a request for this prize.', need_username: 'Add a @username in Telegram settings first.', not_enough_friends: 'Not enough friends yet.' },
-    pfTitle: '👤 <b>Your profile</b>', pf: '🎰 Spins: <b>{spins}</b> ({paid} paid)\n🎁 Prizes: <b>{prizes}</b>\n💎 Best win: <b>{best}</b>\n\n⭐ Balance: <b>{s}</b> · 🎫 <b>{t}</b>\n📈 Won in total: <b>{earned}⭐</b>\n🎲 Games: <b>{games}</b>\n\n🔥 Streak: <b>{streak}</b> days (best {best2})\n👥 Friends: <b>{friends}</b>\n{lvl} · {xp} XP',
-    lastWins: '📜 <b>Latest wins:</b>', nothing: 'nothing yet',
-    apTitle: '📦 <b>My requests</b>', apNone: 'Nothing here yet.', fPend: '⏳ Queued', fOk: '✅ Sent', fRej: '❌ Rejected',
-    stTitle: '⚙️ <b>Settings</b>', lang: '🌐 Language: {l}', anon: '🕶 Anonymous in tables: {v}', ref: '🔔 About new friends: {v}', rem: '⏰ Spin reminders: {v}', on: 'on', off: 'off',
-    bkTitle: '🏦 <b>Shared bank</b>', bkNone: 'No bank right now — a new one opens soon.', bk: 'In the bank: <b>{p}⭐</b>{tx} · players: <b>{n}</b>\nDraw: <b>{when}</b> (in {left})\n\n{mine}\n{top}\nThe wheel spins once — the winner takes the whole bank. Every player gets consolation tickets.',
-    bkMine: 'Your bet: <b>{w}</b> → chance <b>{c}%</b>', bkNotIn: 'You’re not in yet — a bigger bet means a bigger sector.', bkTop: '<b>Sectors:</b>', bkOwn: '✏️ Custom bet', bkApp: '🎡 Bank wheel in the app',
-    bkAsk: 'Send your bet in stars as a number. Balance: <b>{b}⭐</b>', bkOk: '✅ Bet <b>{s}⭐</b> placed. Chance: <b>{c}%</b>. Bank: <b>{p}⭐</b>', bkErr: { no_bank: 'No draw right now.', too_late: 'Bets are closed — the wheel is about to spin.', not_enough_stars: 'Not enough stars.', bad_amount: 'Send the bet as a number.' },
-    tpTitle: '⭐ <b>Top up</b>\n\nBalance: <b>{b}⭐</b>\nPaid with real Telegram Stars.{bonus}\n\nPick an amount:', tpBonus: '\n🎁 <b>+{p}%</b> bonus for {n} more top-ups.', tpLvl: '\n🏅 Your level bonus: <b>+{p}%</b> on every top-up.', tpOwn: '✏️ Custom amount',
-    tpAsk: 'Send the amount as a number, e.g. <code>75</code>.', tpPay: '💳 Pay {a}⭐', tpReady: '⭐ Invoice for <b>{a}⭐</b> is ready:', tpErr: 'Couldn’t create the invoice, please try again.',
-    evTitle: '🏆 <b>Event: invite friends</b>', ev: 'Until {when}.\nYour new friends: <b>{mine}</b>\n\n{top}\n\nTop 3 get a 🚀 Rocket, 🎁 Gift and 🧸 Teddy.',
+    hi: '{:lightning} <b>Hi, {name}!</b>', lead: 'Wheels of luck, star games, a shared bank and <b>real Telegram gifts</b> {:giftBox}',
+    bal: '{:starIcon} Balance: <b>{s}</b> ⭐', tix: '🎫 Tickets: <b>{t}</b>', lvl: '{:crown} Level {n}: <b>{e} {title}</b>',
+    bankLine: '{:almost} The bank holds <b>{p}⭐</b> — draw {when}', tease: '<i>What comes next...</i> {:eye}',
+    open: 'OPEN STARFORGE', rewards: 'MY REWARDS', games: '🎲 STAR GAMES', bank: '🏦 SHARED BANK — {p}⭐', topup: 'TOP UP',
+    profile: 'MY PROFILE', promo: 'PROMO CODE', withdraw: 'WITHDRAW STARS', settings: '⚙️ SETTINGS', apps: 'MY REQUESTS',
+    giveaway: 'GIVEAWAY: {n}', extref: 'TEDDY CHANCE ({w}/{m})', event: 'EVENT: INVITE FRIENDS', admin: 'ADMIN PANEL',
+    rwTitle: 'MY REWARDS', rwInvited: '👥 Friends invited: <b>{n}</b>', rwLink: '{:lightning} Your link:',
+    rwFoot: 'A friend counts once subscribed to the channel. Each step once, sent manually.',
+    share: 'SHARE THE LINK', claim: 'CLAIM: {name}', stDone: '{:check} sent', stPend: '{:pendingIcon} queued', stRej: '{:redCircle} rejected', stOk: '{:greenCircle} <b>claim it!</b>', stLock: '{:lockIcon} {n} more',
+    claimed: '{:check} <b>Request #{id} created</b>\n{name} — we’ll send it soon.', claimErr: { already: 'You already have a request for this prize.', need_username: 'Add a @username in Telegram settings first.', not_enough_friends: 'Not enough friends yet.' },
+    pfTitle: 'MY PROFILE', pfSpins: '🎰 Spins: <b>{spins}</b> ({paid} paid)', pfPrizes: '{:giftBox} Prizes: <b>{prizes}</b>', pfBest: '{:trophy} Best win: <b>{best}</b>',
+    pfBal: '{:starIcon} Balance: <b>{s}⭐</b> · 🎫 <b>{t}</b>', pfEarned: '{:statsIcon} Won in total: <b>{earned}⭐</b>', pfGames: '🎲 Games: <b>{games}</b>',
+    pfStreak: '{:almost} Streak: <b>{streak}</b> days (best {best2})', pfFriends: '👥 Friends: <b>{friends}</b>', pfLvl: '{:crown} {lvl} · {xp} XP',
+    lastWins: '{:inventoryBag} <b>Latest wins:</b>', nothing: 'nothing yet',
+    apTitle: 'MY REQUESTS', apNone: 'Nothing here yet.', fPend: 'QUEUED', fOk: 'SENT', fRej: 'REJECTED',
+    stTitle: 'SETTINGS', stLead: 'Change your language, anonymity and notifications here.',
+    lang: 'LANGUAGE: {l}', anon: 'ANONYMOUS IN TABLES: {v}', ref: 'NEW FRIENDS ALERTS: {v}', rem: 'SPIN REMINDERS: {v}', on: 'ON', off: 'OFF',
+    bkTitle: 'SHARED BANK', bkNone: 'No bank right now — a new one opens soon.', bkPot: '{:starIcon} In the bank: <b>{p}⭐</b>{tx}', bkPlayers: '👥 Players: <b>{n}</b>',
+    bkWhen: '{:clockIcon} Draw: <b>{when}</b> (in {left})', bkMine: '{:check} Your bet: <b>{w}</b> → chance <b>{c}%</b>', bkNotIn: '{:lightning} You’re not in yet — a bigger bet means a bigger sector.',
+    bkTop: '{:trophy} <b>Sectors:</b>', bkFoot: 'The wheel spins once — the winner takes the whole bank. Every player gets consolation tickets.',
+    bkOwn: 'CUSTOM BET', bkApp: 'BANK WHEEL', bkAsk: '{:starIcon} Send your bet in stars as a number.\nBalance: <b>{b}⭐</b>',
+    bkOk: '{:check} Bet <b>{s}⭐</b> placed\nChance: <b>{c}%</b> · bank: <b>{p}⭐</b>', bkErr: { no_bank: 'No draw right now.', too_late: 'Bets are closed — the wheel is about to spin.', not_enough_stars: 'Not enough stars.', bad_amount: 'Send the bet as a number.' },
+    tpTitle: 'TOP UP', tpBal: '{:starIcon} Balance: <b>{b}⭐</b>', tpLead: 'Paid with real Telegram Stars, credited instantly.',
+    tpBonus: '{:giftBox} <b>+{p}%</b> bonus for {n} more top-ups.', tpLvl: '{:crown} Your level bonus: <b>+{p}%</b> on every top-up.', tpPick: 'Pick an amount 👇', tpOwn: 'CUSTOM AMOUNT',
+    tpAsk: '{:starIcon} Send the amount as a number, e.g. <code>75</code>.', tpPay: 'PAY {a}⭐', tpReady: '{:check} Invoice for <b>{a}⭐</b> is ready:', tpErr: 'Couldn’t create the invoice, please try again.',
+    evTitle: 'EVENT: INVITE FRIENDS', evWhen: '{:clockIcon} Until {when}', evMine: '👥 Your new friends: <b>{mine}</b>', evFoot: 'Top 3 get a 🚀 Rocket, 🎁 Gift and 🧸 Teddy.',
+    wdLead: '{:withdrawBox} Withdrawals are in the app — fees and rules are shown there.',
+    backHint: '👇 The “Back” button below always returns to the menu', backKey: 'Back',
   },
   ru: {
-    hi: '👋 <b>Привет, {name}!</b>', bal: '⭐ Баланс: <b>{s}</b> · 🎫 Билеты: <b>{t}</b>', lvl: '{e} {title} · уровень {n}',
-    bankLine: '🏦 В банке сейчас <b>{p}⭐</b> — розыгрыш {when}', open: '🎰 Открыть StarForge',
-    rewards: '🎁 Награды за друзей', games: '🎲 Игры на звёзды', bank: '🏦 Общий банк — {p}⭐', topup: '⭐ Пополнить баланс',
-    profile: '👤 Мой профиль', promo: '🎟 Промокод', withdraw: '💸 Вывести звёзды', settings: '⚙️ Настройки', apps: '📦 Мои заявки',
-    giveaway: '🎁 Розыгрыш: {n}', extref: '🧸 Шанс на мишку ({w}/{m})', event: '🏆 Событие: пригласи друзей', admin: '🛠 Админ-панель', back: '⬅️ Меню',
-    rwTitle: '🎁 <b>Награды за друзей</b>\nПриглашено: <b>{n}</b>\n\nТвоя ссылка:\n<code>{link}</code>\n\nДруг засчитывается, когда подписался на канал. Каждая ступень — один раз.',
-    share: '⚡ Поделиться ссылкой', claim: '✅ Забрать {name}', stDone: '✅ выдано', stPend: '⏳ в очереди', stRej: '❌ отклонено', stOk: '🟢 можно забрать', stLock: 'ещё {n}',
-    claimed: '✅ Заявка #{id} на {name} создана — выдадим в ближайшее время.', claimErr: { already: 'Заявка на этот приз уже есть.', need_username: 'Сначала добавь @username в настройках Telegram.', not_enough_friends: 'Пока не хватает друзей.' },
-    pfTitle: '👤 <b>Твой профиль</b>', pf: '🎰 Спинов: <b>{spins}</b> (платных {paid})\n🎁 Призов: <b>{prizes}</b>\n💎 Лучший выигрыш: <b>{best}</b>\n\n⭐ Баланс: <b>{s}</b> · 🎫 <b>{t}</b>\n📈 Выиграно за всё время: <b>{earned}⭐</b>\n🎲 Игр: <b>{games}</b>\n\n🔥 Серия: <b>{streak}</b> дн. (рекорд {best2})\n👥 Друзей: <b>{friends}</b>\n{lvl} · {xp} XP',
-    lastWins: '📜 <b>Последние выигрыши:</b>', nothing: 'пока ничего',
-    apTitle: '📦 <b>Мои заявки</b>', apNone: 'Пока пусто.', fPend: '⏳ В очереди', fOk: '✅ Выданы', fRej: '❌ Отклонены',
-    stTitle: '⚙️ <b>Настройки</b>', lang: '🌐 Язык: {l}', anon: '🕶 Анонимно в таблицах: {v}', ref: '🔔 О новых друзьях: {v}', rem: '⏰ Напоминания о спине: {v}', on: 'да', off: 'нет',
-    bkTitle: '🏦 <b>Общий банк</b>', bkNone: 'Сейчас банка нет — новый откроется скоро.', bk: 'В банке: <b>{p}⭐</b>{tx} · участников: <b>{n}</b>\nРозыгрыш: <b>{when}</b> (через {left})\n\n{mine}\n{top}\nКолесо крутится один раз — победитель забирает весь банк. Каждый участник получает утешительные билеты.',
-    bkMine: 'Твоя ставка: <b>{w}</b> → шанс <b>{c}%</b>', bkNotIn: 'Ты ещё не в игре — чем больше ставка, тем больше твой сектор.', bkTop: '<b>Секторы:</b>', bkOwn: '✏️ Своя ставка', bkApp: '🎡 Колесо банка в приложении',
-    bkAsk: 'Напиши ставку звёздами числом. Баланс: <b>{b}⭐</b>', bkOk: '✅ Поставлено <b>{s}⭐</b>. Шанс: <b>{c}%</b>. Банк: <b>{p}⭐</b>', bkErr: { no_bank: 'Сейчас розыгрыша нет.', too_late: 'Приём ставок закрыт — колесо вот-вот крутится.', not_enough_stars: 'Мало звёзд.', bad_amount: 'Укажи ставку числом.' },
-    tpTitle: '⭐ <b>Пополнение</b>\n\nБаланс: <b>{b}⭐</b>\nОплата — реальными Telegram Stars.{bonus}\n\nВыбери сумму:', tpBonus: '\n🎁 Бонус <b>+{p}%</b> ещё на {n} пополнения.', tpLvl: '\n🏅 Бонус твоего уровня: <b>+{p}%</b> к каждому пополнению.', tpOwn: '✏️ Своя сумма',
-    tpAsk: 'Напиши сумму числом, например <code>75</code>.', tpPay: '💳 Оплатить {a}⭐', tpReady: '⭐ Счёт на <b>{a}⭐</b> готов:', tpErr: 'Не удалось создать счёт, попробуй ещё раз.',
-    evTitle: '🏆 <b>Событие: пригласи друзей</b>', ev: 'До {when}.\nТвоих новых друзей: <b>{mine}</b>\n\n{top}\n\nТоп-3 получат 🚀 Ракету, 🎁 Подарок и 🧸 Мишку.',
+    hi: '{:lightning} <b>Привет, {name}!</b>', lead: 'Колёса удачи, игры на звёзды, общий банк и <b>настоящие Telegram-подарки</b> {:giftBox}',
+    bal: '{:starIcon} Баланс: <b>{s}</b> ⭐', tix: '🎫 Билеты: <b>{t}</b>', lvl: '{:crown} Уровень {n}: <b>{e} {title}</b>',
+    bankLine: '{:almost} В банке <b>{p}⭐</b> — розыгрыш {when}', tease: '<i>А что будет дальше...</i> {:eye}',
+    open: 'ОТКРЫТЬ STARFORGE', rewards: 'МОИ НАГРАДЫ', games: '🎲 ИГРЫ НА ЗВЁЗДЫ', bank: '🏦 ОБЩИЙ БАНК — {p}⭐', topup: 'ПОПОЛНИТЬ БАЛАНС',
+    profile: 'МОЙ ПРОФИЛЬ', promo: 'ПРОМОКОД', withdraw: 'ВЫВЕСТИ ЗВЁЗДЫ', settings: '⚙️ НАСТРОЙКИ', apps: 'МОИ ЗАЯВКИ',
+    giveaway: 'РОЗЫГРЫШ: {n}', extref: 'ШАНС НА МИШКУ ({w}/{m})', event: 'СОБЫТИЕ: ПРИГЛАСИ ДРУЗЕЙ', admin: 'АДМИН-ПАНЕЛЬ',
+    rwTitle: 'МОИ НАГРАДЫ', rwInvited: '👥 Приглашено друзей: <b>{n}</b>', rwLink: '{:lightning} Твоя ссылка:',
+    rwFoot: 'Друг засчитывается, когда подписался на канал. Каждая ступень — один раз, выдача вручную.',
+    share: 'ПОДЕЛИТЬСЯ ССЫЛКОЙ', claim: 'ЗАБРАТЬ: {name}', stDone: '{:check} выдано', stPend: '{:pendingIcon} в очереди', stRej: '{:redCircle} отклонено', stOk: '{:greenCircle} <b>можно забрать!</b>', stLock: '{:lockIcon} ещё {n}',
+    claimed: '{:check} <b>Заявка #{id} создана</b>\n{name} — выдадим в ближайшее время.', claimErr: { already: 'Заявка на этот приз уже есть.', need_username: 'Сначала добавь @username в настройках Telegram.', not_enough_friends: 'Пока не хватает друзей.' },
+    pfTitle: 'МОЙ ПРОФИЛЬ', pfSpins: '🎰 Спинов: <b>{spins}</b> (платных {paid})', pfPrizes: '{:giftBox} Призов: <b>{prizes}</b>', pfBest: '{:trophy} Лучший выигрыш: <b>{best}</b>',
+    pfBal: '{:starIcon} Баланс: <b>{s}⭐</b> · 🎫 <b>{t}</b>', pfEarned: '{:statsIcon} Выиграно за всё время: <b>{earned}⭐</b>', pfGames: '🎲 Игр: <b>{games}</b>',
+    pfStreak: '{:almost} Серия: <b>{streak}</b> дн. (рекорд {best2})', pfFriends: '👥 Друзей: <b>{friends}</b>', pfLvl: '{:crown} {lvl} · {xp} XP',
+    lastWins: '{:inventoryBag} <b>Последние выигрыши:</b>', nothing: 'пока ничего',
+    apTitle: 'МОИ ЗАЯВКИ', apNone: 'Пока пусто.', fPend: 'В ОЧЕРЕДИ', fOk: 'ВЫДАНЫ', fRej: 'ОТКЛОНЕНЫ',
+    stTitle: 'НАСТРОЙКИ', stLead: 'Здесь можно сменить язык, анонимность и уведомления.',
+    lang: 'ЯЗЫК: {l}', anon: 'АНОНИМНО В ТАБЛИЦАХ: {v}', ref: 'О НОВЫХ ДРУЗЬЯХ: {v}', rem: 'НАПОМИНАНИЯ О СПИНЕ: {v}', on: 'ДА', off: 'НЕТ',
+    bkTitle: 'ОБЩИЙ БАНК', bkNone: 'Сейчас банка нет — новый откроется скоро.', bkPot: '{:starIcon} В банке: <b>{p}⭐</b>{tx}', bkPlayers: '👥 Участников: <b>{n}</b>',
+    bkWhen: '{:clockIcon} Розыгрыш: <b>{when}</b> (через {left})', bkMine: '{:check} Твоя ставка: <b>{w}</b> → шанс <b>{c}%</b>', bkNotIn: '{:lightning} Ты ещё не в игре — чем больше ставка, тем больше твой сектор.',
+    bkTop: '{:trophy} <b>Секторы:</b>', bkFoot: 'Колесо крутится один раз — победитель забирает весь банк. Каждый участник получает утешительные билеты.',
+    bkOwn: 'СВОЯ СТАВКА', bkApp: 'КОЛЕСО БАНКА', bkAsk: '{:starIcon} Напиши ставку звёздами числом.\nБаланс: <b>{b}⭐</b>',
+    bkOk: '{:check} Поставлено <b>{s}⭐</b>\nШанс: <b>{c}%</b> · банк: <b>{p}⭐</b>', bkErr: { no_bank: 'Сейчас розыгрыша нет.', too_late: 'Приём ставок закрыт — колесо вот-вот крутится.', not_enough_stars: 'Мало звёзд.', bad_amount: 'Укажи ставку числом.' },
+    tpTitle: 'ПОПОЛНЕНИЕ', tpBal: '{:starIcon} Баланс: <b>{b}⭐</b>', tpLead: 'Оплата — реальными Telegram Stars, зачисляется сразу.',
+    tpBonus: '{:giftBox} Бонус <b>+{p}%</b> ещё на {n} пополнения.', tpLvl: '{:crown} Бонус твоего уровня: <b>+{p}%</b> к каждому пополнению.', tpPick: 'Выбери сумму 👇', tpOwn: 'СВОЯ СУММА',
+    tpAsk: '{:starIcon} Напиши сумму числом, например <code>75</code>.', tpPay: 'ОПЛАТИТЬ {a}⭐', tpReady: '{:check} Счёт на <b>{a}⭐</b> готов:', tpErr: 'Не удалось создать счёт, попробуй ещё раз.',
+    evTitle: 'СОБЫТИЕ: ПРИГЛАСИ ДРУЗЕЙ', evWhen: '{:clockIcon} До {when}', evMine: '👥 Твоих новых друзей: <b>{mine}</b>', evFoot: 'Топ-3 получат 🚀 Ракету, 🎁 Подарок и 🧸 Мишку.',
+    wdLead: '{:withdrawBox} Вывод звёзд — в приложении: там видно комиссию и условия.',
+    backHint: '👇 Кнопка «Назад» внизу всегда вернёт в меню', backKey: 'Назад',
   },
 };
 const L = (uid) => { const l = (users.get(uid) || {}).lang; return T[l] ? l : 'uk'; };
-const tt = (lang, k, p) => { const v = (T[lang] || T.uk)[k]; return String(v === undefined ? T.uk[k] : v).replace(/\{(\w+)\}/g, (m, x) => (p && p[x] !== undefined ? p[x] : m)); };
-const whenOf = (ts, lang) => time.fmtKyiv(ts, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+// Текст повідомлення: {параметри} і {:преміум-емодзі}.
+const tt = (lang, k, p) => { const v = (T[lang] || T.uk)[k]; return withEmoji(String(v === undefined ? T.uk[k] : v).replace(/\{(\w+)\}/g, (m, x) => (p && p[x] !== undefined ? p[x] : m))); };
+// Підпис кнопки — без HTML (кнопки його не розуміють).
+const bt = (lang, k, p) => { const v = (T[lang] || T.uk)[k]; return String(v === undefined ? T.uk[k] : v).replace(/\{(\w+)\}/g, (m, x) => (p && p[x] !== undefined ? p[x] : m)); };
+const whenOf = (ts, lang) => time.fmtKyiv(ts, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }, lang);
+// Преміум-емодзі призу (для кнопок і рядків сходинки).
+const TIER_ICON = { bear: 'teddyBear', gift: 'giftBox', rocket: 'rocket', trophy: 'trophy', xmas_stocking: 'xmasStocking', wheel_stocking: 'xmasStocking', fresh_socks: 'freshSocks', diamond_ring: 'diamondRing', premium3m: 'premium' };
+const tierIcon = (id) => TIER_ICON[id] || 'giftBox';
+const tierEmoji = (id, fallback) => { const k = TIER_ICON[id]; return k && EMOJI[k] && EMOJI[k].id ? withEmoji('{:' + k + '}') : fallback; };
+const screen = (icon, title, lines, foot) => ui.card(icon, title, lines, foot);
+const html = (text, rows, more) => ({ text, extra: { parse_mode: 'HTML', disable_web_page_preview: true, ...(more || {}), ...ui.kb(rows) } });
 
 const awaiting = new Map();   // uid -> { kind: 'bank' | 'topup', at }
 
@@ -93,30 +136,38 @@ function mainMenu(uid) {
   const b = bank.get();
   const bankOpen = b && b.status === 'open' && b.drawAt > Date.now();
   const f = store.getFeatureFlags() || {};
-  const lines = [tt(lang, 'hi', { name: esc(u.name || u.username || '') }), '', tt(lang, 'bal', { s: fmtStars(users.stars(u)), t: users.tickets(u) }), tt(lang, 'lvl', { e: lv.e, title: esc(lv.t), n: lv.n })];
+  const lines = [
+    tt(lang, 'hi', { name: esc(u.name || u.username || '') }), '',
+    tt(lang, 'lead'), '',
+    tt(lang, 'bal', { s: fmtStars(users.stars(u)) }), tt(lang, 'tix', { t: users.tickets(u) }),
+    tt(lang, 'lvl', { e: lv.e, title: esc(lv.t), n: lv.n }),
+  ];
   if (bankOpen) lines.push('', tt(lang, 'bankLine', { p: fmtStars(bank.prizeOf(b).stars), when: whenOf(b.drawAt, lang) }));
+  lines.push('', tt(lang, 'tease'));
   const rows = [
-    [ui.app(tt(lang, 'open'), null, 'success')],
-    [ui.cb(tt(lang, 'rewards'), 'rewards', 'primary')],
-    [ui.cb(tt(lang, 'games'), 'dice_menu', 'danger')],
-    bankOpen ? [ui.cb(tt(lang, 'bank', { p: fmtStars(bank.prizeOf(b).stars) }), 'bank_show', 'danger')] : null,
-    [ui.cb(tt(lang, 'topup'), 'topup_menu', 'success')],
+    [ui.app(bt(lang, 'open'), null, 'success', 'rocket')],
+    [ui.cb(bt(lang, 'rewards'), 'rewards', 'primary', 'giftBox')],
+    [ui.cb(bt(lang, 'games'), 'dice_menu', 'danger', 'starIcon')],
+    bankOpen ? [ui.cb(bt(lang, 'bank', { p: fmtStars(bank.prizeOf(b).stars) }), 'bank_show', 'danger', 'almost')] : null,
+    [ui.cb(bt(lang, 'topup'), 'topup_menu', 'success', 'starIcon')],
     [require('./levels').menuButton(u)],
-    [ui.cb(tt(lang, 'profile'), 'my_profile', 'primary'), ui.cb(tt(lang, 'promo'), 'promo_code_start', 'success')],
-    [ui.app(tt(lang, 'withdraw'), 'withdraw')],
-  ].filter(Boolean);
+    [ui.cb(bt(lang, 'profile'), 'my_profile', 'primary', 'statsIcon'), ui.cb(bt(lang, 'promo'), 'promo_code_start', 'success', 'promoCode')],
+    [ui.app(bt(lang, 'withdraw'), 'withdraw', users.stars(u) >= E.WITHDRAW.min ? 'success' : undefined, 'withdrawBox')],
+  ];
   for (const [gid, g] of Object.entries(store.listGiveaways() || {})) {
-    if (g && g.active && Date.now() < g.endsAt) rows.push([ui.cb(tt(lang, 'giveaway', { n: (g.winnersCount > 1 ? g.winnersCount + '× ' : '') + E.getTier(g.tierId).emoji + ' ' + E.tierName(g.tierId, lang) }), 'ga_join_' + gid, 'danger')]);
+    if (g && g.active && Date.now() < g.endsAt) {
+      rows.push([ui.cb(bt(lang, 'giveaway', { n: (g.winnersCount > 1 ? g.winnersCount + '× ' : '') + E.tierName(g.tierId, lang).toUpperCase() }), 'ga_join_' + gid, 'danger', tierIcon(g.tierId))]);
+    }
   }
   const pool = store.getExternalRefPool();
-  if (pool && pool.active) rows.push([ui.cb(tt(lang, 'extref', { w: pool.wonCount || 0, m: pool.winnersCount || 3 }), 'ext_ref_join', 'danger')]);
+  if (pool && pool.active) rows.push([ui.cb(bt(lang, 'extref', { w: pool.wonCount || 0, m: pool.winnersCount || 3 }), 'ext_ref_join', 'danger', 'teddyBear')]);
   const ev = store.getEvent();
-  if (f.eventUnlocked && ev && ev.active && Date.now() < ev.endsAt) rows.push([ui.cb(tt(lang, 'event'), 'event_view', 'success')]);
-  rows.push([ui.cb(tt(lang, 'settings'), 'settings')]);
-  if (users.isAdmin(uid)) rows.push([ui.app(tt(lang, 'admin'), 'admin')]);
-  return { text: lines.join('\n'), extra: { parse_mode: 'HTML', ...ui.kb(rows) } };
+  if (f.eventUnlocked && ev && ev.active && Date.now() < ev.endsAt) rows.push([ui.cb(bt(lang, 'event'), 'event_view', 'success', 'trophy')]);
+  rows.push([ui.cb(bt(lang, 'settings'), 'settings', 'primary')]);
+  if (users.isAdmin(uid)) rows.push([ui.app(bt(lang, 'admin'), 'admin', undefined, 'lockIcon')]);
+  return html(lines.join('\n'), rows);
 }
-const backRow = (lang) => [ui.cb(tt(lang, 'back'), 'back_to_menu')];
+const backRow = (lang, data) => [ui.back(lang, data)];
 
 // ─── Нагороди за друзів ─────────────────────────────────────────────────
 function rewardsView(uid) {
@@ -124,17 +175,19 @@ function rewardsView(uid) {
   const u = users.get(uid) || {};
   const lad = referrals.ladder(u, lang);
   const link = lad.link || '';
-  const stIcon = { approved: tt(lang, 'stDone'), pending: tt(lang, 'stPend'), rejected: tt(lang, 'stRej'), claimable: tt(lang, 'stOk') };
-  const lines = [tt(lang, 'rwTitle', { n: lad.count, link: esc(link) }), ''];
+  const stIcon = { approved: 'stDone', pending: 'stPend', rejected: 'stRej', claimable: 'stOk' };
+  const lines = [tt(lang, 'rwInvited', { n: lad.count }), ''];
   const rows = [];
   for (const s of lad.steps) {
-    lines.push(`${s.emoji} <b>${esc(s.name)}</b> — ${s.need} 👥 · ${stIcon[s.state] || tt(lang, 'stLock', { n: s.left })}`);
-    if (s.state === 'claimable') rows.push([ui.cb(tt(lang, 'claim', { name: s.emoji + ' ' + s.name }), 'claim_' + s.id, 'success')]);
+    const st = stIcon[s.state] ? tt(lang, stIcon[s.state]) : tt(lang, 'stLock', { n: s.left });
+    lines.push(`${tierEmoji(s.id, s.emoji)} <b>${esc(s.name)}</b> — ${s.need} 👥 · ${st}`);
+    if (s.state === 'claimable') rows.push([ui.cb(bt(lang, 'claim', { name: s.name.toUpperCase() }), 'claim_' + s.id, 'success', tierIcon(s.id))]);
   }
+  if (link) lines.push('', tt(lang, 'rwLink'), '<code>' + esc(link) + '</code>');
   const share = link ? 'https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent({ uk: 'Заходь у StarForge — колеса удачі, ігри й справжні Telegram-подарунки 🎁', en: 'Join StarForge — wheels of luck, games and real Telegram gifts 🎁', ru: 'Заходи в StarForge — колёса удачи, игры и настоящие Telegram-подарки 🎁' }[lang]) : null;
-  if (share) rows.unshift([ui.url(tt(lang, 'share'), share, 'primary')]);
+  if (share) rows.unshift([ui.url(bt(lang, 'share'), share, 'primary', 'lightning')]);
   rows.push(backRow(lang));
-  return { text: lines.join('\n'), extra: { parse_mode: 'HTML', disable_web_page_preview: true, ...ui.kb(rows) } };
+  return html(screen('giftBox', tt(lang, 'rwTitle'), lines, bt(lang, 'rwFoot')), rows);
 }
 
 // ─── Профіль і заявки ───────────────────────────────────────────────────
@@ -143,48 +196,58 @@ function profileView(uid) {
   const u = users.get(uid) || {};
   const p = profile.view(u, lang);
   const st = p.stats;
-  const lines = [tt(lang, 'pfTitle'), '', tt(lang, 'pf', {
-    spins: st.spins, paid: st.paidSpins, prizes: st.prizes, best: esc(st.bestWin || tt(lang, 'nothing')),
-    s: fmtStars(users.stars(u)), t: users.tickets(u), earned: fmtStars(st.earned), games: st.games,
-    streak: st.streak, best2: st.bestStreak, friends: st.friends,
-    lvl: p.level.e + ' ' + esc(p.level.t) + ' · ' + p.level.n, xp: Math.floor(p.level.xp),
-  })];
+  const lines = [
+    tt(lang, 'pfBal', { s: fmtStars(users.stars(u)), t: users.tickets(u) }),
+    tt(lang, 'pfLvl', { lvl: p.level.e + ' ' + esc(p.level.t) + ' · ' + p.level.n, xp: Math.floor(p.level.xp) }),
+    '',
+    tt(lang, 'pfSpins', { spins: st.spins, paid: st.paidSpins }), tt(lang, 'pfPrizes', { prizes: st.prizes }),
+    tt(lang, 'pfBest', { best: esc(st.bestWin || bt(lang, 'nothing')) }), tt(lang, 'pfEarned', { earned: fmtStars(st.earned) }),
+    tt(lang, 'pfGames', { games: st.games }), tt(lang, 'pfStreak', { streak: st.streak, best2: st.bestStreak }), tt(lang, 'pfFriends', { friends: st.friends }),
+  ];
   if (p.history.length) {
     lines.push('', tt(lang, 'lastWins'));
     for (const h of p.history.slice(0, 8)) lines.push('  ' + esc(h.title) + ' · ' + time.fmtKyiv(h.at, { day: 'numeric', month: 'short' }));
   }
-  return { text: lines.join('\n'), extra: { parse_mode: 'HTML', ...ui.kb([[require('./levels').menuButton(u)], [ui.cb(tt(lang, 'apps'), 'my_applications', 'primary')], backRow(lang)]) } };
+  return html(screen('statsIcon', tt(lang, 'pfTitle'), lines), [
+    [require('./levels').menuButton(u)],
+    [ui.cb(bt(lang, 'apps'), 'my_applications', 'primary', 'applicationsIcon')],
+    backRow(lang),
+  ]);
 }
 function appsView(uid, filter) {
   const lang = L(uid);
   const all = applications.listFor(uid);
   const cnt = (s) => all.filter(a => a.status === s).length;
   const list = all.filter(a => a.status === filter).slice(0, 25).map(a => applications.publicView(a, lang));
-  const lines = [tt(lang, 'apTitle'), ''];
-  if (!list.length) lines.push('<i>' + tt(lang, 'apNone') + '</i>');
-  for (const a of list) lines.push(`${esc(a.title)} · #${a.id} · ${time.fmtKyiv(a.createdAt, { day: 'numeric', month: 'short' })}` + (a.reason ? ' · ' + esc(a.reason) : ''));
-  const btn = (s, k) => ui.cb(`${tt(lang, k)} (${cnt(s)})`, 'myapp_' + s, filter === s ? 'primary' : undefined);
-  return { text: lines.join('\n'), extra: { parse_mode: 'HTML', ...ui.kb([[btn('pending', 'fPend'), btn('approved', 'fOk')], [btn('rejected', 'fRej')], backRow(lang)]) } };
+  const lines = [];
+  if (!list.length) lines.push('<i>' + esc(bt(lang, 'apNone')) + '</i>');
+  const mark = { pending: '{:pendingIcon}', approved: '{:check}', rejected: '{:redCircle}' }[filter];
+  for (const a of list) lines.push(withEmoji(mark) + ` ${esc(a.title)} · #${a.id} · ${time.fmtKyiv(a.createdAt, { day: 'numeric', month: 'short' })}` + (a.reason ? ' · ' + esc(a.reason) : ''));
+  const btn = (s, k, icon) => ui.cb(`${bt(lang, k)} (${cnt(s)})`, 'myapp_' + s, filter === s ? 'primary' : undefined, icon);
+  return html(screen('applicationsIcon', tt(lang, 'apTitle'), lines), [
+    [btn('pending', 'fPend', 'pendingIcon'), btn('approved', 'fOk', 'check')],
+    [btn('rejected', 'fRej', 'redCircle')],
+    backRow(lang),
+  ]);
 }
 
 // ─── Налаштування ───────────────────────────────────────────────────────
 function settingsView(uid) {
   const lang = L(uid);
   const u = users.get(uid) || {};
-  const yn = (v) => tt(lang, v ? 'on' : 'off');
-  const langName = { uk: 'Українська', en: 'English', ru: 'Русский' }[u.lang || 'uk'];
+  const yn = (v) => bt(lang, v ? 'on' : 'off');
+  const langName = { uk: 'УКРАЇНСЬКА', en: 'ENGLISH', ru: 'РУССКИЙ' }[u.lang || 'uk'];
+  const flag = { uk: 'flagUk', en: 'flagEn', ru: 'flagRu' }[u.lang || 'uk'];
   const anon = !!u.anonymous, ref = u.notifyOnReferral !== false, rem = !u.remindersOff;
-  return {
-    text: tt(lang, 'stTitle'),
-    extra: { parse_mode: 'HTML', ...ui.kb([
-      [ui.cb(tt(lang, 'lang', { l: langName }), 'lang_menu')],
-      [ui.cb(tt(lang, 'anon', { v: yn(anon) }), 'toggle_anon', anon ? 'success' : undefined)],
-      [ui.cb(tt(lang, 'ref', { v: yn(ref) }), 'toggle_ref_notify', ref ? 'success' : undefined)],
-      [ui.cb(tt(lang, 'rem', { v: yn(rem) }), 'toggle_reminders', rem ? 'success' : undefined)],
-      [ui.cb(tt(lang, 'apps'), 'my_applications', 'primary')],
-      backRow(lang),
-    ]) },
-  };
+  const toggle = (k, v, data, icon) => ui.cb(bt(lang, k, { v: yn(v) }), data, v ? 'success' : 'danger', icon || (v ? 'greenCircle' : 'redCircle'));
+  return html(screen('⚙️', tt(lang, 'stTitle'), [esc(bt(lang, 'stLead'))]), [
+    [ui.cb(bt(lang, 'lang', { l: langName }), 'lang_menu', 'primary', flag)],
+    [toggle('anon', anon, 'toggle_anon', anon ? 'anonymityIcon' : null)],
+    [toggle('ref', ref, 'toggle_ref_notify')],
+    [toggle('rem', rem, 'toggle_reminders')],
+    [ui.cb(bt(lang, 'apps'), 'my_applications', 'primary', 'applicationsIcon')],
+    backRow(lang),
+  ]);
 }
 
 // ─── Банк у боті ────────────────────────────────────────────────────────
@@ -193,28 +256,34 @@ function bankView(uid) {
   const v = bank.view(uid);
   const rows = [];
   if (!v.active || v.status !== 'open') {
-    rows.push([ui.app(tt(lang, 'bkApp'), 'bank', 'primary')], backRow(lang));
-    return { text: tt(lang, 'bkTitle') + '\n\n' + tt(lang, 'bkNone'), extra: { parse_mode: 'HTML', ...ui.kb(rows) } };
+    rows.push([ui.app(bt(lang, 'bkApp'), 'bank', 'primary', 'eye')], backRow(lang));
+    return html(screen('🏦', tt(lang, 'bkTitle'), [esc(bt(lang, 'bkNone'))]), rows);
   }
-  const top = v.sectors.slice(0, 6).map((s, i) => `${['🥇', '🥈', '🥉'][i] || (i + 1) + '.'} ${esc(s.name)} — ${s.percent}%`).join('\n');
-  const text = tt(lang, 'bkTitle') + '\n\n' + tt(lang, 'bk', {
-    p: fmtStars(v.prize.stars), tx: v.prize.tickets ? ' + ' + v.prize.tickets + '🎫' : '', n: v.players,
-    when: whenOf(v.drawAt, lang), left: time.humanLeft(Math.max(0, v.drawAt - Date.now())),
-    mine: v.mine.weight > 0 ? tt(lang, 'bkMine', { w: fmtStars(v.mine.weight), c: v.mine.chance }) : tt(lang, 'bkNotIn'),
-    top: top ? tt(lang, 'bkTop') + '\n' + top + '\n' : '',
-  });
+  const medal = ['{:goldMedal}', '{:silverMedal}', '{:bronzeMedal}'];
+  const top = v.sectors.slice(0, 6).map((s, i) => `${withEmoji(medal[i] || '')}${medal[i] ? '' : (i + 1) + '.'} ${esc(s.name)} — <b>${s.percent}%</b>`);
+  const lines = [
+    tt(lang, 'bkPot', { p: fmtStars(v.prize.stars), tx: v.prize.tickets ? ' + ' + v.prize.tickets + '🎫' : '' }),
+    tt(lang, 'bkPlayers', { n: v.players }),
+    tt(lang, 'bkWhen', { when: whenOf(v.drawAt, lang), left: time.humanLeft(Math.max(0, v.drawAt - Date.now())) }),
+    '',
+    v.mine.weight > 0 ? tt(lang, 'bkMine', { w: fmtStars(v.mine.weight), c: v.mine.chance }) : tt(lang, 'bkNotIn'),
+  ];
+  if (top.length) lines.push('', tt(lang, 'bkTop'), ...top);
   const bets = [5, 10, 25, 50, 100].filter(n => n <= v.balance);
-  for (let i = 0; i < bets.length; i += 3) rows.push(bets.slice(i, i + 3).map(n => ui.cb(n + '⭐', 'bank_bet_' + n, 'success')));
-  rows.push([ui.cb(tt(lang, 'bkOwn'), 'bank_own', 'primary')]);
-  rows.push([ui.app(tt(lang, 'bkApp'), 'bank')]);
+  for (let i = 0; i < bets.length; i += 3) rows.push(bets.slice(i, i + 3).map(n => ui.cb(n + '⭐', 'bank_bet_' + n, 'success', 'starIcon')));
+  rows.push([ui.cb(bt(lang, 'bkOwn'), 'bank_own', 'primary', 'lightning')]);
+  rows.push([ui.app(bt(lang, 'bkApp'), 'bank', undefined, 'eye')]);
   rows.push(backRow(lang));
-  return { text, extra: { parse_mode: 'HTML', ...ui.kb(rows) } };
+  return html(screen('🏦', tt(lang, 'bkTitle'), lines, bt(lang, 'bkFoot')), rows);
 }
 async function placeBet(ctx, uid, amount) {
   const lang = L(uid);
   const r = await bank.bet(uid, amount, 0);
-  if (!r.ok) return ctx.reply((T[lang].bkErr || T.uk.bkErr)[r.error] || T.uk.bkErr.bad_amount).catch(() => {});
-  await ctx.reply(tt(lang, 'bkOk', { s: Math.floor(Number(amount)), c: r.chance, p: fmtStars(r.pot) }), { parse_mode: 'HTML', ...ui.kb([[ui.cb('🏦', 'bank_show', 'primary'), ui.app(tt(lang, 'bkApp'), 'bank')]]) }).catch(() => {});
+  if (!r.ok) return ctx.reply((T[lang].bkErr || T.uk.bkErr)[r.error] || T.uk.bkErr.bad_amount, ui.kb([backRow(lang, 'bank_show')])).catch(() => {});
+  await ctx.reply(tt(lang, 'bkOk', { s: Math.floor(Number(amount)), c: r.chance, p: fmtStars(r.pot) }), { parse_mode: 'HTML', ...ui.kb([
+    [ui.cb(bt(lang, 'bkTitle'), 'bank_show', 'primary', 'almost'), ui.app(bt(lang, 'bkApp'), 'bank', undefined, 'eye')],
+    backRow(lang),
+  ]) }).catch(() => {});
 }
 
 // ─── Поповнення ─────────────────────────────────────────────────────────
@@ -224,19 +293,19 @@ function topupView(uid) {
   const info = wallet.topupInfo(u);
   const rows = [];
   const ps = info.presets;
-  for (let i = 0; i < ps.length; i += 3) rows.push(ps.slice(i, i + 3).map(n => ui.cb(n + '⭐', 'topup_' + n, 'success')));
-  rows.push([ui.cb(tt(lang, 'tpOwn'), 'topup_own', 'primary')], backRow(lang));
+  for (let i = 0; i < ps.length; i += 3) rows.push(ps.slice(i, i + 3).map(n => ui.cb(n + '⭐', 'topup_' + n, 'success', 'starIcon')));
+  rows.push([ui.cb(bt(lang, 'tpOwn'), 'topup_own', 'primary', 'lightning')], backRow(lang));
   // +10% на перші поповнення або постійний бонус рівня — діє більший.
   const lvl = info.levelBonusPercent || 0;
   const bonus = info.bonusLeft && info.bonusPercent >= lvl ? tt(lang, 'tpBonus', { p: info.bonusPercent, n: info.bonusLeft })
-    : lvl ? tt(lang, 'tpLvl', { p: lvl }) : '';
-  return { text: tt(lang, 'tpTitle', { b: fmtStars(users.stars(u)), bonus }), extra: { parse_mode: 'HTML', ...ui.kb(rows) } };
+    : lvl ? tt(lang, 'tpLvl', { p: lvl }) : null;
+  return html(screen('starIcon', tt(lang, 'tpTitle'), [tt(lang, 'tpBal', { b: fmtStars(users.stars(u)) }), esc(bt(lang, 'tpLead')), bonus], bt(lang, 'tpPick')), rows);
 }
 async function sendInvoice(ctx, uid, amount) {
   const lang = L(uid);
   const r = await wallet.invoiceLink(uid, 'topup', amount);
-  if (!r.ok) return ctx.reply(tt(lang, 'tpErr')).catch(() => {});
-  await ctx.reply(tt(lang, 'tpReady', { a: r.price }), { parse_mode: 'HTML', ...ui.kb([[ui.url(tt(lang, 'tpPay', { a: r.price }), r.link, 'success')]]) }).catch(() => {});
+  if (!r.ok) return ctx.reply(bt(lang, 'tpErr'), ui.kb([backRow(lang, 'topup_menu')])).catch(() => {});
+  await ctx.reply(tt(lang, 'tpReady', { a: r.price }), { parse_mode: 'HTML', ...ui.kb([[ui.url(bt(lang, 'tpPay', { a: r.price }), r.link, 'success', 'commission')], backRow(lang)]) }).catch(() => {});
 }
 
 // ─── Подія ──────────────────────────────────────────────────────────────
@@ -245,13 +314,35 @@ function eventView(uid) {
   const ev = store.getEvent();
   const u = users.get(uid) || {};
   const ranked = Object.values(users.all()).filter(x => x && (x.eventReferrals || 0) > 0 && !users.isAdmin(x.id)).sort((a, b) => b.eventReferrals - a.eventReferrals).slice(0, 10);
-  const top = ranked.map((x, i) => `${['🥇', '🥈', '🥉'][i] || (i + 1) + '.'} ${esc(users.displayName(x))} — ${x.eventReferrals}`).join('\n');
-  return { text: tt(lang, 'evTitle') + '\n\n' + tt(lang, 'ev', { when: ev ? whenOf(ev.endsAt, lang) : '—', mine: u.eventReferrals || 0, top }), extra: { parse_mode: 'HTML', ...ui.kb([[ui.cb(tt(lang, 'rewards'), 'rewards', 'primary')], backRow(lang)]) } };
+  const medal = ['{:goldMedal}', '{:silverMedal}', '{:bronzeMedal}'];
+  const top = ranked.map((x, i) => (medal[i] ? withEmoji(medal[i]) : (i + 1) + '.') + ` ${esc(users.displayName(x))} — <b>${x.eventReferrals}</b>`);
+  return html(screen('trophy', tt(lang, 'evTitle'), [tt(lang, 'evWhen', { when: ev ? whenOf(ev.endsAt, lang) : '—' }), tt(lang, 'evMine', { mine: u.eventReferrals || 0 }), top.length ? '' : null, ...top], bt(lang, 'evFoot')),
+    [[ui.cb(bt(lang, 'rewards'), 'rewards', 'primary', 'giftBox')], backRow(lang)]);
 }
+
+// ─── «Назад» під полем вводу ────────────────────────────────────────────
+// Постійна кнопка внизу (як у попередній версії): із будь-якого екрана чи
+// очікування вводу (ставка, промокод, сума) повертає в головне меню.
+const BACK_KB_V = 1;
+function backKeyboard(lang) {
+  const b = { text: bt(lang, 'backKey') };
+  if (EMOJI.back && EMOJI.back.id) b.icon_custom_emoji_id = EMOJI.back.id;
+  return { reply_markup: { keyboard: [[b]], resize_keyboard: true, is_persistent: true } };
+}
+// Показуємо її один раз — далі Telegram тримає її сам.
+async function ensureBackKeyboard(ctx, uid) {
+  const u = users.get(uid);
+  if (!u || u.backKb === BACK_KB_V) return;
+  users.patch(uid, { backKb: BACK_KB_V });
+  await ctx.reply(bt(L(uid), 'backHint'), backKeyboard(L(uid))).catch(() => {});
+}
+const BACK_WORDS = ['назад', 'back', 'меню', 'menu'];
+const isBackText = (s) => BACK_WORDS.includes(String(s || '').replace(/^[^\p{L}]+/u, '').trim().toLowerCase());
 
 function register(bot, hooks, gate) {
   const priv = (ctx) => !ctx.chat || ctx.chat.type === 'private';
-  const send = (build, needGate) => async (ctx) => {
+  // sub — підекран: після нього (один раз) з'являється «Назад» під полем вводу.
+  const send = (build, needGate, sub) => async (ctx) => {
     if (ctx.callbackQuery) await ctx.answerCbQuery().catch(() => {});
     if (!priv(ctx)) return;
     const uid = String(ctx.from.id);
@@ -259,9 +350,19 @@ function register(bot, hooks, gate) {
     if (needGate !== false && gate && !(await gate(ctx, uid))) return;
     const v = build(uid, ctx);
     await ctx.reply(v.text, v.extra).catch(() => {});
+    if (sub !== false) await ensureBackKeyboard(ctx, uid);
   };
-  bot.command('menu', send(mainMenu));
-  bot.action(['back_to_menu', 'menu_back'], async (ctx) => { await ctx.deleteMessage().catch(() => {}); return send(mainMenu)(ctx); });
+  const showMain = send(mainMenu, true, false);
+  bot.command('menu', showMain);
+  bot.action(['back_to_menu', 'menu_back'], async (ctx) => { await ctx.deleteMessage().catch(() => {}); return showMain(ctx); });
+  // Кнопка «Назад» під полем вводу: скасувати будь-яке очікування вводу й показати меню.
+  bot.hears((text) => isBackText(text), async (ctx, next) => {
+    if (!priv(ctx)) return next();
+    const uid = String(ctx.from.id);
+    for (const h of hooks.onCommand) h(uid);
+    return showMain(ctx);
+  });
+
   bot.action('rewards', send(rewardsView));
   bot.action(/^claim_([a-z0-9_]+)$/, async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
@@ -269,9 +370,11 @@ function register(bot, hooks, gate) {
     const lang = L(uid);
     if (gate && !(await gate(ctx, uid))) return;
     const r = await referrals.claimLadder(uid, ctx.match[1]);
-    if (!r.ok) return ctx.reply((T[lang].claimErr || T.uk.claimErr)[r.error] || T.uk.claimErr.not_enough_friends).catch(() => {});
+    if (!r.ok) return ctx.reply((T[lang].claimErr || T.uk.claimErr)[r.error] || T.uk.claimErr.not_enough_friends, ui.kb([backRow(lang, 'rewards')])).catch(() => {});
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
-    await ctx.reply(tt(lang, 'claimed', { id: r.applicationId, name: E.getTier(ctx.match[1]).emoji + ' ' + E.tierName(ctx.match[1], lang) })).catch(() => {});
+    await ctx.reply(tt(lang, 'claimed', { id: r.applicationId, name: tierEmoji(ctx.match[1], E.getTier(ctx.match[1]).emoji) + ' ' + esc(E.tierName(ctx.match[1], lang)) }), { parse_mode: 'HTML', ...ui.kb([
+      [ui.cb(bt(lang, 'apps'), 'my_applications', 'primary', 'applicationsIcon')], backRow(lang),
+    ]) }).catch(() => {});
   });
   bot.action('my_profile', send(profileView));
   bot.action('my_applications', send((uid) => appsView(uid, 'pending')));
@@ -290,7 +393,7 @@ function register(bot, hooks, gate) {
   bot.action('toggle_ref_notify', toggle('ref'));
   bot.action('toggle_reminders', toggle('reminders'));
   bot.action('toggle_back_hint', send(settingsView, false));
-  bot.action('change_language', async (ctx) => { await ctx.answerCbQuery().catch(() => {}); await ctx.reply('🌐', ui.kb([[ui.cb('🇺🇦 Українська', 'lang_uk'), ui.cb('🇬🇧 English', 'lang_en'), ui.cb('🇷🇺 Русский', 'lang_ru')]])).catch(() => {}); });
+  bot.action('change_language', async (ctx) => { await ctx.answerCbQuery().catch(() => {}); await require('./start').sendLangPicker(ctx); });
 
   bot.command('bank', send(bankView));
   bot.action('bank_show', send(bankView));
@@ -303,8 +406,10 @@ function register(bot, hooks, gate) {
   bot.action('bank_own', async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
     const uid = String(ctx.from.id);
+    const lang = L(uid);
     awaiting.set(uid, { kind: 'bank', at: Date.now() });
-    await ctx.reply(tt(L(uid), 'bkAsk', { b: fmtStars(users.stars(users.get(uid) || {})) }), { parse_mode: 'HTML' }).catch(() => {});
+    await ctx.reply(tt(lang, 'bkAsk', { b: fmtStars(users.stars(users.get(uid) || {})) }), { parse_mode: 'HTML', ...ui.kb([backRow(lang, 'bank_show')]) }).catch(() => {});
+    await ensureBackKeyboard(ctx, uid);
   });
 
   bot.command('topup', send(topupView, false));
@@ -313,14 +418,16 @@ function register(bot, hooks, gate) {
   bot.action('topup_own', async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
     const uid = String(ctx.from.id);
+    const lang = L(uid);
     awaiting.set(uid, { kind: 'topup', at: Date.now() });
-    await ctx.reply(tt(L(uid), 'tpAsk'), { parse_mode: 'HTML' }).catch(() => {});
+    await ctx.reply(tt(lang, 'tpAsk'), { parse_mode: 'HTML', ...ui.kb([backRow(lang, 'topup_menu')]) }).catch(() => {});
+    await ensureBackKeyboard(ctx, uid);
   });
   // Вивід завжди був у застосунку — ведемо туди.
   bot.action(['withdraw_stars', 'withdraw_stars_custom'], async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
     const lang = L(String(ctx.from.id));
-    await ctx.reply(tt(lang, 'withdraw'), ui.kb([[ui.app(tt(lang, 'withdraw'), 'withdraw', 'success')]])).catch(() => {});
+    await ctx.reply(tt(lang, 'wdLead'), { parse_mode: 'HTML', ...ui.kb([[ui.app(bt(lang, 'withdraw'), 'withdraw', 'success', 'withdrawBox')], backRow(lang)]) }).catch(() => {});
   });
   bot.action('event_view', send(eventView));
 
@@ -337,4 +444,4 @@ function register(bot, hooks, gate) {
   hooks.onCommand.push((uid) => awaiting.delete(uid));
 }
 
-module.exports = { register, mainMenu };
+module.exports = { register, mainMenu, ensureBackKeyboard, backKeyboard, isBackText };

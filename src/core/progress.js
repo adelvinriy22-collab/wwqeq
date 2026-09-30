@@ -94,7 +94,8 @@ function addXp(uid, src, amount, opts) {
       total.stars += rw.stars || 0;
     }
     const info = levelInfo(x.total, u.lang);
-    const o = { ...(opts || {}), from: before + 1, levels: after - before };
+    // from — НОМЕР першого нового рівня (before — індекс старого, з нуля).
+    const o = { ...(opts || {}), from: before + 2, levels: after - before };
     for (const h of hooks.onLevelUp) {
       try { h(uid, info, total, o); } catch (e) { console.error('onLevelUp hook:', e.message); }
     }

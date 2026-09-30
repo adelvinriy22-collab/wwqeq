@@ -333,11 +333,18 @@ test('ігри в боті: Telegram кидає кубик, результат �
   // Фейковий Telegram завжди «кидає» 6: парне виграє ×1.85.
   cb('dp:dice:even:10');
   let res;
-  for (let i = 0; i < 40 && !res; i++) { await sleep(200); res = tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '970' && /Виграш/.test(c.payload.text || '')); }
+  for (let i = 0; i < 40 && !res; i++) { await sleep(200); res = tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '970' && /ВИГРАШ/i.test(c.payload.text || '')); }
   assert.ok(res, 'результат після анімації');
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendDice' && c.payload.emoji === '🎲'), 'кубик кинув Telegram');
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'setMessageReaction'), 'реакція на кубику');
   assert.match(JSON.stringify(res.payload.reply_markup), /dp:dice:even:10/, 'кнопка «Ще раз»');
+  assert.match(JSON.stringify(res.payload.reply_markup), /back_to_menu/, 'кнопка «Назад» під результатом');
+  assert.match(JSON.stringify(menuMsg.payload.reply_markup), /back_to_menu/, 'кнопка «Назад» у меню ігор');
+  assert.match(res.payload.text, /<tg-emoji emoji-id="\d+">/, 'преміум-емодзі в результаті');
+  // «Назад» під полем вводу показується один раз, після першого підекрана.
+  const kb = tg.calls.slice(n0).filter(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '970' && c.payload.reply_markup && c.payload.reply_markup.keyboard);
+  assert.strictEqual(kb.length, 1, 'кнопка «Назад» унизу — один раз');
+  assert.strictEqual(kb[0].payload.reply_markup.is_persistent, true);
   await sleep(500);
   const u = readDb().users['970'];
   assert.strictEqual(u.starBalance, 58.5, '50 − 10 + 18.5');
@@ -348,6 +355,17 @@ test('ігри в боті: Telegram кидає кубик, результат �
   tg.push({ message: { message_id: 993, date: Math.floor(Date.now() / 1000), chat: { id: 970, type: 'private' }, from, text: '3' } });
   for (let i = 0; i < 40; i++) { await sleep(200); if ((readDb().users['970'].diceGames || 0) >= 2) break; }
   assert.strictEqual(readDb().users['970'].starBalance, 58.5 - 3 + 15.6, 'рівно 6 ×5.2');
+  // «Назад» під полем вводу: скасовує очікування ставки й показує головне меню.
+  cb('do:dice:six');
+  await sleep(400);
+  const n1 = tg.calls.length;
+  tg.push({ message: { message_id: 995, date: Math.floor(Date.now() / 1000), chat: { id: 970, type: 'private' }, from, text: 'Назад' } });
+  let mm;
+  for (let i = 0; i < 30 && !mm; i++) { await sleep(150); mm = tg.calls.slice(n1).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '970' && /my_profile/.test(JSON.stringify(c.payload.reply_markup || {}))); }
+  assert.ok(mm, 'головне меню після «Назад»');
+  tg.push({ message: { message_id: 996, date: Math.floor(Date.now() / 1000), chat: { id: 970, type: 'private' }, from, text: '3' } });
+  await sleep(1000);
+  assert.strictEqual(readDb().users['970'].diceGames, 2, 'після «Назад» число вже не ставка');
 });
 
 test('скриньки в чаті: одна спроба на людину, головний приз — одному', async () => {

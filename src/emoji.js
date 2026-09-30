@@ -50,4 +50,10 @@ function E(key, alt) {
   return (e && e.fallback) || alt || '';
 }
 
-module.exports = { EMOJI, E };
+// «{:starIcon}» у тексті → преміум-емодзі. Лише для HTML-повідомлень: без
+// Premium людина бачить звичайний символ, текст не ламається.
+function withEmoji(s) {
+  return String(s).replace(/\{:(\w+)\}/g, (m, k) => E(k, ''));
+}
+
+module.exports = { EMOJI, E, withEmoji };

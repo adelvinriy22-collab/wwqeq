@@ -9,43 +9,47 @@ const notify = require('../core/notify');
 const games = require('../features/games');
 const ui = require('./ui');
 const { fmtStars, esc, sleep, whoOf } = require('../lib/util');
+const { withEmoji } = require('../emoji');
 
 const T = {
   uk: {
-    title: '🎲 <b>Ігри на зірки</b>', balance: 'Баланс: <b>{b}⭐</b>',
-    lead: 'Telegram сам кидає кубик — результат чесний, підробити неможливо.\n⚡ Кожна ⭐ ставки — {x} XP до рівня й пасу, навіть якщо не пощастило.\n\nОбери гру:',
-    pick: '{e} <b>{t}</b> · {k}\n\nОбери ставку:', slotsK: '777 ×20 · три однакові ×6 · дві сімки ×2',
-    own: '✏️ Своя ставка', back: '⬅️ Назад', again: '🔁 Ще раз ({s}⭐)', change: '✏️ Змінити ставку', other: '🎲 Інша гра',
-    bank: '🏦 Спільний банк', wheels: '🎰 Колеса', ask: 'Напиши ставку числом — від {min} до {max}⭐.',
-    badBet: 'Ставка — ціле число від {min} до {max}⭐.', noStars: 'Замало зірок: ставка {s}⭐, у тебе {b}⭐.', wait: '⏳ Зачекай, попередній кубик ще котиться.',
-    won: '🎉 <b>Виграш!</b> {e} {r}\n\n+{p}⭐ (ставка {s}⭐ × {k})\nБаланс: <b>{b}⭐</b>',
-    lost: '😔 Не пощастило. {e} {r}\n\nСтавка {s}⭐ згоріла.\nБаланс: <b>{b}⭐</b>', err: '⚠️ Кубик не надіслався — ставку повернуто.',
-    topup: '⭐ Поповнити', unknown: 'Ця гра недоступна.',
+    title: 'ІГРИ НА ЗІРКИ', balance: '{:starIcon} Баланс: <b>{b}⭐</b>',
+    fair: '{:check} Telegram сам кидає кубик — результат чесний, підробити неможливо.', xp: '{:lightning} Кожна ⭐ ставки — {x} XP до рівня й пасу, навіть якщо не пощастило.',
+    pickGame: 'Обери гру 👇', pick: '{:lightning} Виграш: <b>{k}</b>', pickFoot: 'Обери ставку 👇', slotsK: '777 ×20 · три однакові ×6 · дві сімки ×2',
+    own: 'СВОЯ СТАВКА', again: 'ЩЕ РАЗ ({s}⭐)', change: 'ЗМІНИТИ СТАВКУ', other: '🎲 ІНША ГРА',
+    bank: 'СПІЛЬНИЙ БАНК', wheels: 'КОЛЕСА', ask: '{:starIcon} Напиши ставку числом — від {min} до {max}⭐.',
+    badBet: '{:warn} Ставка — ціле число від {min} до {max}⭐.', noStars: '{:warn} Замало зірок: ставка {s}⭐, у тебе {b}⭐.', wait: '⏳ Зачекай, попередній кубик ще котиться.',
+    won: 'ВИГРАШ!', wonLine: '{:starIcon} <b>+{p}⭐</b> (ставка {s}⭐ × {k})', lost: 'НЕ ПОЩАСТИЛО', lostLine: '{:redCircle} Ставка {s}⭐ згоріла', bal2: '{:starIcon} Баланс: <b>{b}⭐</b>',
+    wonFoot: 'Кубик кидав Telegram — усе чесно', lostFoot: 'Наступного разу пощастить — XP за ставку вже твій',
+    err: '{:warn} Кубик не надіслався — ставку повернуто.', topup: 'ПОПОВНИТИ', unknown: 'Ця гра недоступна.',
   },
   en: {
-    title: '🎲 <b>Star games</b>', balance: 'Balance: <b>{b}⭐</b>',
-    lead: 'Telegram rolls the dice itself — the result is fair and can’t be faked.\n⚡ Every ⭐ you bet gives {x} XP to your level and pass, even if you lose.\n\nPick a game:',
-    pick: '{e} <b>{t}</b> · {k}\n\nPick your bet:', slotsK: '777 ×20 · three of a kind ×6 · two sevens ×2',
-    own: '✏️ Custom bet', back: '⬅️ Back', again: '🔁 Again ({s}⭐)', change: '✏️ Change bet', other: '🎲 Another game',
-    bank: '🏦 Shared bank', wheels: '🎰 Wheels', ask: 'Send your bet as a number — from {min} to {max}⭐.',
-    badBet: 'The bet is a whole number from {min} to {max}⭐.', noStars: 'Not enough stars: bet {s}⭐, you have {b}⭐.', wait: '⏳ Wait, the previous dice is still rolling.',
-    won: '🎉 <b>You won!</b> {e} {r}\n\n+{p}⭐ (bet {s}⭐ × {k})\nBalance: <b>{b}⭐</b>',
-    lost: '😔 No luck. {e} {r}\n\nBet {s}⭐ lost.\nBalance: <b>{b}⭐</b>', err: '⚠️ The dice wasn’t sent — your bet was returned.',
-    topup: '⭐ Top up', unknown: 'This game is unavailable.',
+    title: 'STAR GAMES', balance: '{:starIcon} Balance: <b>{b}⭐</b>',
+    fair: '{:check} Telegram rolls the dice itself — fair and impossible to fake.', xp: '{:lightning} Every ⭐ you bet gives {x} XP to your level and pass, even if you lose.',
+    pickGame: 'Pick a game 👇', pick: '{:lightning} Win: <b>{k}</b>', pickFoot: 'Pick your bet 👇', slotsK: '777 ×20 · three of a kind ×6 · two sevens ×2',
+    own: 'CUSTOM BET', again: 'AGAIN ({s}⭐)', change: 'CHANGE BET', other: '🎲 ANOTHER GAME',
+    bank: 'SHARED BANK', wheels: 'WHEELS', ask: '{:starIcon} Send your bet as a number — from {min} to {max}⭐.',
+    badBet: '{:warn} The bet is a whole number from {min} to {max}⭐.', noStars: '{:warn} Not enough stars: bet {s}⭐, you have {b}⭐.', wait: '⏳ Wait, the previous dice is still rolling.',
+    won: 'YOU WON!', wonLine: '{:starIcon} <b>+{p}⭐</b> (bet {s}⭐ × {k})', lost: 'NO LUCK', lostLine: '{:redCircle} Bet {s}⭐ lost', bal2: '{:starIcon} Balance: <b>{b}⭐</b>',
+    wonFoot: 'Telegram rolled the dice — all fair', lostFoot: 'Better luck next time — the XP for your bet is already yours',
+    err: '{:warn} The dice wasn’t sent — your bet was returned.', topup: 'TOP UP', unknown: 'This game is unavailable.',
   },
   ru: {
-    title: '🎲 <b>Игры на звёзды</b>', balance: 'Баланс: <b>{b}⭐</b>',
-    lead: 'Telegram сам бросает кубик — результат честный, подделать невозможно.\n⚡ Каждая ⭐ ставки — {x} XP к уровню и пропуску, даже если не повезло.\n\nВыбери игру:',
-    pick: '{e} <b>{t}</b> · {k}\n\nВыбери ставку:', slotsK: '777 ×20 · три одинаковых ×6 · две семёрки ×2',
-    own: '✏️ Своя ставка', back: '⬅️ Назад', again: '🔁 Ещё раз ({s}⭐)', change: '✏️ Изменить ставку', other: '🎲 Другая игра',
-    bank: '🏦 Общий банк', wheels: '🎰 Колёса', ask: 'Напиши ставку числом — от {min} до {max}⭐.',
-    badBet: 'Ставка — целое число от {min} до {max}⭐.', noStars: 'Мало звёзд: ставка {s}⭐, у тебя {b}⭐.', wait: '⏳ Подожди, предыдущий кубик ещё катится.',
-    won: '🎉 <b>Выигрыш!</b> {e} {r}\n\n+{p}⭐ (ставка {s}⭐ × {k})\nБаланс: <b>{b}⭐</b>',
-    lost: '😔 Не повезло. {e} {r}\n\nСтавка {s}⭐ сгорела.\nБаланс: <b>{b}⭐</b>', err: '⚠️ Кубик не отправился — ставка возвращена.',
-    topup: '⭐ Пополнить', unknown: 'Эта игра недоступна.',
+    title: 'ИГРЫ НА ЗВЁЗДЫ', balance: '{:starIcon} Баланс: <b>{b}⭐</b>',
+    fair: '{:check} Telegram сам бросает кубик — результат честный, подделать невозможно.', xp: '{:lightning} Каждая ⭐ ставки — {x} XP к уровню и пропуску, даже если не повезло.',
+    pickGame: 'Выбери игру 👇', pick: '{:lightning} Выигрыш: <b>{k}</b>', pickFoot: 'Выбери ставку 👇', slotsK: '777 ×20 · три одинаковых ×6 · две семёрки ×2',
+    own: 'СВОЯ СТАВКА', again: 'ЕЩЁ РАЗ ({s}⭐)', change: 'ИЗМЕНИТЬ СТАВКУ', other: '🎲 ДРУГАЯ ИГРА',
+    bank: 'ОБЩИЙ БАНК', wheels: 'КОЛЁСА', ask: '{:starIcon} Напиши ставку числом — от {min} до {max}⭐.',
+    badBet: '{:warn} Ставка — целое число от {min} до {max}⭐.', noStars: '{:warn} Мало звёзд: ставка {s}⭐, у тебя {b}⭐.', wait: '⏳ Подожди, предыдущий кубик ещё катится.',
+    won: 'ВЫИГРЫШ!', wonLine: '{:starIcon} <b>+{p}⭐</b> (ставка {s}⭐ × {k})', lost: 'НЕ ПОВЕЗЛО', lostLine: '{:redCircle} Ставка {s}⭐ сгорела', bal2: '{:starIcon} Баланс: <b>{b}⭐</b>',
+    wonFoot: 'Кубик бросал Telegram — всё честно', lostFoot: 'В следующий раз повезёт — XP за ставку уже твой',
+    err: '{:warn} Кубик не отправился — ставка возвращена.', topup: 'ПОПОЛНИТЬ', unknown: 'Эта игра недоступна.',
   },
 };
-const tt = (lang, k, p) => String((T[lang] || T.uk)[k] || T.uk[k]).replace(/\{(\w+)\}/g, (m, x) => (p && p[x] !== undefined ? p[x] : m));
+const fill = (lang, k, p) => String((T[lang] || T.uk)[k] || T.uk[k]).replace(/\{(\w+)\}/g, (m, x) => (p && p[x] !== undefined ? p[x] : m));
+const tt = (lang, k, p) => withEmoji(fill(lang, k, p));   // текст повідомлення (HTML, преміум-емодзі)
+const bt = fill;                                         // підпис кнопки / відповідь на натискання
+const html = (text, rows) => ({ parse_mode: 'HTML', ...ui.kb(rows) });
 
 // Що означає число з кубика Telegram (у футболі 5 значень, у слоті — 64).
 const SLOT = ['BAR', '🍇', '🍋', '7️⃣'];
@@ -75,9 +79,9 @@ function kLabel(b) { return b.slots ? '×2–20' : '×' + b.k; }
 function menu(uid) {
   const lang = langOf(uid);
   const b = (g, bid, style) => {
-    const gm = E.GAMES[g], bt = gm.bets[bid];
-    const name = bt.slots ? (gm.title[lang] || gm.title.uk) : (bt.title[lang] || bt.title.uk);
-    return ui.cb(gm.emoji + ' ' + name + ' ' + kLabel(bt), 'dg:' + g + ':' + bid, style);
+    const gm = E.GAMES[g], bet = gm.bets[bid];
+    const name = bet.slots ? (gm.title[lang] || gm.title.uk) : (bet.title[lang] || bet.title.uk);
+    return ui.cb(gm.emoji + ' ' + name.toUpperCase() + ' ' + kLabel(bet), 'dg:' + g + ':' + bid, style);
   };
   const rows = [
     [b('dice', 'even', 'primary'), b('dice', 'odd', 'primary')],
@@ -87,13 +91,15 @@ function menu(uid) {
     [b('basket', 'hit', 'success')],
     [b('darts', 'bull', 'danger'), b('bowling', 'strike', 'danger')],
     [b('slots', 'spin', 'danger')],
-    [ui.app(tt(lang, 'bank'), 'bank'), ui.app(tt(lang, 'wheels'), 'wheel')],
+    [ui.cb(bt(lang, 'bank'), 'bank_show', undefined, 'almost'), ui.app(bt(lang, 'wheels'), 'wheel', undefined, 'rocket')],
+    [ui.back(lang)],
   ];
   const u = users.get(uid) || {};
-  return {
-    text: tt(lang, 'title') + '\n\n' + tt(lang, 'balance', { b: fmtStars(users.stars(u)) }) + '\n\n' + tt(lang, 'lead', { x: E.XP_RATES.gamePerStar }),
-    extra: { parse_mode: 'HTML', ...ui.kb(rows) },
-  };
+  const text = ui.card('🎲', tt(lang, 'title'), [
+    tt(lang, 'balance', { b: fmtStars(users.stars(u)) }), '',
+    tt(lang, 'fair'), tt(lang, 'xp', { x: E.XP_RATES.gamePerStar }),
+  ], bt(lang, 'pickGame'));
+  return { text, extra: html(text, rows) };
 }
 
 function stakeMenu(uid, gameId, betId) {
@@ -106,29 +112,32 @@ function stakeMenu(uid, gameId, betId) {
   for (let i = 0; i < opts.length; i += 2) {
     rows.push(opts.slice(i, i + 2).map(n => ui.cb(n + '⭐' + (k ? ' → ' + fmtStars(n * k) + '⭐' : ''), `dp:${gameId}:${betId}:${n}`, 'success')));
   }
-  rows.push([ui.cb(tt(lang, 'own'), `do:${gameId}:${betId}`, 'primary')]);
-  if (!opts.length) rows.unshift([ui.app(tt(lang, 'topup'), 'topup', 'success')]);
-  rows.push([ui.cb(tt(lang, 'back'), 'dice_menu')]);
-  const text = tt(lang, 'pick', { e: f.g.emoji, t: (f.g.title[lang] || f.g.title.uk) + ' — ' + (f.b.title[lang] || f.b.title.uk), k: f.b.slots ? tt(lang, 'slotsK') : '×' + f.b.k }) +
-    '\n' + tt(lang, 'balance', { b: fmtStars(bal) });
-  return { text, extra: { parse_mode: 'HTML', ...ui.kb(rows) } };
+  rows.push([ui.cb(bt(lang, 'own'), `do:${gameId}:${betId}`, 'primary', 'lightning')]);
+  if (!opts.length) rows.unshift([ui.app(bt(lang, 'topup'), 'topup', 'success', 'starIcon')]);
+  rows.push([ui.back(lang, 'dice_menu')]);
+  const title = ((f.g.title[lang] || f.g.title.uk) + ' — ' + (f.b.title[lang] || f.b.title.uk)).toUpperCase();
+  const text = ui.card(f.g.emoji, esc(title), [
+    tt(lang, 'pick', { k: f.b.slots ? bt(lang, 'slotsK') : '×' + f.b.k }),
+    tt(lang, 'balance', { b: fmtStars(bal) }),
+  ], bt(lang, 'pickFoot'));
+  return { text, extra: html(text, rows) };
 }
 
 async function play(ctx, uid, gameId, betId, stake) {
   const lang = langOf(uid);
-  if (inFlight.has(uid)) return ctx.reply(tt(lang, 'wait')).catch(() => {});
+  if (inFlight.has(uid)) return ctx.reply(bt(lang, 'wait')).catch(() => {});
   inFlight.add(uid);
   try {
     const st = await games.botStake(uid, gameId, betId, stake);
     if (!st.ok) {
       if (st.error === 'not_enough_stars') {
-        return ctx.reply(tt(lang, 'noStars', { s: stake, b: fmtStars(st.have || 0) }), ui.kb([[ui.app(tt(lang, 'topup'), 'topup', 'success')], [ui.cb(tt(lang, 'other'), 'dice_menu')]])).catch(() => {});
+        return ctx.reply(tt(lang, 'noStars', { s: stake, b: fmtStars(st.have || 0) }), html(null, [[ui.app(bt(lang, 'topup'), 'topup', 'success', 'starIcon')], [ui.cb(bt(lang, 'other'), 'dice_menu')], [ui.back(lang)]])).catch(() => {});
       }
-      return ctx.reply(st.error === 'bad_bet' ? tt(lang, 'badBet', { min: E.GAME_BET.min, max: E.GAME_BET.max }) : tt(lang, 'unknown')).catch(() => {});
+      return ctx.reply(st.error === 'bad_bet' ? tt(lang, 'badBet', { min: E.GAME_BET.min, max: E.GAME_BET.max }) : bt(lang, 'unknown'), html(null, [[ui.back(lang, 'dice_menu')]])).catch(() => {});
     }
     let dm = null;
     try { dm = await ctx.telegram.sendDice(ctx.chat.id, { emoji: st.emoji }); } catch (e) { dm = null; }
-    if (!dm || !dm.dice) { games.botRefund(uid, gameId, st.stake); return ctx.reply(tt(lang, 'err')).catch(() => {}); }
+    if (!dm || !dm.dice) { games.botRefund(uid, gameId, st.stake); return ctx.reply(tt(lang, 'err'), html(null, [[ui.back(lang, 'dice_menu')]])).catch(() => {}); }
     await sleep(ANIM_MS[st.emoji] || 4000);   // чекаємо, поки кубик зупиниться
     const r = await games.botSettle(uid, gameId, betId, st.stake, dm.dice.value);
     const k = r.k;
@@ -140,11 +149,16 @@ async function play(ctx, uid, gameId, betId, stake) {
     const e = E.GAMES[gameId].emoji;
     const res = resultText(lang, gameId, r.value, r.reels);
     const text = r.won
-      ? tt(lang, 'won', { e, r: esc(res), p: fmtStars(r.payout), s: st.stake, k, b: fmtStars(r.balance) })
-      : tt(lang, 'lost', { e, r: esc(res), s: st.stake, b: fmtStars(r.balance) });
-    await ctx.reply(text, { parse_mode: 'HTML', reply_to_message_id: dm.message_id, allow_sending_without_reply: true, ...ui.kb([
-      [ui.cb(tt(lang, 'again', { s: st.stake }), `dp:${gameId}:${betId}:${st.stake}`, 'success')],
-      [ui.cb(tt(lang, 'change'), `dg:${gameId}:${betId}`, 'primary'), ui.cb(tt(lang, 'other'), 'dice_menu')],
+      ? ui.card('giftBox', tt(lang, 'won') + ' ' + e + ' ' + esc(res), [
+        tt(lang, 'wonLine', { p: fmtStars(r.payout), s: st.stake, k }), tt(lang, 'bal2', { b: fmtStars(r.balance) }),
+      ], bt(lang, 'wonFoot'))
+      : ui.card(e, tt(lang, 'lost') + ' · ' + esc(res), [
+        tt(lang, 'lostLine', { s: st.stake }), tt(lang, 'bal2', { b: fmtStars(r.balance) }),
+      ], bt(lang, 'lostFoot'));
+    await ctx.reply(text, { reply_to_message_id: dm.message_id, allow_sending_without_reply: true, ...html(text, [
+      [ui.cb(bt(lang, 'again', { s: st.stake }), `dp:${gameId}:${betId}:${st.stake}`, 'success', 'lightning')],
+      [ui.cb(bt(lang, 'change'), `dg:${gameId}:${betId}`, 'primary'), ui.cb(bt(lang, 'other'), 'dice_menu')],
+      [ui.back(lang)],
     ]) }).catch(() => {});
     // Великий виграш — у чат, щоб інші теж захотіли.
     if (r.won && (k >= 5 || r.payout >= 50)) {
@@ -165,6 +179,7 @@ function register(bot, hooks, gate) {
     if (gate && !(await gate(ctx, uid))) return;
     const m = menu(uid);
     await ctx.reply(m.text, m.extra).catch(() => {});
+    await require('./menu').ensureBackKeyboard(ctx, uid);
   };
   bot.command(['games', 'dice', 'play'], showMenu);
   // dice_menu і старі кнопки попередньої версії (dice_g_…, dice_b_…, dice_own_…).
@@ -180,13 +195,13 @@ function register(bot, hooks, gate) {
   bot.action(/^dg:(\w+):(\w+)$/, async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
     const uid = String(ctx.from.id);
-    if (!games.findBet(ctx.match[1], ctx.match[2])) return ctx.reply(tt(langOf(uid), 'unknown')).catch(() => {});
+    if (!games.findBet(ctx.match[1], ctx.match[2])) return ctx.reply(bt(langOf(uid), 'unknown'), html(null, [[ui.back(langOf(uid), 'dice_menu')]])).catch(() => {});
     const m = stakeMenu(uid, ctx.match[1], ctx.match[2]);
     await ctx.reply(m.text, m.extra).catch(() => {});
   });
   bot.action(/^dp:(\w+):(\w+):(\d+)$/, async (ctx) => {
     const uid = String(ctx.from.id);
-    if (inFlight.has(uid)) return ctx.answerCbQuery(tt(langOf(uid), 'wait'), { show_alert: false }).catch(() => {});
+    if (inFlight.has(uid)) return ctx.answerCbQuery(bt(langOf(uid), 'wait'), { show_alert: false }).catch(() => {});
     await ctx.answerCbQuery().catch(() => {});
     if (gate && !(await gate(ctx, uid))) return;
     await play(ctx, uid, ctx.match[1], ctx.match[2], parseInt(ctx.match[3], 10));
@@ -196,7 +211,8 @@ function register(bot, hooks, gate) {
     const uid = String(ctx.from.id);
     if (!games.findBet(ctx.match[1], ctx.match[2])) return;
     awaitingStake.set(uid, { game: ctx.match[1], bet: ctx.match[2], at: Date.now() });
-    await ctx.reply(tt(langOf(uid), 'ask', { min: E.GAME_BET.min, max: E.GAME_BET.max })).catch(() => {});
+    const lang = langOf(uid);
+    await ctx.reply(tt(lang, 'ask', { min: E.GAME_BET.min, max: E.GAME_BET.max }), html(null, [[ui.back(lang, `dg:${ctx.match[1]}:${ctx.match[2]}`)]])).catch(() => {});
   });
   hooks.onText.push(async (ctx, uid, text) => {
     const w = awaitingStake.get(uid);
@@ -205,7 +221,7 @@ function register(bot, hooks, gate) {
     if (Date.now() - w.at > 10 * 60000) return false;
     const n = Number(String(text).trim().replace(',', '.'));
     if (!Number.isInteger(n) || n < E.GAME_BET.min || n > E.GAME_BET.max) {
-      await ctx.reply(tt(langOf(uid), 'badBet', { min: E.GAME_BET.min, max: E.GAME_BET.max })).catch(() => {});
+      await ctx.reply(tt(langOf(uid), 'badBet', { min: E.GAME_BET.min, max: E.GAME_BET.max }), html(null, [[ui.back(langOf(uid), `dg:${w.game}:${w.bet}`)]])).catch(() => {});
       return true;
     }
     if (gate && !(await gate(ctx, uid))) return true;
