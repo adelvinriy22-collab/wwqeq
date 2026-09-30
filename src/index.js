@@ -76,7 +76,7 @@ function every(ms, name, fn) {
 if (!config.NO_SCHEDULERS) {
   every(60 * 1000, 'bank.tick', () => bank.tick());
   every(60 * 1000, 'league.tick', () => league.tick());
-  every(60 * 1000, 'clans.tick', () => notify.tg.telegram ? clans.tick() : null);   // підсумки кланової війни щопонеділка
+  every(60 * 1000, 'clans.tick', () => notify.tg.telegram ? clans.tick() : null);   // старт першої кланової війни і її фінал
   every(60 * 1000, 'chat.tick', () => chat && notify.tg.telegram ? chat.tick() : null);
   every(30 * 60 * 1000, 'reminders', () => reminders.run());
 }

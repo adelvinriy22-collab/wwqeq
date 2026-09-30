@@ -197,19 +197,19 @@ const XP = {
 const XP_RATES = { paidSpinPerStar: 3, gamePerStar: 2, bankPerStar: 1 };
 
 // ─── Клани ──────────────────────────────────────────────────────────────
-// Очки клану — XP, які учасники набирають ПІСЛЯ вступу (чат, ігри, спіни,
-// завдання…). Щопонеділка 00:00 (Київ) — підсумки кланової війни тижня.
+// Кланова війна — подія на eventDays днів: XP, які учасники набирають під час
+// неї (чат, ігри, спіни, завдання…), — очки клану. У фіналі топ-3 клани
+// отримують призи. Перша війна стартує сама, наступні — /clanwar start.
 const CLANS = {
-  createCost: 100,            // 🎫 за створення
+  createCost: 20,             // 🎫 за створення (= 2⭐ за курсом обміну)
   minLevel: 3,                // рівень гравця, з якого можна створити клан
   nameMin: 2, nameMax: 20,
-  capBase: 10, capPerLevel: 2,          // місць у клані: 10 на 1-му рівні, +2 за кожен наступний
-  levels: [0, 500, 1500, 4000, 8000, 15000, 25000, 40000, 60000, 90000],   // очки за весь час → рівень клану 1…10
+  cap: 15,                    // місць у клані
+  eventDays: 3,               // скільки триває війна
   rejoinHours: 24,            // після виходу — вступ в інший клан лише через добу
-  minMembers: 3,              // у війні беруть участь клани від 3 учасників
-  activeMin: 30,              // «активний» учасник — від 30 очок за тиждень (лише такі отримують нагороду)
-  maxDeputies: 3,
-  // Нагороди війни: власнику клану — справжній подарунок Telegram (id з src/features/tggifts.js),
+  minMembers: 3,              // у заліку війни — клани від 3 учасників
+  activeMin: 30,              // приз отримують учасники, які набрали від 30 очок за війну
+  // Власнику клану — справжній подарунок Telegram (id з src/features/tggifts.js),
   // кожному активному учаснику (разом із власником) — зірки, білети й XP.
   rewards: [
     { place: 1, ownerGift: 'gift', stars: 7, tickets: 30, xp: 100 },   // 🎁 Подарунок за 25⭐ власнику
@@ -217,8 +217,6 @@ const CLANS = {
     { place: 3, ownerGift: null,   stars: 1, tickets: 10, xp: 30 },
   ],
 };
-const clanLevel = (total) => { let i = 0; while (i + 1 < CLANS.levels.length && total >= CLANS.levels[i + 1]) i++; return i + 1; };
-const clanCap = (level) => CLANS.capBase + CLANS.capPerLevel * (level - 1);
 
 // Рівні гравця. Пороги перших десяти — ті самі, що були в чаті, тож
 // титули в людей не змінюються. Нагороди й привілеї рівнів — нижче.
@@ -330,5 +328,5 @@ module.exports = {
   WHEELS, PITY, GIFT_IDS, NFT_IDS, PRIZE_IDS, HAPPY_HOUR, streakBonus,
   RISK, GAMES, SLOT_SYMBOLS, slotResult, GAME_BET,
   TICKETS, WITHDRAW, withdrawCost, DEPOSIT, SHOP, shopPrice,
-  XP, XP_RATES, CLANS, clanLevel, clanCap, LEVELS, levelReward, LEVEL_PERKS, levelPerks, perksUnlockedAt, PASS, LEAGUE, leagueRewardFor, GOAL,
+  XP, XP_RATES, CLANS, LEVELS, levelReward, LEVEL_PERKS, levelPerks, perksUnlockedAt, PASS, LEAGUE, leagueRewardFor, GOAL,
 };

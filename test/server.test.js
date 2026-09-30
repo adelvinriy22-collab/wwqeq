@@ -529,7 +529,7 @@ test('перший коментар у каналі: бот ловить пер�
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'editMessageText' && c.payload.chat_id === '@starforge_news' && /Забрав/.test(c.payload.text || '')), 'у пості каналу — хто забрав');
 });
 
-test('клани: створення, вступ, заявка, лідерборди, кланова війна з призами', async () => {
+test('клани: 3-денна війна сама стартує, вступ і заявка, лідерборд, фінал із призами, нова війна', async () => {
   const GROUP = -1001;
   const waitFor = async (pred) => { for (let i = 0; i < 40; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
   const who = (id) => ({ id, is_bot: false, first_name: 'U' + id, username: 'user' + id });
@@ -548,6 +548,9 @@ test('клани: створення, вступ, заявка, лідербор
   // Без 3-го рівня клан не створити.
   gmsg(992, '/clan_create Слабаки');
   assert.ok(await waitFor(() => sent(n0, GROUP, /з 3-го рівня/)), 'низький рівень — відмова');
+  assert.ok(sent(n0, GROUP, /СТАРТУЄ КЛАНОВА ВІЙНА — 3 ДНІ/), 'перша війна стартувала сама, на 3 дні');
+  const ev = await waitFor(() => (readDb().featureFlags.clans || {}).event);
+  assert.ok(ev.endsAt - Date.now() > 71 * 3600e3 && ev.endsAt - Date.now() <= 73 * 3600e3, 'фінал через 3 дні');
 
   gmsg(990, '/clan_create 🐺 Вовки');
   assert.ok(await waitFor(() => sent(n0, GROUP, /Клан .*Вовки.* створено/)), 'клан створено');
@@ -556,7 +559,7 @@ test('клани: створення, вступ, заявка, лідербор
   assert.strictEqual(c.tag, 'ВОВК');
   assert.strictEqual(c.emoji, '🐺');
   assert.strictEqual(c.owner, '990');
-  assert.strictEqual(readDb().users['990'].tickets, 50, 'створення коштує 100🎫');
+  assert.strictEqual(readDb().users['990'].tickets, 130, 'створення коштує 20🎫');
 
   // Відкритий клан — одразу; закритий — заявка лідеру з кнопками.
   gmsg(991, '/clan_join ВОВК');
@@ -568,7 +571,7 @@ test('клани: створення, вступ, заявка, лідербор
   assert.ok(req, 'лідеру — заявка з кнопками');
   assert.ok(sent(n0, GROUP, /Заявку в клан/), 'гравцю — «заявку надіслано»');
   click(991, req.payload.reply_markup.inline_keyboard[0][0].callback_data);
-  assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'answerCallbackQuery' && /Недостатньо прав/.test(c.payload.text || ''))), 'учасник не приймає заявки');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'answerCallbackQuery' && /лише лідер/.test(c.payload.text || ''))), 'учасник не приймає заявки');
   click(990, req.payload.reply_markup.inline_keyboard[0][0].callback_data);
   assert.ok(await waitFor(() => sent(n0, 993, /прийнято в клан/)), '993 прийнято');
   gmsg(990, '/clan_open');
@@ -587,17 +590,21 @@ test('клани: створення, вступ, заявка, лідербор
   }
   await sleep(300);
   c = clan();
-  assert.strictEqual(c.week.pts, 120, 'очки тижня = XP учасників');
-  assert.strictEqual(c.week.contrib['991'], 40);
+  assert.strictEqual(c.ev.pts, 120, 'очки війни = XP учасників');
+  assert.strictEqual(c.ev.contrib['991'], 40);
 
-  gmsg(991, '/clans');
-  assert.ok(await waitFor(() => sent(n0, GROUP, /КЛАНИ · 1[\s\S]*Вовки/)), 'список кланів');
-  gmsg(991, '/clan_members');
-  const lb = await waitFor(() => sent(n0, GROUP, /ЛІДЕРБОРД КЛАНУ/));
-  assert.ok(lb, 'лідерборд клану');
-  assert.match(lb.payload.text, /<tg-emoji emoji-id="\d+">/, 'преміум-емодзі');
-  gmsg(991, '/clan_top');
-  assert.ok(await waitFor(() => sent(n0, GROUP, /КЛАНОВА ВІЙНА ТИЖНЯ[\s\S]*Вовки[\s\S]*120/)), 'таблиця війни');
+  // Один вхід /clan — далі кнопки, повідомлення редагується на місці.
+  gmsg(991, '/clan');
+  const hub = await waitFor(() => sent(n0, GROUP, /КЛАНОВА ВІЙНА[\s\S]*До фіналу[\s\S]*Вовки[\s\S]*120/));
+  assert.ok(hub, 'хаб війни: час, призи, лідери');
+  assert.match(hub.payload.text, /<tg-emoji emoji-id="\d+">/, 'преміум-емодзі');
+  assert.match(JSON.stringify(hub.payload.reply_markup), /cl:my.*cl:l.*cl:help/, 'кнопки: мій клан, усі клани, як це працює');
+  const e0 = tg.calls.length;
+  click(991, 'cl:l', GROUP);
+  assert.ok(await waitFor(() => tg.calls.slice(e0).find(c => c.method === 'editMessageText' && /УСІ КЛАНИ · 1[\s\S]*Вовки/.test(c.payload.text || ''))), 'усі клани — у тому самому повідомленні');
+  click(991, 'cl:my', GROUP);
+  const lb = await waitFor(() => tg.calls.slice(e0).find(c => c.method === 'editMessageText' && /ВОВКИ \[ВОВК\][\s\S]*user991 — 40/.test(c.payload.text || '')));
+  assert.ok(lb, 'мій клан: лідерборд учасників');
 
   // Підсумки: активним (від 30 очок) — 7⭐ + 30🎫 + 100 XP, власнику — 🎁 за 25⭐.
   n0 = tg.calls.length;
@@ -607,7 +614,7 @@ test('клани: створення, вступ, заявка, лідербор
   assert.ok(gift, 'власнику — справжній подарунок');
   assert.strictEqual(gift.payload.user_id, 990);
   assert.strictEqual(gift.payload.gift_id, '5170250947678437525', '🎁 за 25⭐');
-  assert.ok(await waitFor(() => sent(n0, GROUP, /ПІДСУМКИ КЛАНОВОЇ ВІЙНИ/)), 'оголошення в чаті');
+  assert.ok(await waitFor(() => sent(n0, GROUP, /ФІНАЛ КЛАНОВОЇ ВІЙНИ/)), 'оголошення в чаті');
   await sleep(300);
   const war = (uid) => ledger(uid).filter(e => e.r === 'clan_war');
   for (const id of ['990', '991', '992']) {
@@ -617,12 +624,19 @@ test('клани: створення, вступ, заявка, лідербор
   }
   assert.strictEqual(war('993').length, 0, 'неактивний без призу');
   c = clan();
-  assert.strictEqual(c.week.pts, 0, 'XP-нагорода не рахується в очки, тиждень обнулено');
+  assert.strictEqual(c.ev.pts, 120, 'XP-нагорода не рахується в очки');
   assert.strictEqual(c.wins, 1);
-  // Повторно — нікого (очки обнулено).
+  assert.strictEqual(readDb().featureFlags.clans.event.status, 'ended');
+  // Повторно — війна вже не йде, подвійних нагород немає.
   adminCmd('/clanwar finish');
-  assert.ok(await waitFor(() => sent(n0, ADMIN, /Нікого нагороджувати/)));
+  assert.ok(await waitFor(() => sent(n0, ADMIN, /Війна зараз не йде/)));
   assert.strictEqual(war('991').length, 1, 'без подвійних нагород');
+  // Нова війна — очки з нуля.
+  adminCmd('/clanwar start 3');
+  assert.ok(await waitFor(() => sent(n0, ADMIN, /стартувала на 3 дні/)));
+  assert.ok(await waitFor(() => sent(n0, GROUP, /СТАРТУЄ КЛАНОВА ВІЙНА/)), 'оголошення нової війни');
+  gmsg(991, '/clan');
+  assert.ok(await waitFor(() => sent(n0, GROUP, /Поки ніхто не набрав очок/)), 'очки нової війни — з нуля');
 
   // Вихід: повернутись одразу не можна.
   n0 = tg.calls.length;

@@ -911,13 +911,8 @@ function createChat(bot, opts) {
       { command: 'goal',    description: '🎯 Спільна ціль чату' },
       { command: 'contest', description: '🏅 Змагання чату' },
       { command: 'duel',    description: '⚔️ Дуель на білети: /duel 5' },
-      { command: 'clans',   description: '🛡 Усі клани чату' },
-      { command: 'clan',    description: '🏰 Мій клан' },
-      { command: 'clan_top', description: '🏆 Кланова війна тижня й призи' },
-      { command: 'clan_members', description: '📊 Лідерборд мого клану' },
-      { command: 'clan_create', description: '⚔️ Створити клан: /clan_create 🐺 Назва' },
-      { command: 'clan_join', description: '🤝 Вступити: /clan_join ТЕГ' },
-      { command: 'clan_help', description: '❓ Як працюють клани' },
+      { command: 'clan',    description: '🏆 Кланова війна: призи, топ, мій клан' },
+      { command: 'clans',   description: '🛡 Усі клани — вступити' },
     ], { scope: { type: 'chat', chat_id: chatId } });
   }
 
@@ -1164,11 +1159,11 @@ function createChat(bot, opts) {
       sec('crown', 'ЩАСЛИВЕ ПОВІДОМЛЕННЯ', 'Бот випадково обирає повідомлення в чаті й дає бонус. <b>Кожне твоє повідомлення може стати щасливим.</b>', '+' + CFG.luckyPts + ' XP') + '\n' +
       sec('almost', 'СЕРІЯ В ЧАТІ', 'Пиши щодня хоча б ' + CFG.streakMinMsgs + ' повідомлень — і серія росте. На 3, 7, 14 і 30 днях — великі бонуси.', 'до +300 XP') + '\n' +
       sec('almost', 'ІГРИ НА БІЛЕТИ', 'Слот, кубик, баскетбол, футбол, дартс, боулінг — просто в чаті. <code>/games</code> — усі правила й коефіцієнти.', 'до ×20 ставки') + '\n' +
-      sec('trophy', 'КЛАНИ', 'Створи клан (<code>/clan_create 🐺 Назва</code>) або вступи в наявний (<code>/clans</code>). XP учасників — очки клану. <b>Щопонеділка топ-3 клани тижня отримують призи.</b> <code>/clan_top</code> — таблиця, <code>/clan_help</code> — усе про клани.',
-        '🥇 власнику 🎁 за 25' + S + ' + кожному ' + econ.CLANS.rewards[0].stars + S + ' ' + econ.CLANS.rewards[0].tickets + ' ' + TIX + ' ' + econ.CLANS.rewards[0].xp + ' XP') + '\n' +
+      sec('trophy', 'КЛАНОВА ВІЙНА', 'Вступи в клан або створи свій — XP учасників стає очками клану. <b>У фіналі топ-3 клани отримують призи.</b> <code>/clan</code> — усе про війну.',
+        '🥇 власнику 🎁 25' + S + ' + кожному ' + econ.CLANS.rewards[0].stars + S + ' ' + econ.CLANS.rewards[0].tickets + ' ' + TIX) + '\n' +
       sec('almost', 'ГАРЯЧА ГОДИНА', 'Раз на день у випадковий момент між ' + CFG.hhFromHour + ':00 і ' + CFG.hhToHour + ':00 на ' + CFG.hhMinutes + ' хв.', 'XP ×2 — рівень росте удвічі швидше') + '\n' +
       E('crown', '👑') + ' <b>ЗА ЩО XP У ЧАТІ</b>\n<blockquote expandable>• повідомлення — 1 (у гарячу годину 2), до ' + econ.XP.chat.dayCap + ' XP з чату на день\n• дроп, вікторина — 5\n• дуель — 3, перемога — ще 3\n• /bonus — 2 · квест дня — 10\n• активісти дня й спільна ціль — див. вище</blockquote>\n' +
-      '<b>Команди:</b> /quests · /bonus · /games · /rank · /me · /goal · /duel · /clans · /clan_top\n\n' +
+      '<b>Команди:</b> /quests · /bonus · /games · /rank · /me · /goal · /duel · /clan\n\n' +
       '<i>Брати участь можуть ті, хто запустив @' + (getBotUsername() || 'StarForgeX_bot') + '</i>';
     await ctx.reply(t, { parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id, disable_web_page_preview: true }).catch(() => {});
   }
@@ -1664,7 +1659,7 @@ function createChat(bot, opts) {
       cs ? E('trophy', '🏆') + ' Змагання: <b>' + cs.pts + '</b> балів' : null,
       (function () {
         const cl = clans.summaryOf(uid);
-        return cl ? cl.emoji + ' Клан: <b>' + esc(cl.name) + '</b> [' + esc(cl.tag) + '] · /clan' : '⚔️ Без клану · /clans — знайди свій';
+        return cl ? cl.emoji + ' Клан: <b>' + esc(cl.name) + '</b> [' + esc(cl.tag) + '] · /clan' : '⚔️ Без клану · /clan — кланова війна';
       })(),
       '',
       TIX + ' Білетів: <b>' + ticketsOf(u) + '</b>',
