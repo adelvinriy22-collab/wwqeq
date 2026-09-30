@@ -44,7 +44,7 @@ progress.hooks.onLevelUp.push((uid, info, rw, opts) => {
 });
 
 // XP учасника клану — очки його клану у війні тижня.
-progress.hooks.onXp.push((uid, src, gain, raw) => clans.onXp(uid, src, gain, raw));
+progress.hooks.onXp.push((uid, src, gain, raw, opts) => clans.onXp(uid, src, gain, raw, opts));
 progress.hooks.capMult.push((uid, src) => clans.capMult(uid, src));   // у клані під час війни ліміт XP ×2
 
 const app = createApp();

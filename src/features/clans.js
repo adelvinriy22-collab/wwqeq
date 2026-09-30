@@ -246,6 +246,7 @@ async function finish() {
 async function tick() {
   const d = data();
   ensureEvent(d);
+  await battleTick(d).catch((e) => console.error('clan battle:', e.message));
   if (!running(d)) return null;
   const now = Date.now(), left = d.event.endsAt - now;
   if (left <= 0) return finish();
@@ -371,8 +372,9 @@ function setOpen(byUid, open) {
 // ─── Очки: XP учасників під час війни ───────────────────────────────────
 // raw — скільки XP було б без денної стелі: понад стелю активність однаково
 // йде в очки клану (до C.overflowDayCap на день на гравця).
-function onXp(uid, src, gain, raw) {
+function onXp(uid, src, gain, raw, opts) {
   if (src === 'clan' || src === 'admin') return;
+  { const d0 = data(); if (battleScore(d0, uid, src, raw || gain || 0, opts || {})) save(d0); }
   const over = Math.max(0, r2((raw || gain || 0) - (gain || 0)));
   if (!gain && !over) return;
   const u = users.get(uid);
@@ -403,6 +405,133 @@ function capMult(uid, src) {
   const d = data();
   return counting(d) && clanOfUser(d, uid) ? C.xpCapMult : 1;
 }
+
+// ─── БИТВИ ──────────────────────────────────────────────────────────────
+// Година з конкретним завданням (чат, платні колеса, XP, ігри). Команди — клани
+// й «Одинаки» (усі без клану). Табло в чаті оновлюється саме; у кінці — призи.
+const B = C.battles;
+const SOLO = '_solo';
+const fmtN = (n) => String(Math.round(n * 10) / 10);
+const teamName = (d, t) => t === SOLO ? '👤 <b>Одинаки</b> (без клану)' : d.list[t] ? clanTitle(d.list[t]) : '—';
+const prizeOf = (p) => [p.stars ? '+' + p.stars + '⭐' : null, p.tickets ? '+' + p.tickets + '🎫' : null].filter(Boolean).join(' ');
+function battleScore(d, uid, src, raw, opts) {
+  const b = d.battle;
+  if (!b || b.status !== 'active' || Date.now() >= b.endsAt || users.isAdmin(uid)) return false;
+  let n = 0;
+  if (b.kind === 'chat') n = src === 'chat' ? raw : 0;
+  else if (b.kind === 'xp') n = raw;
+  else if (b.kind === 'paid') n = opts.why === 'paid_spin' ? Number(opts.stars) || 0 : 0;
+  else if (b.kind === 'games') n = opts.why === 'game' ? Number(opts.stars) || 0 : 0;
+  if (!(n > 0)) return false;
+  const c = clanOfUser(d, uid);
+  const team = c ? c.id : SOLO;
+  b.scores[uid] = r2((b.scores[uid] || 0) + n);
+  b.teams[team] = r2((b.teams[team] || 0) + n);
+  b.by[team] = b.by[team] || {};
+  b.by[team][uid] = r2((b.by[team][uid] || 0) + n);
+  return true;
+}
+const sortDesc = (o) => Object.entries(o || {}).sort((a, z) => z[1] - a[1]);
+function battleText(d, b, phase) {
+  const K = B.kinds[b.kind];
+  const teams = sortDesc(b.teams), players = sortDesc(b.scores).slice(0, 3);
+  const prizes = K.top.map(prizeOf).join(' / ');
+  const lines = [];
+  if (phase === 'end') {
+    const r = b.result || {};
+    if (r.winClan) lines.push(`{:trophy} <b>Перемога: ${teamName(d, r.winClan)}</b> — ${fmtN(b.teams[r.winClan])} ${K.unit}!`,
+      `+${B.win.points} очок у війні і <b>+${B.win.tickets}🎫</b> кожному з ${r.fighters} бійців`);
+    else if (teams[0] && teams[0][0] === SOLO) lines.push(`{:warn} <b>Перемогли Одинаки</b> — ${fmtN(teams[0][1])} ${K.unit}. Бонус команди згорів!`,
+      `Були б у клані — забрали б +${B.win.points} очок і +${B.win.tickets}🎫 кожному. Вступай 👇`);
+    else lines.push(`Ніхто не набрав ${K.min} ${K.unit} — бонус команди згорів.`);
+    lines.push('', '{:almost} <b>Призи гравцям:</b> ' + (r.winners && r.winners.length
+      ? r.winners.map((w, i) => `${MEDAL[i]} ${whoOf(w.uid)} ${prizeOf(w.prize)}`).join(' · ') : `ніхто не набрав ${K.min} ${K.unit}`));
+    if (d.event && running(d) && d.event.nextBattleAt) lines.push('', `{:clockIcon} Наступна битва — <b>${time.fmtKyiv(d.event.nextBattleAt, { hour: '2-digit', minute: '2-digit' })}</b>`);
+    return card('{:trophy}', 'ПІДСУМОК БИТВИ · ' + K.title, lines);
+  }
+  lines.push(`${K.emoji} <b>Як битися:</b> ${K.how}`, `{:clockIcon} До кінця: <b>${time.humanLeft(b.endsAt - Date.now())}</b>`, '');
+  lines.push('{:crown} <b>Команди:</b>');
+  if (teams.length) teams.slice(0, 5).forEach(([t, n], i) => lines.push(`${i < 3 ? MEDAL[i] : (i + 1) + '.'} ${teamName(d, t)} — <b>${fmtN(n)}</b> ${K.unit}`));
+  else lines.push('Поки порожньо — перший удар за тобою!');
+  if (players.length) lines.push('{:almost} <b>Гравці:</b> ' + players.map(([uid, n], i) => `${MEDAL[i]} ${whoOf(uid)} ${fmtN(n)}`).join(' · '));
+  lines.push('', `{:giftBox} <b>Призи:</b> топ-3 гравцям — ${prizes} (від ${K.min} ${K.unit}), навіть без клану`,
+    `{:trophy} Клан-переможець — <b>+${B.win.points} очок</b> у війні і <b>+${B.win.tickets}🎫</b> кожному, хто бився`);
+  return card('{:lightning}', 'БИТВА: ' + K.title, lines, 'Одинаки теж б’ються, але бонус команди — лише клану');
+}
+function battleKb(b) {
+  const bot = notify.tg.botUsername;
+  const rows = [[btn('ТАБЛО', 'cl:b', 'primary', 'statsIcon'), btn('ВСТУПИТИ · +' + C.joinBonus.tickets + '🎫', 'cl:q', 'success', 'lightning')]];
+  if (bot && b && b.kind === 'paid') rows.push([{ text: '🎡 КРУТИТИ КОЛЕСО', url: `https://t.me/${bot}?start=battle` }]);
+  if (bot && b && b.kind === 'games') rows.push([{ text: '🎲 ГРАТИ НА ЗІРКИ', url: `https://t.me/${bot}?start=games` }]);
+  return { inline_keyboard: rows };
+}
+async function sayAsync(text, extra) {
+  const chat = notify.tg.chat;
+  if (!chat || !chat.say) return null;
+  try { return await chat.say(text, extra); } catch (e) { return null; }
+}
+async function startBattle(d, kind, minutes) {
+  if (d.battle && d.battle.status === 'active') return { ok: false, error: 'battle_active' };
+  if (!counting(d)) return { ok: false, error: 'no_war' };
+  const n = d.event.battleN || 0;
+  const k = B.kinds[kind] ? kind : B.order[n % B.order.length];
+  const mins = Math.max(5, Math.min(24 * 60, Math.floor(Number(minutes)) || B.minutes));
+  const now = Date.now();
+  d.event.battleN = n + 1;
+  d.battle = { id: 'B' + now.toString(36), kind: k, startAt: now, endsAt: now + mins * 60e3, status: 'active', scores: {}, teams: {}, by: {}, msg: null };
+  save(d);
+  const m = await sayAsync(battleText(d, d.battle, 'live'), { reply_markup: battleKb(d.battle) });
+  if (m && m.message_id) { d.battle.msg = { chat: (m.chat && m.chat.id) || null, id: m.message_id }; save(d); }
+  return { ok: true, battle: d.battle };
+}
+async function endBattle(d) {
+  const b = d.battle;
+  if (!b || b.status !== 'active') return null;
+  b.status = 'ended'; b.endedAt = Date.now();                   // до await — повторний виклик нічого не видасть
+  if (d.event) d.event.nextBattleAt = Date.now() + B.everyHours * HOUR;
+  const K = B.kinds[b.kind];
+  const winners = sortDesc(b.scores).filter(([, n]) => n >= K.min).slice(0, K.top.length).map(([uid, n], i) => ({ uid, n, prize: K.top[i] }));
+  for (const [i, w] of winners.entries()) {
+    users.move(w.uid, { stars: w.prize.stars || 0, tickets: w.prize.tickets || 0 }, 'clan_battle', { battle: b.id, place: i + 1 });
+    notify.dm(w.uid, withEmoji(`{:trophy} <b>Битва «${K.title.toLowerCase()}» — ${i + 1} місце!</b>\nТвій приз: <b>${prizeOf(w.prize)}</b> — уже на балансі` +
+      (clanOfUser(d, w.uid) ? '' : `\n\n<i>Був би в клані — міг би забрати ще й бонус команди +${B.win.tickets}🎫. /clan</i>`)));
+  }
+  const top = sortDesc(b.teams)[0];
+  let winClan = null, fighters = 0;
+  if (top && top[0] !== SOLO && top[1] >= K.min && d.list[top[0]]) {
+    const c = d.list[top[0]];
+    winClan = c.id;
+    const ids = Object.keys(b.by[c.id] || {}).filter(uid => c.members.includes(uid));
+    fighters = ids.length;
+    for (const uid of ids) users.move(uid, { tickets: B.win.tickets }, 'clan_battle_win', { battle: b.id, clan: c.id });
+    if (counting(d)) { const s = score(d, c); s.pts = r2(s.pts + B.win.points); s.battles = (s.battles || 0) + 1; payChests(d, c); }
+  }
+  b.result = { winners, winClan, fighters };
+  d.lastBattle = { id: b.id, kind: b.kind, at: b.endedAt, winClan, winners: winners.map(w => w.uid) };
+  save(d);
+  const text = battleText(d, b, 'end');
+  if (b.msg && b.msg.chat && notify.tg.telegram) notify.tg.telegram.editMessageText(b.msg.chat, b.msg.id, undefined, text, { parse_mode: 'HTML', disable_web_page_preview: true }).catch(() => {});
+  await sayAsync(text, { reply_markup: joinKb() });
+  return b;
+}
+async function battleTick(d) {
+  const now = Date.now();
+  const b = d.battle;
+  if (b && b.status === 'active') {
+    if (now >= b.endsAt) return endBattle(d);
+    if (b.msg && b.msg.chat && notify.tg.telegram && now - (b.liveAt || b.startAt) >= B.liveEveryMin * 60e3) {
+      b.liveAt = now; save(d);
+      notify.tg.telegram.editMessageText(b.msg.chat, b.msg.id, undefined, battleText(d, b, 'live'), { parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: battleKb(b) }).catch(() => {});
+    }
+    return null;
+  }
+  if (!counting(d)) return null;
+  if (!d.event.nextBattleAt) { d.event.nextBattleAt = now + B.firstDelayMin * 60e3; save(d); return null; }
+  const h = time.kyivHour(now);
+  if (now >= d.event.nextBattleAt && h >= B.fromHour && h < B.toHour && d.event.endsAt - now > B.minutes * 60e3) return startBattle(d);
+  return null;
+}
+const battleLive = (d) => !!(d.battle && d.battle.status === 'active' && Date.now() < d.battle.endsAt);
 
 // ─── Особисте запрошення: активний у чаті, але без клану ────────────────
 const talk = new Map();   // uid → повідомлень сьогодні (скидається щодня)
@@ -502,7 +631,9 @@ function hubText(uid) {
       mine ? '\nТвій клан: ' + clanTitle(mine) : null,
     ]);
   }
-  const left = `{:clockIcon} До фіналу: <b>${time.humanLeft(d.event.endsAt - Date.now())}</b>`;
+  const left = `{:clockIcon} До фіналу: <b>${time.humanLeft(d.event.endsAt - Date.now())}</b>` + (battleLive(d)
+    ? `\n{:lightning} <b>Зараз битва:</b> ${B.kinds[d.battle.kind].title.toLowerCase()} — ще ${time.humanLeft(d.battle.endsAt - Date.now())}`
+    : d.event.nextBattleAt ? `\n{:lightning} Наступна битва — ${time.fmtKyiv(Math.max(d.event.nextBattleAt, Date.now()), { hour: '2-digit', minute: '2-digit' })}` : '');
   if (!mine) {
     return card('{:trophy}', 'КЛАНОВА ВІЙНА', [
       left, '',
@@ -536,7 +667,7 @@ function hubKb(uid, priv) {
     rows.push([quickPick(d) ? btn('ВСТУПИТИ ЗА 1 КЛІК · +' + C.joinBonus.tickets + '🎫', 'cl:q', 'success', 'lightning') : btn('СТВОРИТИ ПЕРШИЙ КЛАН · +' + C.createBonus.tickets + '🎫', 'cl:new', 'success', 'lightning')]);
     rows.push([btn('УСІ КЛАНИ', 'cl:l', 'primary', 'statsIcon'), btn('СВІЙ КЛАН · +' + C.createBonus.tickets + '🎫', 'cl:new', null, 'crown')]);
   }
-  rows.push([btn('ЯК ЦЕ ПРАЦЮЄ', 'cl:help', null, 'infoIcon')]);
+  rows.push(battleLive(d) ? [btn('БИТВА — ТАБЛО', 'cl:b', 'danger', 'lightning'), btn('ЯК ЦЕ ПРАЦЮЄ', 'cl:help', null, 'infoIcon')] : [btn('ЯК ЦЕ ПРАЦЮЄ', 'cl:help', null, 'infoIcon')]);
   if (priv) rows.push([btn('НАЗАД', 'back_to_menu', null, 'back')]);
   return { inline_keyboard: rows };
 }
@@ -588,6 +719,7 @@ function helpText() {
     `5️⃣ ${running(d) ? 'Фінал через <b>' + time.humanLeft(d.event.endsAt - Date.now()) + '</b>' : 'Фінал'} — призи топ-3 кланам:`,
     ...C.rewards.map((rw, i) => `${MEDAL[i]} кожному +${rw.stars}⭐ +${rw.tickets}🎫 +${rw.xp} XP` + (rw.ownerGift ? ` · лідеру ${giftOf(rw)}` : '')),
     '',
+    `{:lightning} <b>Битви</b> кожні ${B.everyHours} год: година з завданням (чат, платні колеса, XP, ігри). Топ-3 гравці — приз, клан-переможець — +${B.win.points} очок і +${B.win.tickets}🎫 кожному, хто бився. Без клану ти в команді «Одинаки» — без бонусу команди.`,
     `Скрині — тим, хто приніс клану від ${C.chestMin} очок; призи фіналу — від ${C.activeMin}.`,
     `Бонус за вступ чи створення — раз за війну. Лідеру: +${C.recruitBonus}🎫 за кожного нового учасника · <code>/clan_close</code> — вступ за заявкою · <code>/clan_kick @нік</code>`,
     'Вийти з клану: <code>/clan_leave</code>',
@@ -788,6 +920,10 @@ function startLink(what) {
   return bot ? `https://t.me/${bot}?start=clan_${what}` : null;
 }
 async function onStart(ctx, uid, payload) {
+  if (payload === 'battle') {
+    await ctx.reply(withEmoji('{:lightning} Кожна ⭐ на платному колесі — удар у битві за твою команду!'), { parse_mode: 'HTML', ...notify.appKeyboard('🎡 КРУТИТИ КОЛЕСО', 'games') }).catch(() => {});
+    return true;
+  }
   if (!String(payload || '').startsWith('clan_')) return false;
   const d = data();
   ensureEvent(d);
@@ -849,6 +985,11 @@ async function callback(ctx) {
     return null;
   }
   await ctx.answerCbQuery().catch(() => {});
+  if (act === 'b') {
+    if (d.battle && d.battle.status === 'active') return show(battleText(d, d.battle, 'live'), battleKb(d.battle));
+    if (d.battle && d.battle.result) return show(battleText(d, d.battle, 'end'), joinKb());
+    return show(hubText(uid), hubKb(uid, priv));
+  }
   if (act === 'h') return show(hubText(uid), hubKb(uid, priv));
   if (act === 'l') return show(listText(), listKb());
   if (act === 'help') return show(helpText(), helpKb());
@@ -892,6 +1033,15 @@ async function adminCommand(ctx) {
     say(statusText('{:trophy}', 'КЛАНОВА ВІЙНА · ДО ФІНАЛУ ' + time.humanLeft(d.event.endsAt - Date.now()).toUpperCase()), { reply_markup: joinKb() });
     return reply('📣 Нагадування про війну надіслано в чат.');
   }
+  if (sub === 'battle') {
+    if (rest[0] === 'end') {
+      const b = await endBattle(d);
+      return reply(b ? '🏁 Битву завершено, призи видано, підсумок — у чаті.' : 'Зараз битви немає.');
+    }
+    const r = await startBattle(d, rest[0], rest[1]);
+    if (!r.ok) return reply(r.error === 'battle_active' ? 'Битва вже йде. /clanwar battle end — завершити зараз.' : 'Війна зараз не йде — битви лише під час війни.');
+    return reply(`⚔️ Битва «${B.kinds[r.battle.kind].title.toLowerCase()}» стартувала на ${Math.round((r.battle.endsAt - r.battle.startAt) / 60e3)} хв. Табло — у чаті.\nВиди: ${Object.keys(B.kinds).join(', ')}`);
+  }
   if (sub === 'delete') {
     const r = adminDelete(rest.join(' '));
     return reply(r.ok ? `🗑 Клан ${clanTitle(r.clan)} видалено.` : errText(r));
@@ -899,6 +1049,7 @@ async function adminCommand(ctx) {
   const n = Object.keys(d.list).length;
   const members = Object.values(d.list).reduce((a, c) => a + c.members.length, 0);
   return reply(hubText(null) + `\n\n<b>Адміну:</b> кланів ${n}, у кланах ${members} гравців.\n` +
+    `/clanwar battle chat|paid|xp|games [хв] — битва зараз · /clanwar battle end — завершити\n` +
     '/clanwar post — нагадати в чаті зараз\n/clanwar finish — завершити війну зараз і видати призи\n/clanwar start 3 — нова війна на 3 дні\n/clanwar delete ТЕГ — видалити клан');
 }
 
@@ -908,5 +1059,5 @@ function summaryOf(uid) { const c = clanOfUser(data(), uid); return c ? { emoji:
 
 module.exports = {
   create, join, decide, leave, kick, setOpen, onXp, tick, finish, startEvent, adminDelete, adminCommand,
-  command, callback, onReply, onPrivateText, onStart, onChatMessage, capMult, isClanCommand, badgeOf, summaryOf, standings, data, COMMANDS,
+  command, callback, onReply, onPrivateText, onStart, onChatMessage, capMult, startBattle, endBattle, isClanCommand, badgeOf, summaryOf, standings, data, COMMANDS,
 };

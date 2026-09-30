@@ -13,8 +13,9 @@ const E = require('../economy');
 const time = require('../lib/time');
 const users = require('./users');
 
-// onXp(uid, src, gain, raw) — кожне нарахування; raw — скільки було б без денної
-// стелі (клани рахують очки й понад стелю). capMult(uid, src) → множник денної
+// onXp(uid, src, gain, raw, opts) — кожне нарахування; raw — скільки було б без денної
+// стелі (клани рахують очки й понад стелю); opts.why/opts.stars — звідки XP і скільки
+// зірок витрачено (битви кланів: платні колеса, ігри). capMult(uid, src) → множник денної
 // стелі (у клані під час війни — ×2).
 const hooks = { onLevelUp: [], onXp: [], capMult: [] };
 function dayCapOf(uid, src) {
@@ -71,8 +72,8 @@ function levelInfo(total, lang) {
   };
 }
 
-function runXpHooks(uid, src, gain, raw) {
-  for (const h of hooks.onXp) { try { h(uid, src, gain, raw); } catch (e) { console.error('onXp hook:', e.message); } }
+function runXpHooks(uid, src, gain, raw, opts) {
+  for (const h of hooks.onXp) { try { h(uid, src, gain, raw, opts || {}); } catch (e) { console.error('onXp hook:', e.message); } }
 }
 
 // Нарахувати XP. Повертає скільки реально нараховано (після денних стель).
@@ -89,7 +90,7 @@ function addXp(uid, src, amount, opts) {
   if (cap != null) {
     const used = x.day.src[src] || 0;
     gain = Math.min(gain, Math.max(0, cap - used));
-    if (gain <= 0) { runXpHooks(uid, src, 0, raw); return 0; }
+    if (gain <= 0) { runXpHooks(uid, src, 0, raw, opts); return 0; }
   }
   const before = levelIndex(x.total);
   x.total = Math.round((x.total + gain) * 100) / 100;
@@ -97,7 +98,7 @@ function addXp(uid, src, amount, opts) {
   x.week = { ...x.week, xp: Math.round((x.week.xp + gain) * 100) / 100, lastAt: now };
   x.day = { ...x.day, src: { ...x.day.src, [src]: (x.day.src[src] || 0) + gain } };
   users.patch(uid, { xp: x });
-  runXpHooks(uid, src, gain, raw);
+  runXpHooks(uid, src, gain, raw, opts);
   const after = levelIndex(x.total);
   if (after > before) {
     // Нагорода — за КОЖЕН пройдений рівень, а сповіщення одне: про останній,

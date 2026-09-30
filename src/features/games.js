@@ -97,7 +97,7 @@ async function play(uid, gameId, betId, stake) {
       diceWagered: round2((u2.diceWagered || 0) + bet),
       diceWon: round2((u2.diceWon || 0) + payout),
     });
-    progress.addXp(uid, 'wager', bet * E.XP_RATES.gamePerStar);
+    progress.addXp(uid, 'wager', bet * E.XP_RATES.gamePerStar, { why: 'game', stars: bet });
     quests.track(uid, 'game');
     const after = users.get(uid);
     return {
@@ -149,7 +149,7 @@ async function botSettle(uid, gameId, betId, stake, value) {
       diceWagered: round2((u2.diceWagered || 0) + stake),
       diceWon: round2((u2.diceWon || 0) + payout),
     });
-    progress.addXp(uid, 'wager', stake * E.XP_RATES.gamePerStar);
+    progress.addXp(uid, 'wager', stake * E.XP_RATES.gamePerStar, { why: 'game', stars: stake });
     quests.track(uid, 'game');
     return { ok: true, value, k, reels, payout, won: payout > 0, balance: users.stars(users.get(uid)) };
   });

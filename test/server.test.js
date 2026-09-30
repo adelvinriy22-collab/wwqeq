@@ -625,6 +625,27 @@ test('клани: війна сама стартує, створення кно�
   const lb = await waitFor(() => tg.calls.slice(e0).find(c => c.method === 'editMessageText' && /ВОВКИ \[ВОВК\][\s\S]*user991 — 40/.test(c.payload.text || '')));
   assert.ok(lb, 'мій клан: лідерборд учасників');
 
+  // Битва години: хто більше зіграє на зірки. Клан проти «Одинаків» (700 — без клану).
+  let b0 = tg.calls.length;
+  adminCmd('/clanwar battle games 30');
+  assert.ok(await waitFor(() => sent(b0, GROUP, /БИТВА: ХТО БІЛЬШЕ ЗІГРАЄ НА ЗІРКИ/)), 'битва оголошена в чаті');
+  assert.strictEqual((await api('POST', '/games/play', { game: 'dice', bet: 'even', stake: 10 }, '991')).status, 200);
+  assert.strictEqual((await api('POST', '/games/play', { game: 'dice', bet: 'even', stake: 5 }, '700')).status, 200);
+  click(991, 'cl:b', GROUP);
+  const board = await waitFor(() => tg.calls.slice(b0).find(c => c.method === 'editMessageText' && /БИТВА[\s\S]*Вовки[\s\S]*10[\s\S]*Одинаки[\s\S]*5/.test(c.payload.text || '')));
+  assert.ok(board, 'табло: клан попереду Одинаків');
+  const ptsBefore = clan().ev.pts;
+  adminCmd('/clanwar battle end');
+  assert.ok(await waitFor(() => sent(b0, GROUP, /ПІДСУМОК БИТВИ[\s\S]*Перемога[\s\S]*Вовки/)), 'підсумок: переміг клан');
+  await sleep(300);
+  const bl = (uid, r) => ledger(uid).filter(e => e.r === r);
+  assert.deepStrictEqual(bl('991', 'clan_battle').map(e => e.s), [3], 'топ-1 гравець: +3⭐');
+  assert.deepStrictEqual(bl('700', 'clan_battle').map(e => e.s), [2], 'топ-2, навіть без клану: +2⭐');
+  assert.deepStrictEqual(bl('991', 'clan_battle_win').map(e => e.t), [5], 'бійцю клану-переможця: +5🎫');
+  assert.strictEqual(bl('990', 'clan_battle_win').length, 0, 'хто не бився — без бонусу команди');
+  assert.strictEqual(clan().ev.pts, ptsBefore + 100, 'клану +100 очок у війні');
+  const warPts = clan().ev.pts;
+
   // Фінал: активним (від 15 очок) — 7⭐ + 30🎫 + 100 XP, власнику — 🎁 за 25⭐.
   n0 = tg.calls.length;
   adminCmd('/clanwar finish');
@@ -643,7 +664,7 @@ test('клани: війна сама стартує, створення кно�
   }
   assert.strictEqual(war('993').length, 0, 'неактивний без призу');
   c = clan();
-  assert.strictEqual(c.ev.pts, 120, 'XP-нагорода не рахується в очки');
+  assert.strictEqual(c.ev.pts, warPts, 'XP-нагорода не рахується в очки');
   assert.strictEqual(c.wins, 1);
   assert.strictEqual(readDb().featureFlags.clans.event.status, 'ended');
   // Повторно — війна вже не йде, подвійних нагород немає.

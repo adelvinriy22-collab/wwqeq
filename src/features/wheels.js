@@ -214,7 +214,7 @@ async function spin(uid, wheel) {
     }
 
     // 5. Досвід, ціль, журнал.
-    if (isPaid) progress.addXp(uid, 'wager', payStars * E.XP_RATES.paidSpinPerStar);
+    if (isPaid) progress.addXp(uid, 'wager', payStars * E.XP_RATES.paidSpinPerStar, { why: 'paid_spin', stars: payStars });
     else progress.addXp(uid, 'spin', E.XP.spin.per);
     if (wheel === 'daily' && !useFree) progress.addXp(uid, 'quest', 20, { why: 'streak' });
     try { goal.addSpin(uid); } catch (e) { console.error('goal:', e.message); }
