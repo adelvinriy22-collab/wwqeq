@@ -84,12 +84,13 @@ function register(bot) {
       if (u.partnerStatus === 'pending') pend++; else if (u.partnerStatus === 'done') done++; else if (u.partnerStatus === 'rejected') rej++;
     }
     const f = quests.partnerFlags();
-    await ctx.reply(`🔐 ${quests.PARTNER.name}\n\nЗараховано: ${done}\nНа перевірці: ${pend}\nВідхилено: ${rej}\n\n×2 лишилось: ${Math.max(0, quests.PARTNER.earlyCount - (f.approved || 0))}\nЗараз: ${f.off ? '🙈 сховано' : '👁 видно'}\n\n/partner_off · /partner_on · /partner_announce`);
+    await ctx.reply(`🔐 ${quests.PARTNER.name}\n\nЗараховано: ${done}\nНа перевірці: ${pend}\nВідхилено: ${rej}\n\n×2 лишилось: ${Math.max(0, quests.PARTNER.earlyCount - (f.approved || 0))}\nЗараз: ${f.enabled === true ? '👁 видно' : '🙈 сховано'}\n\n/partner_off · /partner_on · /partner_announce`);
   });
-  bot.command('partner_off', async (ctx) => { if (!isAdminCtx(ctx)) return; store.setFeatureFlags({ partner: { ...quests.partnerFlags(), off: true } }); await ctx.reply('Секретне завдання сховано.'); });
-  bot.command('partner_on', async (ctx) => { if (!isAdminCtx(ctx)) return; store.setFeatureFlags({ partner: { ...quests.partnerFlags(), off: false } }); await ctx.reply('Секретне завдання знову видно.'); });
+  bot.command('partner_off', async (ctx) => { if (!isAdminCtx(ctx)) return; store.setFeatureFlags({ partner: { ...quests.partnerFlags(), enabled: false } }); await ctx.reply('Секретне завдання сховано.'); });
+  bot.command('partner_on', async (ctx) => { if (!isAdminCtx(ctx)) return; store.setFeatureFlags({ partner: { ...quests.partnerFlags(), enabled: true } }); await ctx.reply('Секретне завдання знову видно.'); });
   bot.command('partner_announce', async (ctx) => {
     if (!isAdminCtx(ctx)) return;
+    if (quests.partnerFlags().enabled !== true) return ctx.reply('Секретне завдання зараз сховане — розсилати нема про що. Спершу /partner_on.');
     const targets = audience(u => !u.partnerStatus);
     if (!yes(ctx)) return ctx.reply(`Розсилка про секретне завдання\nОтримають: ${targets.length}\n\nЗапустити: /partner_announce так`);
     const P = quests.PARTNER;

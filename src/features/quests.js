@@ -162,6 +162,8 @@ function taskAccept(uid, taskId) {
 }
 
 // ─── Секретне завдання партнера ─────────────────────────────────────────
+// Прибране: за замовчуванням сховане в застосунку (головна, «Завдання», спливаюче
+// вікно) і не приймає заявок. Повернути — адмін /partner_on, сховати — /partner_off.
 const PARTNER = { on: true, name: 'GramTon Drop', link: config.LINKS.partner, stars: 3, tickets: 15, xp: 50, earlyCount: 20 };
 function partnerFlags() { return (store.getFeatureFlags() || {}).partner || {}; }
 function partnerView(u) {
@@ -169,7 +171,7 @@ function partnerView(u) {
   const approved = f.approved || 0;
   const mult = approved < PARTNER.earlyCount ? 2 : 1;
   return {
-    on: PARTNER.on && f.off !== true, name: PARTNER.name, link: PARTNER.link,
+    on: PARTNER.on && f.enabled === true, name: PARTNER.name, link: PARTNER.link,
     reward: { stars: PARTNER.stars * mult, tickets: PARTNER.tickets * mult, xp: PARTNER.xp * mult },
     early: mult > 1, earlyLeft: Math.max(0, PARTNER.earlyCount - approved),
     status: u.partnerStatus || null,

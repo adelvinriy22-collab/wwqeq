@@ -564,14 +564,18 @@ test('клани: війна сама стартує, створення кно�
   assert.strictEqual(c.tag, 'ВОВК');
   assert.strictEqual(c.emoji, '🐺');
   assert.strictEqual(c.owner, '990');
-  assert.strictEqual(readDb().users['990'].tickets, 147, 'створення коштує 3🎫');
+  await sleep(300);
+  const led = (uid, r) => ledger(uid).filter(e => e.r === r).map(e => e.t);
+  assert.deepStrictEqual(led('990', 'clan_create'), [-3], 'створення коштує 3🎫');
+  assert.deepStrictEqual(led('990', 'clan_bonus'), [25], 'лідеру одразу +25🎫');
+  assert.ok(sent(n0, GROUP, /Бонус лідеру: <b>\+25🎫 \+100 XP<\/b>/), 'про бонус сказано');
   // Хто не запускав бота — кнопка відкриває бота, вступ після /start.
   click(12345, 'cl:q', GROUP);
   assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'answerCallbackQuery' && /\?start=clan_q$/.test(c.payload.url || ''))), 'незареєстрованому — посилання на бота');
 
   // Відкритий клан — одразу; закритий — заявка лідеру з кнопками.
   gmsg(991, '/clan_join ВОВК');
-  assert.ok(await waitFor(() => sent(n0, GROUP, /user991 вступив у клан[\s\S]*\+3🎫/)), '991 у клані, +3🎫 одразу');
+  assert.ok(await waitFor(() => sent(n0, GROUP, /user991 вступив у клан[\s\S]*\+15🎫 \+50 XP/)), '991 у клані, +15🎫 +50 XP одразу');
   gmsg(990, '/clan_close');
   assert.ok(await waitFor(() => sent(n0, GROUP, /лише за заявкою/)));
   gmsg(993, '/clan_join вовки');
@@ -590,9 +594,8 @@ test('клани: війна сама стартує, створення кно�
   await sleep(300);
   c = clan();
   assert.deepStrictEqual(c.members.slice().sort(), ['990', '991', '992', '993']);
-  const tix = (id) => readDb().users[id].tickets || 0;
-  assert.deepStrictEqual(['991', '992', '993'].map(tix), [3, 3, 3], 'бонус за вступ');
-  assert.strictEqual(tix('990'), 150, 'лідеру +1🎫 за кожного нового учасника');
+  for (const id of ['991', '992', '993']) assert.deepStrictEqual(led(id, 'clan_join'), [15], id + ': бонус за вступ');
+  assert.deepStrictEqual(led('990', 'clan_recruit'), [2, 2, 2], 'лідеру +2🎫 за кожного нового учасника');
 
   // Очки клану — XP учасників (ігри на зірки: 2 XP за ⭐).
   for (const id of ['990', '991', '992']) {
@@ -660,6 +663,17 @@ test('клани: війна сама стартує, створення кно�
   assert.ok(await waitFor(() => sent(n0, 993, /Ти вийшов із клану/)), 'вийшов (у приваті з ботом)');
   pmsg(993, '/clan_join ВОВК');
   assert.ok(await waitFor(() => sent(n0, 993, /через 6 год/)), 'повернення — через 6 год');
+});
+
+test('секретне завдання сховане: ні на головній, ні в завданнях, заявку не подати', async () => {
+  const me = await api('GET', '/me', null, '700');
+  assert.strictEqual(me.status, 200, JSON.stringify(me.d));
+  assert.strictEqual(me.d.partner.on, false);
+  assert.strictEqual(me.d.showFeature, false, 'без спливаючого вікна');
+  const pr = await api('GET', '/progress', null, '700');
+  assert.strictEqual(pr.d.partner.on, false);
+  const claim = await api('POST', '/partner/claim', {}, '700');
+  assert.strictEqual(claim.status, 403);
 });
 
 test('пас: закритий рівень не видається; промокод один раз', async () => {
