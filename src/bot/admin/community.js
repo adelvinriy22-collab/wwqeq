@@ -32,6 +32,8 @@ const JP_PRIZES = {
   cake:      { label: '🎂 Торт', kind: 'tier', id: 'cake' },
   bouquet:   { label: '💐 Букет', kind: 'tier', id: 'bouquet' },
   champagne: { label: '🍾 Шампанське', kind: 'tier', id: 'champagne' },
+  ring:      { label: '💍 Кільце', kind: 'tier', id: 'ring' },
+  diamond:   { label: '💎 Діамант', kind: 'tier', id: 'diamond' },
   s5:   { label: '5 ⭐', kind: 'stars', n: 5 },
   t20:  { label: '20 🎫', kind: 'tickets', n: 20 },
   x100: { label: '✨ +100 XP', kind: 'xp', n: 100 },
@@ -252,6 +254,7 @@ function register(bot, hooks) {
       [ui.cb('🌹 Троянда · 25⭐', `jp_${msgId}_rose`, 'danger'), ui.cb('🎁 Подарунок · 25⭐', `jp_${msgId}_gift`, 'danger')],
       [ui.cb('🎂 Торт · 50⭐', `jp_${msgId}_cake`, 'danger'), ui.cb('💐 Букет · 50⭐', `jp_${msgId}_bouquet`, 'danger')],
       [ui.cb('🍾 Шампанське · 50⭐', `jp_${msgId}_champagne`, 'danger')],
+      [ui.cb('💍 Кільце · 100⭐', `jp_${msgId}_ring`, 'danger'), ui.cb('💎 Діамант · 100⭐', `jp_${msgId}_diamond`, 'danger')],
       [ui.cb('20 🎫', `jp_${msgId}_t20`, 'primary'), ui.cb('5 ⭐', `jp_${msgId}_s5`, 'primary')],
       [ui.cb('✨ +100 XP (безкоштовно)', `jp_${msgId}_x100`, 'success')],
     ]) });
@@ -262,7 +265,7 @@ function register(bot, hooks) {
     await jackpotAsk(ctx, text);
     return true;
   });
-  bot.action(/^jp_(\d+)_(heart|bear|rose|gift|cake|bouquet|champagne|s5|t20|x100|p100)$/, async (ctx) => {
+  bot.action(/^jp_(\d+)_(heart|bear|rose|gift|cake|bouquet|champagne|ring|diamond|s5|t20|x100|p100)$/, async (ctx) => {
     if (!isAdminCtx(ctx)) return ctx.answerCbQuery().catch(() => {});
     await ctx.answerCbQuery().catch(() => {});
     const msgId = Number(ctx.match[1]);

@@ -143,7 +143,7 @@ function xpHtml() {
 
 // ─── Джекпот у чаті: jp-<приз>.jpg у web/img/jackpot ────────────────────
 const JP_OUT = path.join(__dirname, '..', 'web', 'img', 'jackpot');
-const JP_KINDS = { heart: '💝', bear: '🧸', rose: '🌹', gift: '🎁', cake: '🎂', bouquet: '💐', champagne: '🍾', stars: '⭐', tickets: '🎫', xp: '⚡' };
+const JP_KINDS = { heart: '💝', bear: '🧸', rose: '🌹', gift: '🎁', cake: '🎂', bouquet: '💐', champagne: '🍾', ring: '💍', diamond: '💎', stars: '⭐', tickets: '🎫', xp: '⚡' };
 function jackpotHtml(kind) {
   // Для подарунків — справжня картинка подарунка (web/img/<kind>.png), інакше емодзі.
   const png = path.join(__dirname, '..', 'web', 'img', kind + '.png');

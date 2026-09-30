@@ -16,6 +16,8 @@ const CATALOG = {
   champagne: { emoji: '🍾', stars: 50,  fallbackId: '6028601630662853006' },
   rocket:    { emoji: '🚀', stars: 50,  fallbackId: '5170564780938756245' },
   trophy:    { emoji: '🏆', stars: 100, fallbackId: '5168043875654172773' },
+  ring:      { emoji: '💍', stars: 100, fallbackId: '5170690322832818290' },
+  diamond:   { emoji: '💎', stars: 100, fallbackId: '5170521118301225164' },
 };
 const TEXT_MAX = 128;
 const KEEP_ENTITIES = new Set(['bold', 'italic', 'underline', 'strikethrough', 'spoiler', 'custom_emoji']);

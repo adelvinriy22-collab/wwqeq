@@ -120,7 +120,7 @@ const tt = (lang, k, p) => { const v = (T[lang] || T.uk)[k]; return withEmoji(St
 const bt = (lang, k, p) => { const v = (T[lang] || T.uk)[k]; return String(v === undefined ? T.uk[k] : v).replace(/\{(\w+)\}/g, (m, x) => (p && p[x] !== undefined ? p[x] : m)); };
 const whenOf = (ts, lang) => time.fmtKyiv(ts, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }, lang);
 // Преміум-емодзі призу (для кнопок і рядків сходинки).
-const TIER_ICON = { bear: 'teddyBear', gift: 'giftBox', rocket: 'rocket', trophy: 'trophy', xmas_stocking: 'xmasStocking', wheel_stocking: 'xmasStocking', fresh_socks: 'freshSocks', diamond_ring: 'diamondRing', premium3m: 'premium' };
+const TIER_ICON = { bear: 'teddyBear', gift: 'giftBox', rocket: 'rocket', trophy: 'trophy', xmas_stocking: 'xmasStocking', wheel_stocking: 'xmasStocking', fresh_socks: 'freshSocks', diamond_ring: 'diamondRing', ring: 'diamondRing', premium3m: 'premium' };
 const tierIcon = (id) => TIER_ICON[id] || 'giftBox';
 const tierEmoji = (id, fallback) => { const k = TIER_ICON[id]; return k && EMOJI[k] && EMOJI[k].id ? withEmoji('{:' + k + '}') : fallback; };
 const screen = (icon, title, lines, foot) => ui.card(icon, title, lines, foot);

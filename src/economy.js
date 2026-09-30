@@ -32,6 +32,8 @@ const TIERS = [
   { id: 'cake',      emoji: '🎂', price: 50, ladder: null, img: 'cake',      name: { uk: 'Торт', en: 'Cake', ru: 'Торт' } },
   { id: 'bouquet',   emoji: '💐', price: 50, ladder: null, img: 'bouquet',   name: { uk: 'Букет', en: 'Bouquet', ru: 'Букет' } },
   { id: 'champagne', emoji: '🍾', price: 50, ladder: null, img: 'champagne', name: { uk: 'Шампанське', en: 'Champagne', ru: 'Шампанское' } },
+  { id: 'ring',      emoji: '💍', price: 100, ladder: null, img: 'ring',     name: { uk: 'Кільце', en: 'Ring', ru: 'Кольцо' } },
+  { id: 'diamond',   emoji: '💎', price: 100, ladder: null, img: 'diamond',  name: { uk: 'Діамант', en: 'Diamond', ru: 'Бриллиант' } },
   // Лише з колеса (не на сходах).
   { id: 'wheel_stocking', emoji: '🧦', price: 450, ladder: null, img: 'wheel_stocking', name: { uk: 'Xmas Stocking', en: 'Xmas Stocking', ru: 'Xmas Stocking' } },
 ];
@@ -176,7 +178,7 @@ const withdrawCost = (payout, feePercent) => {
 const DEPOSIT = { bonusPercent: 10, bonusTimes: 3, presets: [15, 50, 100, 250, 500, 1000] };
 
 // Магазин: приз за зірки без рандому. Відкривається після першого платного спіну.
-const SHOP = { items: ['heart', 'bear', 'rose', 'gift', 'cake', 'bouquet', 'champagne', 'rocket', 'trophy'], unlockPaidSpins: 1, feePercent: 0 };
+const SHOP = { items: ['heart', 'bear', 'rose', 'gift', 'cake', 'bouquet', 'champagne', 'rocket', 'trophy', 'ring', 'diamond'], unlockPaidSpins: 1, feePercent: 0 };
 const shopPrice = (tier) => Math.ceil(tier.price * (1 + SHOP.feePercent / 100));
 
 // ─── Досвід (XP) ────────────────────────────────────────────────────────

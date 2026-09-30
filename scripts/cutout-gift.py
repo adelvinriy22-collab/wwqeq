@@ -4,6 +4,8 @@
     python3 scripts/cutout-gift.py скріншот.jpg web/img/rose.png [--glow]
 
 --glow — для подарунків із сяйвом (свічки торта): сяйво стає напівпрозорим.
+--precise — прибирати лише пікселі саме кольору фону (для сірих подарунків: кільце).
+--holes — прибрати й замкнений фон усередині предмета (дірка кільця).
 Потрібен Pillow (pip install pillow) — лише для розробки, не для бота."""
 import sys
 from collections import deque
@@ -12,8 +14,17 @@ from PIL import Image, ImageFilter
 SIZE = 200
 
 
+PRECISE = False
+HOLES = False
+BG_COLORS = ((28, 28, 30), (0, 0, 0))     # фон картки Telegram і чорні кути скріншота
+
+
 def is_bg(p, strict=False):
     r, g, b = p[:3]
+    if PRECISE:
+        # Лише пікселі саме кольору фону — для сірих подарунків (кільце), де
+        # власні темні тіні предмета майже як фон.
+        return any(abs(r - c[0]) + abs(g - c[1]) + abs(b - c[2]) <= 16 for c in BG_COLORS)
     mx, mn = max(r, g, b), min(r, g, b)
     # Фон — темний і сірий (без кольору). Обводки подарунків кольорові, тож лишаються.
     return mx < (58 if strict else 72) and (mx - mn) < 20
@@ -38,6 +49,23 @@ def cutout(src, dst):
             if 0 <= nx < w and 0 <= ny < h and not bg[ny][nx] and is_bg(px[nx, ny]):
                 bg[ny][nx] = True
                 q.append((nx, ny))
+    if HOLES:
+        # Замкнені ділянки фону (дірка всередині кільця) — теж прибрати, якщо великі.
+        seen = [[False] * w for _ in range(h)]
+        for y0 in range(h):
+            for x0 in range(w):
+                if bg[y0][x0] or seen[y0][x0] or not is_bg(px[x0, y0]):
+                    continue
+                comp, dq = [], deque([(x0, y0)])
+                seen[y0][x0] = True
+                while dq:
+                    x, y = dq.popleft(); comp.append((x, y))
+                    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < w and 0 <= ny < h and not seen[ny][nx] and not bg[ny][nx] and is_bg(px[nx, ny]):
+                            seen[ny][nx] = True; dq.append((nx, ny))
+                if len(comp) >= 150:
+                    for x, y in comp: bg[y][x] = True
     mask = Image.new('L', (w, h), 255)
     mp = mask.load()
     for y in range(h):
@@ -81,4 +109,6 @@ def cutout(src, dst):
 GLOW = False
 if __name__ == '__main__':
     GLOW = '--glow' in sys.argv
+    PRECISE = '--precise' in sys.argv
+    HOLES = '--holes' in sys.argv
     cutout(sys.argv[1], sys.argv[2])
