@@ -24,6 +24,7 @@ const time = require('../lib/time');
 const econ = require('../economy');
 const { EMOJI } = require('../emoji');
 const clans = require('../features/clans');
+const rules = require('./rules');
 
 const CFG = {
   dropMinGapMin: 70,          // між дропами — від 70 хв
@@ -902,6 +903,7 @@ function createChat(bot, opts) {
     if (!chatId) return;
     await bot.telegram.setMyCommands([
       { command: 'help',    description: '📖 Як тут усе працює' },
+      { command: 'rules',   description: '📜 Правила чату' },
       { command: 'bonus',   description: '⭐ Щоденна зірка (раз на 24 год)' },
       { command: 'quests',  description: '📋 Квести дня — білети за активність' },
       { command: 'games',   description: '🎮 Усі ігри: слот, кубик, баскет, футбол, дартс, боулінг' },
@@ -1163,7 +1165,7 @@ function createChat(bot, opts) {
         'скрині кожному + у фіналі до ' + econ.CLANS.rewards[0].stars + S + ' ' + econ.CLANS.rewards[0].tickets + ' ' + TIX + ', лідеру 🎁 25' + S) + '\n' +
       sec('almost', 'ГАРЯЧА ГОДИНА', 'Раз на день у випадковий момент між ' + CFG.hhFromHour + ':00 і ' + CFG.hhToHour + ':00 на ' + CFG.hhMinutes + ' хв.', 'XP ×2 — рівень росте удвічі швидше') + '\n' +
       E('crown', '👑') + ' <b>ЗА ЩО XP У ЧАТІ</b>\n<blockquote expandable>• повідомлення — 1 (у гарячу годину 2), до ' + econ.XP.chat.dayCap + ' XP з чату на день (у клані під час війни — ×' + econ.CLANS.xpCapMult + ')\n• дроп, вікторина — 5\n• дуель — 3, перемога — ще 3\n• /bonus — 2 · квест дня — 10\n• активісти дня й спільна ціль — див. вище</blockquote>\n' +
-      '<b>Команди:</b> /quests · /bonus · /games · /rank · /me · /goal · /duel · /clan\n\n' +
+      '<b>Команди:</b> /quests · /bonus · /games · /rank · /me · /goal · /duel · /clan · /rules\n\n' +
       '<i>Брати участь можуть ті, хто запустив @' + (getBotUsername() || 'StarForgeX_bot') + '</i>';
     await ctx.reply(t, { parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id, disable_web_page_preview: true }).catch(() => {});
   }
@@ -1795,8 +1797,11 @@ function createChat(bot, opts) {
         if (ctx.updateType === 'message' && ctx.message) {
           rememberAuthor(ctx);
           if (ctx.message.new_chat_members) return onNewMembers(ctx);
+          // Правила чату: скарги на заявки — видалення й бан (див. chat/rules.js).
+          if (await rules.enforce(ctx, chatId)) return;
           const text = ctx.message.text || '';
           const cmd = text.startsWith('/') ? text.split(/\s|@/)[0].toLowerCase() : null;
+          if (cmd === '/rules') return ctx.reply(rules.rulesText(), { parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id, disable_web_page_preview: true }).catch(() => {});
           if (cmd === '/duel') return onDuelCmd(ctx);
           if (cmd && clans.isClanCommand(cmd)) return clans.command(ctx, cmd);
           if (cmd === '/top') return onRankCmd(ctx);   // ліга вимкнена — показуємо легенд чату

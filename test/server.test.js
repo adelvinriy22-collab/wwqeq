@@ -686,6 +686,47 @@ test('клани: війна сама стартує, створення кно�
   assert.ok(await waitFor(() => sent(n0, 993, /через 6 год/)), 'повернення — через 6 год');
 });
 
+test('правила чату: /rules; скарга на заявку — видалення й бан на 7 днів, з 3-го разу — назавжди; розбан адміном', async () => {
+  const GROUP = -1001;
+  const waitFor = async (pred) => { for (let i = 0; i < 40; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  const now = () => Math.floor(Date.now() / 1000);
+  const gmsg = (id, text, mid) => tg.push({ message: { message_id: mid || Math.floor(Math.random() * 1e6), date: now(), chat: { id: GROUP, type: 'supergroup', title: 'G' }, from: { id, is_bot: false, first_name: 'U' + id, username: 'user' + id }, text,
+    entities: text.startsWith('/') ? [{ type: 'bot_command', offset: 0, length: text.split(' ')[0].length }] : undefined } });
+  await waitFor(() => tg.calls.some(c => c.method === 'getChat'));
+  let n0 = tg.calls.length;
+  tg.push({ message: { message_id: 2, date: now(), chat: { id: GROUP, type: 'supergroup', title: 'G' }, from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, text: '/chat_here', entities: [{ type: 'bot_command', offset: 0, length: 10 }] } });
+  await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'sendMessage' && /прив/.test(c.payload.text || '')));
+  const calls = (m) => tg.calls.slice(n0).filter(c => c.method === m);
+
+  n0 = tg.calls.length;
+  gmsg(987, '/rules');
+  assert.ok(await waitFor(() => calls('sendMessage').find(c => /ПРАВИЛА ЧАТУ[\s\S]*заявки[\s\S]*бан на <b>7 днів/.test(c.payload.text || ''))), '/rules показує правило');
+  gmsg(987, 'як зробити заявку на вивід?');
+  await sleep(700);
+  assert.strictEqual(calls('banChatMember').length, 0, 'звичайне питання — без бану');
+
+  gmsg(987, 'заявку вже 3 дні не виплачують', 9001);
+  const ban = await waitFor(() => calls('banChatMember')[0]);
+  assert.ok(ban, 'бан');
+  assert.strictEqual(ban.payload.user_id, 987);
+  const days = (ban.payload.until_date - now()) / 86400;
+  assert.ok(days > 6.9 && days <= 7.01, 'на 7 днів');
+  assert.ok(calls('deleteMessage').some(c => c.payload.message_id === 9001), 'повідомлення видалено');
+  assert.ok(await waitFor(() => calls('sendMessage').find(c => String(c.payload.chat_id) === String(GROUP) && /бан на 7 днів за правило чату/.test(c.payload.text || ''))), 'у чаті — пояснення');
+  const toAdmin = await waitFor(() => calls('sendMessage').find(c => String(c.payload.chat_id) === ADMIN && /rules_unban_987/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  assert.ok(toAdmin, 'адміну — сповіщення з кнопкою «Розбанити»');
+
+  gmsg(987, 'вивід не приходить, довго');
+  gmsg(987, 'де мої зірки з заявки?');
+  assert.ok(await waitFor(() => calls('banChatMember').length === 3), 'кожне порушення — бан');
+  assert.strictEqual(calls('banChatMember')[2].payload.until_date, undefined, 'третій раз — назавжди');
+  assert.ok(await waitFor(() => calls('sendMessage').find(c => /бан назавжди/.test(c.payload.text || ''))));
+
+  tg.push({ callback_query: { id: 'rb' + Math.random(), from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, chat_instance: 'a', data: 'rules_unban_987', message: { message_id: 3, date: 0, chat: { id: Number(ADMIN), type: 'private' } } } });
+  const un = await waitFor(() => calls('unbanChatMember')[0]);
+  assert.ok(un && un.payload.user_id === 987, 'адмін розбанив');
+});
+
 test('секретне завдання сховане: ні на головній, ні в завданнях, заявку не подати', async () => {
   const me = await api('GET', '/me', null, '700');
   assert.strictEqual(me.status, 200, JSON.stringify(me.d));
