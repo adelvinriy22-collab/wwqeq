@@ -796,3 +796,12 @@ test('техроботи full блокують дії через API', async () 
   assert.strictEqual(me.d.maintenance.mode, 'full');
   adminCmd('/maint off');
 });
+
+test('/ugift без TG_SESSION — підказка, як налаштувати, і жодного подарунка', async () => {
+  const n0 = tg.calls.length;
+  adminCmd('/ugift @user985 bear Привіт!');
+  let r;
+  for (let i = 0; i < 20 && !r; i++) { await sleep(150); r = tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /TG_SESSION/.test(c.payload.text || '')); }
+  assert.ok(r, 'адміну — що налаштувати');
+  assert.ok(!tg.calls.slice(n0).some(c => c.method === 'sendGift'));
+});

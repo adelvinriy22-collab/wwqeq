@@ -1,0 +1,69 @@
+// ==========================================================================
+// ТЕСТ: подарунки Telegram від імені АКАУНТА власника (MTProto, бібліотека
+// `telegram`/GramJS). Оплачуються зірками з балансу акаунта, не бота.
+// Потрібні TG_API_ID, TG_API_HASH (my.telegram.org) і TG_SESSION
+// (рядок сесії — `node scripts/tg-login.js`). Без них модуль вимкнений.
+// ==========================================================================
+const config = require('../config');
+const tggifts = require('./tggifts');
+
+const TEXT_MAX = 255;   // ліміт підпису подарунка для акаунтів
+const enabled = () => !!(config.TG_API_ID && config.TG_API_HASH && config.TG_SESSION);
+
+let clientP = null;
+function client() {
+  if (!clientP) {
+    clientP = (async () => {
+      const { TelegramClient } = require('telegram');
+      const { StringSession } = require('telegram/sessions');
+      const c = new TelegramClient(new StringSession(config.TG_SESSION), Number(config.TG_API_ID), config.TG_API_HASH, { connectionRetries: 3 });
+      c.setLogLevel('error');
+      await c.connect();
+      if (!(await c.checkAuthorization())) throw new Error('TG_SESSION недійсна — створіть нову: node scripts/tg-login.js');
+      return c;
+    })().catch(e => { clientP = null; throw e; });
+  }
+  return clientP;
+}
+
+// Подарунок з каталогу акаунта за нашим tierId (емодзі + ціна), інакше fallback id.
+async function findGift(c, tierId) {
+  const { Api } = require('telegram');
+  const t = tggifts.CATALOG[tierId];
+  if (!t) return null;
+  try {
+    const r = await c.invoke(new Api.payments.GetStarGifts({ hash: 0 }));
+    const list = (r && r.gifts) || [];
+    const emo = (g) => g.sticker && (g.sticker.attributes || []).map(a => a.alt).find(Boolean);
+    const g = list.find(x => !x.soldOut && !x.limited && Number(x.stars) === t.stars && emo(x) === t.emoji)
+      || list.find(x => !x.soldOut && emo(x) === t.emoji);
+    if (g) return g.id;
+  } catch (e) { console.error('getStarGifts:', e.message); }
+  return t.fallbackId;
+}
+
+// Надіслати подарунок від акаунта. target — @нік або числовий id.
+// → { ok: true, stars } або { ok: false, error }
+async function send(target, tierId, text) {
+  if (!enabled()) return { ok: false, error: 'not_configured' };
+  if (!tggifts.CATALOG[tierId]) return { ok: false, error: 'unknown_gift' };
+  try {
+    const { Api } = require('telegram');
+    const bigInt = require('big-integer');
+    const c = await client();
+    const peer = await c.getInputEntity(/^\d+$/.test(String(target)) ? bigInt(String(target)) : String(target));
+    const id = await findGift(c, tierId);
+    const t = String(text || '').slice(0, TEXT_MAX);
+    const invoice = new Api.InputInvoiceStarGift({
+      peer, giftId: bigInt(String(id)),
+      message: t ? new Api.TextWithEntities({ text: t, entities: [] }) : undefined,
+    });
+    const form = await c.invoke(new Api.payments.GetPaymentForm({ invoice }));
+    await c.invoke(new Api.payments.SendStarsForm({ formId: form.formId, invoice }));
+    return { ok: true, stars: tggifts.CATALOG[tierId].stars };
+  } catch (e) {
+    return { ok: false, error: String((e && (e.errorMessage || e.message)) || e).slice(0, 300) };
+  }
+}
+
+module.exports = { send, enabled, TEXT_MAX };

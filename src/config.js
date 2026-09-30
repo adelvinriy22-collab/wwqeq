@@ -24,6 +24,10 @@ const config = {
   WEBAPP_URL: env.WEBAPP_URL || '',
   DATA_DIR: env.DATA_DIR || path.join(ROOT, 'data'),
   TELEGRAM_API_ROOT: env.TELEGRAM_API_ROOT || '',
+  // Тест: подарунки від акаунта власника (MTProto) — /ugift.
+  TG_API_ID: env.TG_API_ID || '',
+  TG_API_HASH: env.TG_API_HASH || '',
+  TG_SESSION: env.TG_SESSION || '',
 
   CHANNEL_USERNAME: env.CHANNEL_USERNAME || '@starforge_news',
   CHAT_USERNAME: env.CHAT_USERNAME || '@starforge_chat',
