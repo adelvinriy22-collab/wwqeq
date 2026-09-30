@@ -464,7 +464,7 @@ test('автовивід: адмін відкриває, гравець пише
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendMessage' && String(c.payload.chat_id) === ADMIN && /уже отримав/.test(c.payload.text || '')), 'адміну сказано, що вже отримав');
 });
 
-test('джекпот: Мішка видається одразу (sendGift) рівно раз, у чаті барабан, фото й закріплення', async () => {
+test('джекпот за активність: адмін обирає, Мішка видається одразу (sendGift) рівно раз, у чаті — фото й закріплення', async () => {
   const n0 = tg.calls.length;
   adminCmd('/jackpot https://t.me/starforge_chat/555 @user960');
   const waitFor = async (pred) => { for (let i = 0; i < 40; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
@@ -477,7 +477,8 @@ test('джекпот: Мішка видається одразу (sendGift) рі
   assert.strictEqual(gift.payload.user_id, 960);
   assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'pinChatMessage')), 'джекпот закріплено');
   assert.strictEqual(tg.calls.slice(n0).filter(c => c.method === 'sendGift').length, 1, 'подвійне натискання — одна Мішка');
-  assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendDice' && String(c.payload.chat_id) === '-1001' && c.payload.emoji === '🎰'), 'барабан 🎰 у чаті');
+  assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '-1001' && /Адмін переглядає чат/.test(c.payload.text || '')), 'інтрига в чаті');
+  assert.ok(!tg.calls.slice(n0).some(c => c.method === 'sendDice'), 'це не гра — без кубика');
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendPhoto'), 'картка JACKPOT');
   await sleep(500);
   const app = readDb().applications.find(a => a.uid === '960' && a.source === 'chat_jackpot');

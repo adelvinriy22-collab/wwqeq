@@ -3,7 +3,7 @@
 //   lvl-1.jpg … lvl-15.jpg — картка рівня (іконка, шкала, нагорода, привілеї)
 //   ladder.jpg             — усі 15 рівнів однією драбиною
 //   xp.jpg                 — за що дають XP
-// і web/img/jackpot/jp-<приз>.jpg — картинка «JACKPOT» для чату (мішка, подарунок, зірки, білети, XP).
+// і web/img/jackpot/jp-<приз>.jpg — «JACKPOT FOR ACTIVITY» для чату (мішка, подарунок, зірки, білети, XP).
 // Картинки без слів конкретною мовою (цифри й емодзі) — підходять для uk/en/ru.
 // Нагороди й привілеї беруться з src/economy.js: змінив їх — перезапусти:
 //   node scripts/render-level-images.js
@@ -161,7 +161,7 @@ function jackpotHtml(kind) {
     .ray { position: absolute; left: -40px; top: -900px; width: 80px; height: 900px; transform-origin: 40px 900px;
       background: linear-gradient(to top, #ffffff38, transparent 80%); clip-path: polygon(45% 100%, 55% 100%, 100% 0, 0 0); }
     .cf { position: absolute; border-radius: 2px; }
-    h1 { position: absolute; top: 34px; left: 0; right: 0; text-align: center; font-size: 150px; font-weight: 900; letter-spacing: 14px;
+    h1 { position: absolute; top: 20px; left: 0; right: 0; text-align: center; font-size: 150px; font-weight: 900; letter-spacing: 14px;
       color: #ffe08a; text-shadow: 0 6px 0 #b3245f, 0 12px 40px #000c, 0 0 60px #ffd36b; }
     .ring { position: absolute; left: 50%; top: 58%; width: 380px; height: 380px; margin: -190px 0 0 -190px; border-radius: 50%;
       background: radial-gradient(circle at 35% 30%, #ffffff55, #ffb020cc 55%, #b3245f); border: 8px solid #ffe08a;
@@ -169,11 +169,13 @@ function jackpotHtml(kind) {
     .ring .emo { font-size: 220px; line-height: 1; filter: drop-shadow(0 14px 24px #0009); }
     .brand { position: absolute; right: 44px; bottom: 30px; font-size: 26px; font-weight: 800; letter-spacing: 6px; opacity: .7; }
     .slot { position: absolute; left: 44px; bottom: 26px; font-size: 64px; }
+    .sub { position: absolute; top: 196px; left: 0; right: 0; text-align: center; font-size: 34px; font-weight: 900; letter-spacing: 12px; color: #fff; text-shadow: 0 3px 14px #000b; }
   </style></head><body>
     <div class="rays">${rays}</div>${conf}
     <h1>JACKPOT</h1>
     <div class="ring"><span class="emo">${e}</span></div>
-    <div class="slot emo">🎰</div>
+    <div class="slot emo">💬</div>
+    <div class="sub">FOR ACTIVITY</div>
     <div class="brand">STARFORGE</div>
   </body></html>`;
 }

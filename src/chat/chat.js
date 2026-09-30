@@ -463,36 +463,38 @@ function createChat(bot, opts) {
     ], pct >= 100 ? 'Майже відчинено… слідкуй за чатом 👀' : 'Відкриється першим для найактивніших гравців чату');
   }
 
-  // ═══════════════════════ 🎰 ДЖЕКПОТ ВІД АДМІНА ═══════════════════════
-  // Адмін у приваті вставляє посилання на повідомлення — бот відповідає на
-  // нього в чаті «ДЖЕКПОТ!», ставить 🎉 і закликає всіх спілкуватись.
+  // ═══════════════════════ 👑 ДЖЕКПОТ ЗА АКТИВНІСТЬ ═══════════════════════
+  // Не гра й не випадковість: адмін сам обирає, кого нагородити за активність
+  // у чаті, — вставляє в приваті посилання на повідомлення людини, і бот
+  // оголошує це в чаті у відповідь на те повідомлення.
   // opts.kind — bear | gift | stars | tickets | xp (картинка jp-<kind>.jpg);
   // opts.auto — подарунок бот уже надіслав сам (Мішка/Подарунок через sendGift).
-  // Щоб усі помітили: спершу 🎰 «барабан» у відповідь переможцю, потім яскрава
-  // картка JACKPOT, закріплення зі сповіщенням і реакції на повідомленні.
+  // Щоб усі помітили: спершу «👀 адмін помітив…», потім яскрава картка,
+  // закріплення зі сповіщенням і реакція на повідомленні переможця.
   const jpUnpin = new Map();
   async function jackpot(msgId, winner, prizeLabel, opts) {
     if (!chatId) return false;
     const o = opts || {};
     const reply = { reply_to_message_id: msgId, allow_sending_without_reply: true };
-    try {
-      await bot.telegram.sendDice(chatId, { emoji: '🎰', ...reply });
-      await new Promise(r => setTimeout(r, o.noDrumroll ? 0 : 2600));
-    } catch (e) { /* без барабана — не страшно */ }
+    let teaser = null;
+    if (!o.noTeaser) {
+      teaser = await send(E('eye', '👀') + ' <b>Адмін переглядає чат…</b> Хтось тут дуже активний ' + E('almost', '🔥'), reply);
+      await new Promise(r => setTimeout(r, 2200));
+    }
     const gift = o.kind === 'bear' || o.kind === 'gift';
-    const caption = card('crown', 'ДЖЕКПОТ! 🎰', [
-      E('crown', '👑') + ' <b>' + winner.name + '</b> зірвав джекпот — <b>' + prizeLabel + '</b>!',
+    const caption = card('crown', 'ДЖЕКПОТ ЗА АКТИВНІСТЬ', [
+      E('crown', '👑') + ' <b>' + winner.name + '</b>, адмін помітив твою активність у чаті — тримай <b>' + prizeLabel + '</b>!',
       o.auto && gift
-        ? E('lightning', '⚡') + ' <b>Бот уже видав приз сам — без черги й очікування!</b>\n' + E('giftBox', '🎁') + ' Подарунок уже в профілі переможця → «Подарунки»'
-        : E('check', '✅') + ' <b>Приз уже зараховано</b> — забирай у боті',
+        ? E('lightning', '⚡') + ' <b>Бот уже видав подарунок сам — без черги!</b>\n' + E('giftBox', '🎁') + ' Він уже в профілі переможця → «Подарунки»'
+        : E('check', '✅') + ' <b>Приз уже зараховано</b> — він у боті',
       '',
-      E('almost', '🔥') + ' <b>Хочеш так само? Будь активним у чаті!</b>',
-      'Бот стежить за активністю й роздає джекпоти найактивнішим — наступним можеш бути ти ' + E('eye', '👀'),
-    ]);
-    const link = botLink('games');
-    const tryBtn = { text: '🎰 СПРОБУВАТИ УДАЧУ', url: link, style: 'danger' };
-    if (EM.lightning && EM.lightning.id) tryBtn.icon_custom_emoji_id = EM.lightning.id;
-    const kb = link ? { reply_markup: { inline_keyboard: [[tryBtn]] } } : {};
+      E('almost', '🔥') + ' <b>Хочеш так само? Будь живим у чаті!</b>',
+      'Спілкуйся, допомагай новеньким, піднімай настрій — адмін сам обирає, кому дати наступний джекпот ' + E('eye', '👀'),
+    ], 'Щоб отримувати призи, запусти бота');
+    const link = botLink();
+    const botBtn = { text: '🤖 ВІДКРИТИ БОТА', url: link, style: 'primary' };
+    if (EM.rocket && EM.rocket.id) botBtn.icon_custom_emoji_id = EM.rocket.id;
+    const kb = link ? { reply_markup: { inline_keyboard: [[botBtn]] } } : {};
     let m = null;
     const fs = require('fs'), path = require('path');
     const kindFile = path.join(__dirname, '..', '..', 'web', 'img', 'jackpot', 'jp-' + (o.kind || 'stars') + '.jpg');
@@ -511,6 +513,7 @@ function createChat(bot, opts) {
       m = await send(caption, { ...reply, ...kb });
     }
     react(msgId, '🎉');
+    if (teaser && teaser.message_id && m) bot.telegram.deleteMessage(chatId, teaser.message_id).catch(() => {});
     // Закріпити зі сповіщенням — бачать усі; через 3 год прибираємо.
     if (m && m.message_id && !o.noPin) {
       bot.telegram.pinChatMessage(chatId, m.message_id, { disable_notification: false }).then(() => {

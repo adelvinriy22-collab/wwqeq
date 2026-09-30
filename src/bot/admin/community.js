@@ -22,7 +22,7 @@ const { withEmoji } = require('../../emoji');
 const pendingBroadcast = new Map();   // адмін -> { from, id, at }
 const jpPending = new Map();          // msgId -> uid, коли автора вказано вручну
 const jpDone = new Set();             // msgId, за які приз уже видано (подвійне натискання — не вдруге)
-const JP_GIFT_TEXT = '🎰 ДЖЕКПОТ у чаті StarForge! Будь активним — і вигравай ще 🔥';
+const JP_GIFT_TEXT = '👑 Джекпот за активність у чаті StarForge! Дякуємо, що ти з нами 🔥';
 
 const JP_PRIZES = {
   bear: { label: '🧸 Мішку', kind: 'tier', id: 'bear' },
@@ -241,7 +241,7 @@ function register(bot, hooks) {
     if (users.isAdmin(who.uid)) return ctx.reply('Це твоє повідомлення 🙂');
     const inBot = !!(users.get(who.uid) || {}).lang;
     jpDone.delete(msgId);
-    return ctx.reply(`🎰 Джекпот для ${who.plain}` + (inBot ? '' : '\n⚠️ Ця людина ще не запускала бота — приз чекатиме її') +
+    return ctx.reply(`👑 Джекпот за активність для ${who.plain}` + (inBot ? '' : '\n⚠️ Ця людина ще не запускала бота — приз чекатиме її') +
       '\n\nЯкий приз?\n🧸 Мішку (15⭐) і 🎁 Подарунок (25⭐) бот надішле <b>одразу сам</b> — справжнім подарунком Telegram з балансу зірок бота.', { parse_mode: 'HTML', ...ui.kb([
       [ui.cb('🧸 Мішка — одразу', `jp_${msgId}_bear`, 'danger'), ui.cb('🎁 Подарунок — одразу', `jp_${msgId}_gift`, 'danger')],
       [ui.cb('20 🎫', `jp_${msgId}_t20`, 'primary'), ui.cb('5 ⭐', `jp_${msgId}_s5`, 'primary')],
@@ -286,10 +286,10 @@ function register(bot, hooks) {
     await ctx.editMessageText(`⏳ Джекпот ${name}: ${prize.label} — оголошую в чаті…`).catch(() => {});
     const kind = prize.kind === 'tier' ? prize.id : prize.kind;
     const ok = chat() ? await chat().jackpot(msgId, { name }, prize.label, { kind, auto }) : false;
-    notify.dm(uid, withEmoji(`{:crown} <b>ДЖЕКПОТ!</b>\n━━━━━━━━━━━━━━\nТи зірвав джекпот у чаті — <b>${prize.label}</b>!\n\n` +
+    notify.dm(uid, withEmoji(`{:crown} <b>ДЖЕКПОТ ЗА АКТИВНІСТЬ!</b>\n━━━━━━━━━━━━━━\nАдмін помітив твою активність у чаті й обрав саме тебе — <b>${prize.label}</b>!\n\n` +
       (auto ? '{:lightning} <b>Бот уже надіслав подарунок</b> — глянь у свій профіль Telegram → «Подарунки» {:giftBox}'
         : prize.kind === 'tier' ? '{:pendingIcon} Заявку створено — видамо найближчим часом.' : '{:check} Уже зараховано на баланс.') +
-      '\n\n{:almost} Спілкуйся далі — бот стежить за найактивнішими!'));
+      '\n\n{:almost} Дякуємо, що ти з нами — спілкуйся далі!'));
     jpPending.delete(msgId);
     await ctx.editMessageText(`✅ Джекпот ${name}: ${prize.label} (${note})` + (ok ? '\nОголошено в чаті 🎉' : '\n⚠️ У чат написати не вдалось — /chat_status')).catch(() => {});
   });
