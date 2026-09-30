@@ -26,6 +26,12 @@ const TIERS = [
   { id: 'wheel_eye',     emoji: '🧿', price: 800, ladder: 220, img: 'nft', name: { uk: 'Evil Eye', en: 'Evil Eye', ru: 'Evil Eye' } },
   { id: 'premium3m',     emoji: '💎', price: 900, ladder: 240, img: 'premium3m', name: { uk: 'Telegram Premium 3 міс', en: 'Telegram Premium 3 months', ru: 'Telegram Premium 3 мес.' } },
   { id: 'diamond_ring',  emoji: '💍', price: 2900, ladder: 275, img: null, name: { uk: 'Diamond Ring', en: 'Diamond Ring', ru: 'Diamond Ring' } },
+  // Подарунки Telegram для виводу (магазин) і джекпоту — не на сходах за друзів.
+  { id: 'heart',     emoji: '💝', price: 15, ladder: null, img: 'heart',     name: { uk: 'Сердечко', en: 'Heart', ru: 'Сердечко' } },
+  { id: 'rose',      emoji: '🌹', price: 25, ladder: null, img: 'rose',      name: { uk: 'Троянда', en: 'Rose', ru: 'Роза' } },
+  { id: 'cake',      emoji: '🎂', price: 50, ladder: null, img: 'cake',      name: { uk: 'Торт', en: 'Cake', ru: 'Торт' } },
+  { id: 'bouquet',   emoji: '💐', price: 50, ladder: null, img: 'bouquet',   name: { uk: 'Букет', en: 'Bouquet', ru: 'Букет' } },
+  { id: 'champagne', emoji: '🍾', price: 50, ladder: null, img: 'champagne', name: { uk: 'Шампанське', en: 'Champagne', ru: 'Шампанское' } },
   // Лише з колеса (не на сходах).
   { id: 'wheel_stocking', emoji: '🧦', price: 450, ladder: null, img: 'wheel_stocking', name: { uk: 'Xmas Stocking', en: 'Xmas Stocking', ru: 'Xmas Stocking' } },
 ];
@@ -170,7 +176,7 @@ const withdrawCost = (payout, feePercent) => {
 const DEPOSIT = { bonusPercent: 10, bonusTimes: 3, presets: [15, 50, 100, 250, 500, 1000] };
 
 // Магазин: приз за зірки без рандому. Відкривається після першого платного спіну.
-const SHOP = { items: ['bear', 'gift', 'rocket', 'trophy'], unlockPaidSpins: 1, feePercent: 0 };
+const SHOP = { items: ['heart', 'bear', 'rose', 'gift', 'cake', 'bouquet', 'champagne', 'rocket', 'trophy'], unlockPaidSpins: 1, feePercent: 0 };
 const shopPrice = (tier) => Math.ceil(tier.price * (1 + SHOP.feePercent / 100));
 
 // ─── Досвід (XP) ────────────────────────────────────────────────────────

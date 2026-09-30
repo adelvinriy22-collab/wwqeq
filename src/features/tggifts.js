@@ -7,10 +7,15 @@ const notify = require('../core/notify');
 // Наші призи → подарунки з каталогу Telegram (емодзі й ціна у зірках).
 // fallbackId — на випадок, якщо каталог тимчасово не відповів.
 const CATALOG = {
-  bear:   { emoji: '🧸', stars: 15,  fallbackId: '5170233102089322756' },
-  gift:   { emoji: '🎁', stars: 25,  fallbackId: '5170250947678437525' },
-  rocket: { emoji: '🚀', stars: 50,  fallbackId: '5170564780938756245' },
-  trophy: { emoji: '🏆', stars: 100, fallbackId: '5168043875654172773' },
+  heart:     { emoji: '💝', stars: 15,  fallbackId: '5170145012310081615' },
+  bear:      { emoji: '🧸', stars: 15,  fallbackId: '5170233102089322756' },
+  rose:      { emoji: '🌹', stars: 25,  fallbackId: '5168103777563050263' },
+  gift:      { emoji: '🎁', stars: 25,  fallbackId: '5170250947678437525' },
+  cake:      { emoji: '🎂', stars: 50,  fallbackId: '5170144170496491616' },
+  bouquet:   { emoji: '💐', stars: 50,  fallbackId: '5170314324215857265' },
+  champagne: { emoji: '🍾', stars: 50,  fallbackId: '6028601630662853006' },
+  rocket:    { emoji: '🚀', stars: 50,  fallbackId: '5170564780938756245' },
+  trophy:    { emoji: '🏆', stars: 100, fallbackId: '5168043875654172773' },
 };
 const TEXT_MAX = 128;
 const KEEP_ENTITIES = new Set(['bold', 'italic', 'underline', 'strikethrough', 'spoiler', 'custom_emoji']);

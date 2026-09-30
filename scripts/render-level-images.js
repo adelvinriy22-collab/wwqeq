@@ -143,9 +143,13 @@ function xpHtml() {
 
 // ─── Джекпот у чаті: jp-<приз>.jpg у web/img/jackpot ────────────────────
 const JP_OUT = path.join(__dirname, '..', 'web', 'img', 'jackpot');
-const JP_KINDS = { bear: '🧸', gift: '🎁', stars: '⭐', tickets: '🎫', xp: '⚡' };
+const JP_KINDS = { heart: '💝', bear: '🧸', rose: '🌹', gift: '🎁', cake: '🎂', bouquet: '💐', champagne: '🍾', stars: '⭐', tickets: '🎫', xp: '⚡' };
 function jackpotHtml(kind) {
-  const e = JP_KINDS[kind];
+  // Для подарунків — справжня картинка подарунка (web/img/<kind>.png), інакше емодзі.
+  const png = path.join(__dirname, '..', 'web', 'img', kind + '.png');
+  const e = fs.existsSync(png)
+    ? `<img src="data:image/png;base64,${fs.readFileSync(png).toString('base64')}" style="width:250px;height:250px;object-fit:contain;filter:drop-shadow(0 14px 24px #0009)">`
+    : JP_KINDS[kind];
   const rays = Array.from({ length: 24 }, (_, i) => `<div class="ray" style="transform: rotate(${i * 15}deg)"></div>`).join('');
   let conf = '';
   let x = 42;
@@ -199,7 +203,7 @@ function jackpotHtml(kind) {
   for (const k of Object.keys(JP_KINDS)) {
     await page.setContent(jackpotHtml(k), { waitUntil: 'load' });
     await page.evaluate(() => document.fonts && document.fonts.ready);
-    await page.screenshot({ path: path.join(JP_OUT, 'jp-' + k + '.jpg'), type: 'jpeg', quality: 86 });
+    await page.screenshot({ path: path.join(JP_OUT, 'jp-' + k + '.jpg'), type: 'jpeg', quality: 78 });
     console.log('✓ jackpot/jp-' + k + '.jpg');
   }
   await browser.close();

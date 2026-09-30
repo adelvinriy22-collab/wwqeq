@@ -25,8 +25,13 @@ const jpDone = new Set();             // msgId, за які приз уже ви
 const JP_GIFT_TEXT = '👑 Джекпот за активність у чаті StarForge! Дякуємо, що ти з нами 🔥';
 
 const JP_PRIZES = {
-  bear: { label: '🧸 Мішку', kind: 'tier', id: 'bear' },
-  gift: { label: '🎁 Подарунок', kind: 'tier', id: 'gift' },
+  heart:     { label: '💝 Сердечко', kind: 'tier', id: 'heart' },
+  bear:      { label: '🧸 Мішку', kind: 'tier', id: 'bear' },
+  rose:      { label: '🌹 Троянду', kind: 'tier', id: 'rose' },
+  gift:      { label: '🎁 Подарунок', kind: 'tier', id: 'gift' },
+  cake:      { label: '🎂 Торт', kind: 'tier', id: 'cake' },
+  bouquet:   { label: '💐 Букет', kind: 'tier', id: 'bouquet' },
+  champagne: { label: '🍾 Шампанське', kind: 'tier', id: 'champagne' },
   s5:   { label: '5 ⭐', kind: 'stars', n: 5 },
   t20:  { label: '20 🎫', kind: 'tickets', n: 20 },
   x100: { label: '✨ +100 XP', kind: 'xp', n: 100 },
@@ -242,8 +247,11 @@ function register(bot, hooks) {
     const inBot = !!(users.get(who.uid) || {}).lang;
     jpDone.delete(msgId);
     return ctx.reply(`👑 Джекпот за активність для ${who.plain}` + (inBot ? '' : '\n⚠️ Ця людина ще не запускала бота — приз чекатиме її') +
-      '\n\nЯкий приз?\n🧸 Мішку (15⭐) і 🎁 Подарунок (25⭐) бот надішле <b>одразу сам</b> — справжнім подарунком Telegram з балансу зірок бота.', { parse_mode: 'HTML', ...ui.kb([
-      [ui.cb('🧸 Мішка — одразу', `jp_${msgId}_bear`, 'danger'), ui.cb('🎁 Подарунок — одразу', `jp_${msgId}_gift`, 'danger')],
+      '\n\nЯкий приз?\nПодарунки бот надішле <b>одразу сам</b> — справжнім подарунком Telegram з балансу зірок бота.', { parse_mode: 'HTML', ...ui.kb([
+      [ui.cb('💝 Сердечко · 15⭐', `jp_${msgId}_heart`, 'danger'), ui.cb('🧸 Мішка · 15⭐', `jp_${msgId}_bear`, 'danger')],
+      [ui.cb('🌹 Троянда · 25⭐', `jp_${msgId}_rose`, 'danger'), ui.cb('🎁 Подарунок · 25⭐', `jp_${msgId}_gift`, 'danger')],
+      [ui.cb('🎂 Торт · 50⭐', `jp_${msgId}_cake`, 'danger'), ui.cb('💐 Букет · 50⭐', `jp_${msgId}_bouquet`, 'danger')],
+      [ui.cb('🍾 Шампанське · 50⭐', `jp_${msgId}_champagne`, 'danger')],
       [ui.cb('20 🎫', `jp_${msgId}_t20`, 'primary'), ui.cb('5 ⭐', `jp_${msgId}_s5`, 'primary')],
       [ui.cb('✨ +100 XP (безкоштовно)', `jp_${msgId}_x100`, 'success')],
     ]) });
@@ -254,7 +262,7 @@ function register(bot, hooks) {
     await jackpotAsk(ctx, text);
     return true;
   });
-  bot.action(/^jp_(\d+)_(bear|gift|s5|t20|x100|p100)$/, async (ctx) => {
+  bot.action(/^jp_(\d+)_(heart|bear|rose|gift|cake|bouquet|champagne|s5|t20|x100|p100)$/, async (ctx) => {
     if (!isAdminCtx(ctx)) return ctx.answerCbQuery().catch(() => {});
     await ctx.answerCbQuery().catch(() => {});
     const msgId = Number(ctx.match[1]);

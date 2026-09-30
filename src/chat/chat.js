@@ -481,7 +481,7 @@ function createChat(bot, opts) {
       teaser = await send(E('eye', '👀') + ' <b>Хтось у чаті дуже активний…</b> ' + E('almost', '🔥'), reply);
       await new Promise(r => setTimeout(r, 2200));
     }
-    const gift = o.kind === 'bear' || o.kind === 'gift';
+    const gift = !['stars', 'tickets', 'xp'].includes(o.kind);
     const caption = card('crown', 'ДЖЕКПОТ ЗА АКТИВНІСТЬ', [
       E('crown', '👑') + ' <b>' + winner.name + '</b>, StarForge помітив твою активність у чаті — тримай <b>' + prizeLabel + '</b>!',
       o.auto && gift
