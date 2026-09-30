@@ -16,6 +16,7 @@ const time = require('../../lib/time');
 const ui = require('../ui');
 const { isAdminCtx, broadcast, audience, argsOf, yes } = require('./shared');
 const { sleep, esc } = require('../../lib/util');
+const { withEmoji } = require('../../emoji');
 
 const pendingBroadcast = new Map();   // адмін -> { from, id, at }
 const jpPending = new Map();          // msgId -> uid, коли автора вказано вручну
@@ -58,6 +59,54 @@ function register(bot, hooks) {
   });
 
   // ─── Публікації в групи ───────────────────────────────────────────────
+  // /say — пост у чат від імені бота:
+  //   /say текст            — текст (HTML і преміум-емодзі {:starIcon})
+  //   /say pin текст        — і закріпити
+  //   відповіддю /say [pin] — переслати від бота будь-яке повідомлення (фото, відео, кнопки)
+  // Рядки в кінці виду [Текст кнопки](https://посилання) стають кнопками під постом.
+  bot.command('say', async (ctx) => {
+    if (!isAdminCtx(ctx)) return;
+    if (!chat() || !chat().chatId) return ctx.reply('❌ Чат не підключено — /chat_status');
+    let body = ctx.message.text.replace(/^\/say(@\w+)?\s*/, '');
+    const pin = /^pin(\s|$)/i.test(body);
+    if (pin) body = body.replace(/^pin\s*/i, '');
+    const src = sourceOf(ctx);
+    const tg = notify.tg.telegram;
+    const pinIt = async (m) => {
+      if (!pin || !m) return '';
+      try { await tg.pinChatMessage(chat().chatId, m.message_id, { disable_notification: false }); return ' і закріплено 📌'; }
+      catch (e) { return '\n⚠️ Не закріпив: ' + e.message; }
+    };
+    if (src && !body) {
+      try { const m = await tg.copyMessage(chat().chatId, src.from, src.id); return ctx.reply('✅ Опубліковано в чаті від імені бота' + (await pinIt(m))); }
+      catch (e) { return ctx.reply('❌ ' + e.message); }
+    }
+    if (!body) {
+      return ctx.reply('📣 Пост у чат від імені бота:\n\n' +
+        '/say Привіт, чат! — текст\n/say pin Важливо! — і закріпити\n' +
+        'Відповідай /say на будь-яке повідомлення (фото, відео, з кнопками) — бот перешле його від себе.\n\n' +
+        'Можна <b>жирний</b>, <i>курсив</i>, посилання й преміум-емодзі {:starIcon} {:giftBox} {:almost}.\n' +
+        'Кнопки — окремими рядками в кінці:\n[🎰 Грати](https://t.me/' + (notify.tg.botUsername || 'bot') + ')');
+    }
+    // Кнопки з останніх рядків «[Текст](https://…)».
+    const lines = body.split('\n');
+    const rows = [];
+    while (lines.length) {
+      const m = lines[lines.length - 1].trim().match(/^\[(.+?)\]\((https?:\/\/\S+)\)$/);
+      if (!m) break;
+      rows.unshift([{ text: m[1], url: m[2] }]);
+      lines.pop();
+    }
+    const text = withEmoji(lines.join('\n').trim());
+    if (!text) return ctx.reply('❌ Потрібен текст поста.');
+    try {
+      const m = await tg.sendMessage(chat().chatId, text, { parse_mode: 'HTML', disable_web_page_preview: true, ...(rows.length ? { reply_markup: { inline_keyboard: rows } } : {}) });
+      await ctx.reply('✅ Опубліковано в чаті від імені бота' + (await pinIt(m)));
+    } catch (e) {
+      await ctx.reply('❌ ' + e.message + (/parse|entit/i.test(e.message) ? '\nПеревір HTML: кожен <b> має закриватись </b>, а знаки < > пиши як &lt; &gt;.' : ''));
+    }
+  });
+
   bot.command('chat_say', async (ctx) => {
     if (!isAdminCtx(ctx)) return;
     const text = ctx.message.text.replace(/^\/chat_say(@\w+)?\s*/, '');

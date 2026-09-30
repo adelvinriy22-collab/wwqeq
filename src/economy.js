@@ -52,7 +52,7 @@ const WHEELS = {
     weights: {
       star2: 300, star3: 300, star5: 90, star8: 22, star12: 6, star25: 1.5,
       tix1: 180, tix3: 75, tix5: 20,
-      gift: 2.2, rocket: 1.1, trophy: 0.45, wheel_stocking: 0.65, wheel_snake: 0.65, wheel_lolpop: 0.45, wheel_eye: 0.22, premium3m: 0.07,
+      gift: 0.8, rocket: 0.4, trophy: 0.15, wheel_stocking: 0.2, wheel_snake: 0.2, wheel_lolpop: 0.12, wheel_eye: 0.06, premium3m: 0.02,
     },
     segments: ['star2', 'gift', 'star3', 'rocket', 'tix1', 'nft', 'star5', 'trophy', 'tix3', 'star8', 'tix5', 'star12', 'tix1', 'star25'],
   },
@@ -61,7 +61,7 @@ const WHEELS = {
     cost: { stars: 0, tickets: 5 },
     weights: {
       star2: 400, star3: 250, star5: 150, star7: 60, star10: 20, star15: 8,
-      gift: 4, rocket: 2, trophy: 0.9, wheel_stocking: 1.4, wheel_snake: 1.4, wheel_lolpop: 1, wheel_eye: 0.5, premium3m: 0.15,
+      gift: 1.5, rocket: 0.7, trophy: 0.3, wheel_stocking: 0.45, wheel_snake: 0.45, wheel_lolpop: 0.3, wheel_eye: 0.15, premium3m: 0.05,
     },
     segments: ['star2', 'gift', 'star3', 'rocket', 'star5', 'nft', 'star7', 'trophy', 'star2', 'star10', 'star3', 'star15'],
   },
@@ -70,7 +70,7 @@ const WHEELS = {
     cost: { stars: 15, tickets: 0 },
     weights: {
       star5: 520, star7: 230, star10: 120, star15: 40, star25: 12, star50: 3,
-      gift: 5, rocket: 2, trophy: 0.9, wheel_stocking: 1.3, wheel_snake: 1.3, wheel_lolpop: 0.9, wheel_eye: 0.4, premium3m: 0.12,
+      gift: 3.5, rocket: 1.4, trophy: 0.6, wheel_stocking: 0.8, wheel_snake: 0.8, wheel_lolpop: 0.55, wheel_eye: 0.25, premium3m: 0.08,
     },
     segments: ['star5', 'gift', 'star7', 'rocket', 'star10', 'nft', 'star15', 'trophy', 'star5', 'star25', 'star7', 'star50'],
   },
@@ -86,9 +86,9 @@ const WHEELS = {
 };
 // Гарантія: стеля невдач. На безкоштовних колесах гарантується лише подарунок.
 const PITY = {
-  daily:    { gift: 50, nft: null },
-  referral: { gift: 40, nft: null },
-  paid:     { gift: 30, nft: 100 },
+  daily:    { gift: 150, nft: null },
+  referral: { gift: 120, nft: null },
+  paid:     { gift: 60, nft: 250 },
   premium:  { gift: 15, nft: 50 },
 };
 const GIFT_IDS = ['gift', 'rocket', 'trophy'];

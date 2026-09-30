@@ -418,6 +418,18 @@ test('скриньки в чаті: одна спроба на людину, г�
   assert.ok(await wait(() => tg.calls.some(c => c.method === 'editMessageText' && /ВІДКРИТО/.test(c.payload.text || ''))), 'повідомлення оновлено');
 });
 
+test('/say: пост у чат від імені бота — текст, преміум-емодзі, кнопки, закріплення', async () => {
+  const n0 = tg.calls.length;
+  adminCmd('/say pin <b>Двіж!</b> {:starIcon} Сьогодні ×2 XP\n[🎰 Грати](https://t.me/TestStarBot)');
+  let post;
+  for (let i = 0; i < 20 && !post; i++) { await sleep(150); post = tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '-1001'); }
+  assert.ok(post, 'пост у чаті');
+  assert.match(post.payload.text, /<b>Двіж!<\/b> <tg-emoji emoji-id="\d+">⭐<\/tg-emoji> Сьогодні ×2 XP/);
+  assert.doesNotMatch(post.payload.text, /\[🎰 Грати\]/, 'рядок кнопки не в тексті');
+  assert.deepStrictEqual(post.payload.reply_markup.inline_keyboard, [[{ text: '🎰 Грати', url: 'https://t.me/TestStarBot' }]]);
+  assert.ok(await (async () => { for (let i = 0; i < 20; i++) { await sleep(100); if (tg.calls.slice(n0).some(c => c.method === 'pinChatMessage')) return true; } return false; })(), 'закріплено');
+});
+
 test('пас: закритий рівень не видається; промокод один раз', async () => {
   const locked = await api('POST', '/pass/claim', { level: 30, track: 'free' }, '700');
   assert.strictEqual(locked.status, 200);

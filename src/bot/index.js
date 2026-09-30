@@ -139,6 +139,7 @@ async function setupUi(bot) {
       { command: 'stars', description: 'Зірки гравцю: /stars @нік 10 або -10' },
       { command: 'tickets', description: 'Білети гравцю: /tickets @нік 5 або -5' },
       { command: 'broadcast', description: 'Розсилка (відповіддю на повідомлення)' },
+      { command: 'say', description: 'Пост у чат від імені бота: /say текст' },
       { command: 'chat_status', description: 'Стан чату' },
       { command: 'version', description: 'Версія' },
     ], { scope: { type: 'chat', chat_id: Number(id) } }).catch(e => console.error('setMyCommands(admin):', e.message));
