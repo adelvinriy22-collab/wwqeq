@@ -286,7 +286,7 @@ function register(bot, hooks) {
     await ctx.editMessageText(`⏳ Джекпот ${name}: ${prize.label} — оголошую в чаті…`).catch(() => {});
     const kind = prize.kind === 'tier' ? prize.id : prize.kind;
     const ok = chat() ? await chat().jackpot(msgId, { name }, prize.label, { kind, auto }) : false;
-    notify.dm(uid, withEmoji(`{:crown} <b>ДЖЕКПОТ ЗА АКТИВНІСТЬ!</b>\n━━━━━━━━━━━━━━\nАдмін помітив твою активність у чаті й обрав саме тебе — <b>${prize.label}</b>!\n\n` +
+    notify.dm(uid, withEmoji(`{:crown} <b>ДЖЕКПОТ ЗА АКТИВНІСТЬ!</b>\n━━━━━━━━━━━━━━\nStarForge помітив твою активність у чаті — <b>${prize.label}</b> твоя!\n\n` +
       (auto ? '{:lightning} <b>Бот уже надіслав подарунок</b> — глянь у свій профіль Telegram → «Подарунки» {:giftBox}'
         : prize.kind === 'tier' ? '{:pendingIcon} Заявку створено — видамо найближчим часом.' : '{:check} Уже зараховано на баланс.') +
       '\n\n{:almost} Дякуємо, що ти з нами — спілкуйся далі!'));

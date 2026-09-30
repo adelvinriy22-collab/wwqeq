@@ -477,7 +477,8 @@ test('джекпот за активність: адмін обирає, Міш�
   assert.strictEqual(gift.payload.user_id, 960);
   assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'pinChatMessage')), 'джекпот закріплено');
   assert.strictEqual(tg.calls.slice(n0).filter(c => c.method === 'sendGift').length, 1, 'подвійне натискання — одна Мішка');
-  assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '-1001' && /Адмін переглядає чат/.test(c.payload.text || '')), 'інтрига в чаті');
+  assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '-1001' && /Хтось у чаті дуже активний/.test(c.payload.text || '')), 'інтрига в чаті');
+  assert.ok(!tg.calls.slice(n0).some(c => /адмін/i.test(String(c.payload.text || c.payload.caption || '')) && String(c.payload.chat_id) !== ADMIN), 'ніде не видно, що обирає адмін');
   assert.ok(!tg.calls.slice(n0).some(c => c.method === 'sendDice'), 'це не гра — без кубика');
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendPhoto'), 'картка JACKPOT');
   await sleep(500);
