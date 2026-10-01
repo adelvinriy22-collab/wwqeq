@@ -30,7 +30,7 @@ const HELP = `<b>Адмін</b> — найзручніше в застосунк
 <b>Банк</b>: /bank_start 2026-10-01 21:00 · /bank_cancel · /bank_auto on 21 · /bank_verify
 <b>Ліга</b>: /league on|off · /league_stats · /league_hide @нік · /league_unhide @нік · /league_finalize W2026-09-28
 <b>Перший коментар</b>: /first_gift — пост у канал «першому коментарю — гіфт за 15⭐», бот сам відповість першому й надішле 🧸/💝 · /first_gift status · /first_gift cancel
-<b>Розіграш автовидачі</b>: /awd_giveaway 100 1 [@канал] — пост у каналі з «УЧАСТЬ» + розсилка, участь лише з підпискою на @Sanichkap; на 100 учасниках — переможцям промокод на автовидачу · /awd_giveaway status · cancel
+<b>Мега-розіграш</b>: /awd_giveaway [100] [@канал] — пост у каналі з «УЧАСТЬ» + розсилка, підписка на @Sanichkap; на 100 учасниках — 25 призів (1-ше: автовидача + 🚀 + 15⭐; таблиця — E.AWD_GIVEAWAY) · /awd_giveaway status · cancel
 <b>Автовивід</b>: /autowd @нік — бот сам надішле гравцю справжню 🧸 Мішку з його підписом (один раз) · /autowd — список
 <b>Розсилки</b>: /broadcast (відповіддю) · <b>/say</b> — пост у чат від імені бота (текст, pin, кнопки, відповіддю — фото/відео) · /post_all · /chat_say · /chat_post · /send_reminders · /winback так · /gift_all 1 мітка так
 <b>Події</b>: /event_status · /event_stop … · /giveaway_start · /giveaway_solo_start 21 00 · /joint_giveaway_start · /giveaway_stats · /deleteticket @нік 1 · /password_challenge_start · /external_ref_announce посилання · /unlock_event · /goal_reset · /goal_stats

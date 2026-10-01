@@ -839,7 +839,7 @@ test('розіграш автовидачі: пост у каналі, учас�
   const cb = (id, data) => tg.push({ callback_query: { id: 'w' + Math.random(), from: { id, is_bot: false, first_name: 'P' + id, username: 'user' + id }, chat_instance: 'x', data, message: { message_id: 9, date: 0, chat: { id, type: 'private' } } } });
   const n0 = tg.calls.length;
   adminCmd('/awd_giveaway 3 1');
-  const post = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /РОЗІГРАШ АВТОВИДАЧІ/.test(c.payload.text || '') && /start=awdga/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  const post = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /МЕГА-РОЗІГРАШ/.test(c.payload.text || '') && /start=awdga/.test(JSON.stringify(c.payload.reply_markup || {}))));
   assert.ok(post, 'пост у каналі з кнопкою участі');
   assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /awdga:join/.test(JSON.stringify(c.payload.reply_markup || {})))), 'розсилка');
   cb(995, 'awdga:join'); cb(995, 'awdga:join'); await sleep(300);
@@ -849,13 +849,14 @@ test('розіграш автовидачі: пост у каналі, учас�
   const g = readDb().featureFlags.awdGiveaway;
   assert.strictEqual(g.status, 'done');
   assert.strictEqual(Object.keys(g.participants).length, 3, 'повторна участь не рахується');
-  assert.strictEqual(g.winnerIds.length, 1);
+  assert.strictEqual(g.winnerIds.length, 3, 'учасників менше, ніж місць — призи всім');
   const w = Number(g.winnerIds[0]);
-  const dm = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === String(w) && /ТИ ВИГРАВ АВТОВИДАЧУ/.test(c.payload.text || '')));
+  const dm = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === String(w) && /ТИ ПОСІВ 1 МІСЦЕ/.test(c.payload.text || '')));
+  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendGift' && c.payload.user_id === w)), '1-ше місце — ще й 🚀 Ракета');
   assert.ok(dm, 'переможцю — промокод');
   assert.match(dm.payload.text, new RegExp(g.codes[w]));
   // Чужий не активує, переможець — відкриває автовидачу.
-  const loser = [995, 996, 997].find(x => x !== w);
+  const loser = [995, 996, 997].find(x => x !== w);  // інше місце — без коду
   const pr = await (await fetch(base + '/api/promo', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Init-Data': signInitData(TOKEN, { id: loser, first_name: 'L' }) }, body: JSON.stringify({ code: g.codes[w] }) })).json();
   assert.strictEqual(pr.ok, false, 'код лише для переможця');
   const n1 = tg.calls.length;

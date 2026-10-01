@@ -1,5 +1,6 @@
 // ==========================================================================
-// РОЗІГРАШ АВТОВИДАЧІ. Адмін: /awd_giveaway [учасників=100] [переможців=1] [@канал…].
+// РОЗІГРАШ АВТОВИДАЧІ. Адмін: /awd_giveaway [учасників=100] [@канал…].
+// Призи за місцями — E.AWD_GIVEAWAY.places (1-ше: автовидача + 🚀 + 15⭐ … 25-те).
 // Участь — лише з підпискою на канали g.mustSub (за замовчуванням AWD_SUB_CHANNELS).
 // Бот публікує пост у каналі з кнопкою «УЧАСТЬ» (веде в бота) і розсилає
 // анонс усім. Лічильник у пості оновлюється. Щойно набирається потрібна
@@ -19,6 +20,30 @@ const ui = require('./ui');
 const { withEmoji } = require('../emoji');
 const { esc, sleep } = require('../lib/util');
 const { broadcast, audience, argsOf } = require('./admin/shared');
+const E = require('../economy');
+const progress = require('../core/progress');
+const tggifts = require('../features/tggifts');
+const usergifts = require('../features/usergifts');
+const applications = require('../features/applications');
+
+const PLACES = () => E.AWD_GIVEAWAY.places;
+const placesTotal = () => PLACES().reduce((m, p) => Math.max(m, p.to), 0);
+const placeOf = (n) => PLACES().find(p => n >= p.from && n <= p.to);
+const MEDAL = { 1: '🥇', 2: '🥈', 3: '🥉' };
+const GIFT_NAME = { rocket: '🚀 Ракета', gift: '🎁 Подарунок', bear: '🧸 Мішка' };
+// Опис призу: «🧸 Автовидача + 🚀 Ракета + 15⭐».
+function prizeText(p) {
+  const out = [];
+  if (p.autowd) out.push('🧸 <b>АВТОВИДАЧА</b>');
+  if (p.gift) out.push('<b>' + GIFT_NAME[p.gift] + '</b>');
+  if (p.stars) out.push('<b>' + p.stars + '⭐</b>');
+  if (p.tickets) out.push(p.tickets + '🎫');
+  if (p.xp) out.push(p.xp + ' XP');
+  return out.join(' + ');
+}
+function prizeTable() {
+  return PLACES().map(p => (p.from === p.to ? (MEDAL[p.from] || p.from + '.') : p.from + '–' + p.to + '.') + ' ' + prizeText(p)).join('\n');
+}
 
 const st = () => (store.getFeatureFlags() || {}).awdGiveaway || null;
 const setSt = (v) => store.setFeatureFlags({ awdGiveaway: v });
@@ -31,26 +56,34 @@ function bar(n, need) {
   return '▰'.repeat(f) + '▱'.repeat(10 - f);
 }
 function postText(g) {
-  const n = count(g);
-  return withEmoji(ui.card('giftBox', 'РОЗІГРАШ АВТОВИДАЧІ', [
-    '{:crown} Приз: <b>промокод на АВТОВИДАЧУ</b> — бот сам, без черги, надішле тобі справжню {:teddyBear} <b>Мішку</b> з твоїм підписом',
-    '{:trophy} Переможців: <b>' + g.winners + '</b>',
-    (g.mustSub || []).length ? '{:check} Умова: підписка на ' + g.mustSub.map(esc).join(', ') : null,
+  const n = count(g), subs = (g.mustSub || []).map(esc).join(', ');
+  return withEmoji(ui.card('giftBox', 'МЕГА-РОЗІГРАШ STARFORGE — ' + placesTotal() + ' ПРИЗІВ', [
+    '{:crown} <b>Головний приз — АВТОВИДАЧА!</b> Бот сам, без черги й заявок, надсилає тобі справжній подарунок Telegram 🧸 з твоїм підписом. Плюс 🚀 Ракета і 15⭐ зверху!',
     '',
-    '{:lightning} Учасників: <b>' + n + '/' + g.need + '</b>',
+    '{:trophy} <b>Призи:</b>',
+    prizeTable(),
+    '',
+    '{:lightning} <b>Як узяти участь (1 хвилина):</b>',
+    subs ? '1️⃣ Підпишись на ' + subs : null,
+    (subs ? '2️⃣' : '1️⃣') + ' Тисни «УЧАСТЬ» нижче — відкриється бот',
+    (subs ? '3️⃣' : '2️⃣') + ' Готово! Щойно нас буде <b>' + g.need + '</b> — бот сам розіграє місця',
+    '',
+    '⭐ Зірки, 🎫 білети й XP падають у бота @' + esc(notify.tg.botUsername || 'StarForgeX_bot') + ' — там їх крутять у колесах, міняють і виводять подарунками.',
+    '',
+    '👥 Учасників: <b>' + n + '/' + g.need + '</b>',
     bar(n, g.need),
-    '',
-    'Тисни «УЧАСТЬ» — результати одразу, щойно нас буде <b>' + g.need + '</b>!',
-  ], 'Запрошуй друзів — швидше наберемо ' + g.need));
+  ], 'Шанс — у кожного. Клич друзів: що швидше 100 — то швидше результати!'));
 }
 function doneText(g, winners) {
-  return withEmoji(ui.card('check', 'РОЗІГРАШ АВТОВИДАЧІ — ЗАВЕРШЕНО', [
-    '{:lightning} Учасників: <b>' + count(g) + '/' + g.need + '</b>',
+  return withEmoji(ui.card('trophy', 'РЕЗУЛЬТАТИ МЕГА-РОЗІГРАШУ', [
+    '👥 Учасників: <b>' + count(g) + '</b>',
     '',
-    '{:crown} <b>Переможці:</b>',
-    winners.map((id, i) => (i + 1) + '. ' + nameOf(users.get(id))).join('\n'),
+    winners.map((id, i) => {
+      const n = i + 1, p = placeOf(n);
+      return (MEDAL[n] || n + '.') + ' ' + nameOf(users.get(id)) + ' — ' + prizeText(p);
+    }).join('\n'),
     '',
-    '{:teddyBear} Переможцям — промокод на автовидачу в особисті від бота',
+    '{:check} Призи вже в боті: зірки, білети й XP — нараховано, подарунки — надсилаються, переможцю — промокод на автовидачу.',
   ], 'Дякуємо всім! Наступний розіграш уже скоро 👀'));
 }
 
@@ -68,37 +101,63 @@ function refreshPost() {
 
 const genCode = () => 'AWD' + crypto.randomBytes(3).toString('hex').toUpperCase();
 
+// Подарунок Telegram: від акаунта власника → від бота → заявка адміну.
+async function giveGift(uid, tier) {
+  const u = users.get(uid) || {};
+  if (usergifts.accountReady()) {
+    const r = await usergifts.send(u.username ? '@' + u.username : uid, tier, '🏆 Приз мега-розіграшу StarForge');
+    if (r.ok) return 'sent';
+  }
+  const b = await tggifts.send(uid, tier, '🏆 Приз мега-розіграшу StarForge');
+  if (b.ok) return 'sent';
+  const a = applications.create(uid, tier, 'awd_giveaway', {}, { silent: true });
+  return 'app#' + a.id;
+}
+
 async function finish(g) {
   const ids = Object.keys(g.participants || {});
   const pool = ids.slice(), winners = [];
-  for (let i = 0; i < g.winners && pool.length; i++) winners.push(pool.splice(crypto.randomInt(pool.length), 1)[0]);
-  const codes = {};
-  for (const w of winners) {
-    let code = genCode();
-    while (store.getPromoCode(code)) code = genCode();
-    store.setPromoCode(code, { amount: 0, tickets: 0, spins: 0, autowd: true, forUid: w, usesLeft: 1, usedBy: [], createdAt: Date.now() });
-    codes[w] = code;
-  }
+  for (let i = 0; i < placesTotal() && pool.length; i++) winners.push(pool.splice(crypto.randomInt(pool.length), 1)[0]);
+  // Спершу все, що синхронно: коди, зірки, білети, XP — і стан «done».
+  const codes = {}, log = [];
+  winners.forEach((w, i) => {
+    const p = placeOf(i + 1);
+    if (p.autowd) {
+      let code = genCode();
+      while (store.getPromoCode(code)) code = genCode();
+      store.setPromoCode(code, { amount: 0, tickets: 0, spins: 0, autowd: true, forUid: w, usesLeft: 1, usedBy: [], createdAt: Date.now() });
+      codes[w] = code;
+    }
+    if (p.stars || p.tickets) users.move(w, { stars: p.stars || 0, tickets: p.tickets || 0 }, 'giveaway', { awd: g.id, place: i + 1 });
+    if (p.xp) progress.addXp(w, 'admin', p.xp, { why: 'awd_giveaway' });
+  });
   setSt({ ...g, status: 'done', finishedAt: Date.now(), winnerIds: winners, codes });
-  // Пост каналу — «завершено», плюс окремий пост із переможцями.
   if (g.channelMsgId) {
     notify.tg.telegram.editMessageText(g.channelId, g.channelMsgId, undefined, doneText(g, winners), { parse_mode: 'HTML' }).catch(() => {});
     notify.tg.telegram.sendMessage(g.channelId, doneText(g, winners), { parse_mode: 'HTML', reply_to_message_id: g.channelMsgId, allow_sending_without_reply: true }).catch(e => console.error('awdga results:', e.message));
   }
-  for (const w of winners) {
-    await notify.dm(w, withEmoji(ui.card('crown', 'ТИ ВИГРАВ АВТОВИДАЧУ!', [
-      '{:giftBox} Твій особистий промокод:',
-      '<code>' + codes[w] + '</code>',
+  for (let i = 0; i < winners.length; i++) {
+    const w = winners[i], n = i + 1, p = placeOf(n);
+    const gift = p.gift ? await giveGift(w, p.gift) : null;
+    log.push((MEDAL[n] || n + '.') + ' ' + nameOf(users.get(w)) + ' · <code>' + w + '</code> — ' + prizeText(p) +
+      (codes[w] ? ' · код <code>' + codes[w] + '</code>' : '') + (gift && gift !== 'sent' ? ' · ⚠️ подарунок заявкою ' + gift : ''));
+    await notify.dm(w, withEmoji(ui.card(n <= 3 ? 'crown' : 'giftBox', (MEDAL[n] || '🏅') + ' ТИ ПОСІВ ' + n + ' МІСЦЕ!', [
+      'Твій приз: ' + prizeText(p),
       '',
-      '{:lightning} Натисни кнопку нижче (або введи код у «Промокод») — відкриється автовидача, і бот сам надішле тобі {:teddyBear} <b>Мішку</b> з твоїм підписом.',
-    ], 'Код діє лише для тебе · один раз')), { parse_mode: 'HTML', ...ui.kb([[ui.cb('АКТИВУВАТИ ПРОМОКОД', 'awdga:code', 'success', 'teddyBear')]]) });
+      p.stars || p.tickets || p.xp ? '{:check} Зірки, білети й XP уже на балансі.' : null,
+      p.gift ? (gift === 'sent' ? '{:check} ' + GIFT_NAME[p.gift] + ' уже в профілі Telegram → «Подарунки».' : '⏳ ' + GIFT_NAME[p.gift] + ' — адмін надішле найближчим часом.') : null,
+      codes[w] ? '\n{:lightning} Твій промокод на <b>АВТОВИДАЧУ</b>: <code>' + codes[w] + '</code>\nТисни кнопку — і бот сам надішле тобі 🧸 з твоїм підписом.' : null,
+    ], 'Вітаємо! Грай далі в StarForge — призів ще багато')), { parse_mode: 'HTML', ...ui.kb([
+      codes[w] ? [ui.cb('АКТИВУВАТИ АВТОВИДАЧУ', 'awdga:code', 'success', 'teddyBear')] : null,
+      [ui.app('ВІДКРИТИ STARFORGE', null, 'primary', 'rocket')],
+    ]) });
+    await sleep(60);
   }
-  notify.admin('🏁 <b>Розіграш автовидачі завершено</b> (' + count(g) + ' учасників)\n' +
-    winners.map((w, i) => (i + 1) + '. ' + nameOf(users.get(w)) + ' · <code>' + w + '</code> — <code>' + codes[w] + '</code>').join('\n'));
+  notify.admin('🏁 <b>Мега-розіграш завершено</b> (' + count(g) + ' учасників)\n\n' + log.join('\n'));
   for (const id of ids) {
     if (winners.includes(id)) continue;
-    await notify.dm(id, withEmoji('{:giftBox} <b>Розіграш автовидачі завершено!</b>\nПереможці: ' + winners.map(w => nameOf(users.get(w))).join(', ') +
-      '\n\nЦього разу не пощастило — стеж за каналом, наступний уже скоро {:eye}'), { parse_mode: 'HTML' });
+    await notify.dm(id, withEmoji('{:giftBox} <b>Мега-розіграш завершено!</b>\nЦього разу без призу — але в боті щодня безкоштовне колесо, завдання й нові розіграші {:eye}'),
+      { parse_mode: 'HTML', ...ui.kb([[ui.app('ВІДКРИТИ STARFORGE', null, 'success', 'rocket')]]) });
     await sleep(60);
   }
 }
@@ -138,9 +197,11 @@ function joinText(res) {
   if (res.r === 'closed') return withEmoji('{:warn} Цей розіграш уже завершено. Стеж за каналом — наступний скоро {:eye}');
   const g = res.g, n = count(g);
   return withEmoji(ui.card('check', res.r === 'joined' ? 'ТИ В ГРІ!' : 'ТИ ВЖЕ БЕРЕШ УЧАСТЬ', [
-    '{:giftBox} Розіграш <b>автовидачі</b> — ' + g.winners + ' переможц' + (g.winners === 1 ? 'ь' : 'і'),
+    '{:giftBox} Мега-розіграш — <b>' + placesTotal() + ' призів</b>, 1-ше місце: 🧸 автовидача + 🚀 + 15⭐',
     '{:lightning} Учасників: <b>' + n + '/' + g.need + '</b>',
     bar(n, g.need),
+    '',
+    'Поки чекаєш — крути безкоштовне колесо в боті {:lightning}',
   ], 'Результати — щойно нас буде ' + g.need + '. Клич друзів!'));
 }
 
@@ -153,8 +214,8 @@ function register(bot, hooks) {
     const g0 = st();
     if (a[0] === 'status') {
       if (!g0) return ctx.reply('Розіграшу автовидачі ще не було.').catch(() => {});
-      return ctx.reply(`🎁 Розіграш автовидачі: ${g0.status === 'open' ? 'триває' : 'завершено'}\nУчасників: ${count(g0)}/${g0.need} · переможців: ${g0.winners}` +
-        (g0.winnerIds ? '\n' + g0.winnerIds.map(w => nameOf(users.get(w)) + ' — ' + g0.codes[w] + (((users.get(w) || {}).autoGift || {}).status === 'sent' ? ' ✅ забрав' : '')).join('\n') : ''), { parse_mode: 'HTML' }).catch(() => {});
+      return ctx.reply(`🎁 Мега-розіграш: ${g0.status === 'open' ? 'триває' : 'завершено'}\nУчасників: ${count(g0)}/${g0.need}` +
+        (g0.winnerIds ? '\n' + g0.winnerIds.map((w, i) => (i + 1) + '. ' + nameOf(users.get(w)) + (g0.codes[w] ? ' — ' + g0.codes[w] + (((users.get(w) || {}).autoGift || {}).status === 'sent' ? ' ✅ забрав' : '') : '')).join('\n') : ''), { parse_mode: 'HTML' }).catch(() => {});
     }
     if (a[0] === 'cancel') {
       if (!g0 || g0.status !== 'open') return ctx.reply('Нічого скасовувати.').catch(() => {});
@@ -165,10 +226,9 @@ function register(bot, hooks) {
     if (g0 && g0.status === 'open') return ctx.reply(`Уже триває: ${count(g0)}/${g0.need}. /awd_giveaway status · /awd_giveaway cancel`).catch(() => {});
     const nums = a.filter(x => /^\d+$/.test(x)).map(Number);
     const subs = a.filter(x => /^@\w{4,}$/.test(x));
-    const need = Math.max(2, nums[0] || 100);
-    const winners = Math.max(1, Math.min(need, nums[1] || 1));
+    const need = Math.max(2, nums[0] || E.AWD_GIVEAWAY.need);
     const mustSub = subs.length ? subs : config.AWD_SUB_CHANNELS;
-    const g = { id: Date.now().toString(36), status: 'open', need, winners, participants: {}, mustSub, startedAt: Date.now(), channelId: config.CHANNEL_USERNAME };
+    const g = { id: Date.now().toString(36), status: 'open', need, participants: {}, mustSub, startedAt: Date.now(), channelId: config.CHANNEL_USERNAME };
     setSt(g);
     try {
       const m = await notify.tg.telegram.sendMessage(config.CHANNEL_USERNAME, postText(g), { parse_mode: 'HTML', ...ui.kb([[ui.url('УЧАСТЬ', joinUrl(), 'success', 'giftBox')]]) });
@@ -178,7 +238,7 @@ function register(bot, hooks) {
       await ctx.reply('⚠️ Канал: ' + e.message + '\nРозіграш однаково запущено — участь через розсилку.').catch(() => {});
     }
     await broadcast(ctx, audience(), (uid) => notify.tg.telegram.sendMessage(uid, postText(st() || g),
-      { parse_mode: 'HTML', ...ui.kb([[ui.cb('УЧАСТЬ', 'awdga:join', 'success', 'giftBox')]]) }), 'Розсилка розіграшу автовидачі');
+      { parse_mode: 'HTML', ...ui.kb([[ui.cb('УЧАСТЬ', 'awdga:join', 'success', 'giftBox')]]) }), 'Розсилка мега-розіграшу');
   });
 
   bot.action('awdga:join', async (ctx) => {
@@ -211,4 +271,4 @@ function register(bot, hooks) {
   });
 }
 
-module.exports = { register, join };
+module.exports = { register, join, postText, prizeText };
