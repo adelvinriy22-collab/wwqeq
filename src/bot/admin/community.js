@@ -24,8 +24,6 @@ const { withEmoji } = require('../../emoji');
 const pendingBroadcast = new Map();   // адмін -> { from, id, at }
 const jpPending = new Map();          // msgId -> uid, коли автора вказано вручну
 const jpDone = new Set();             // msgId, за які приз уже видано (подвійне натискання — не вдруге)
-const jpDrafts = new Map();          // msgId -> { key, text, via: 'account'|'bot', status } — подарунок перед надсиланням
-const jpAwaitText = new Map();       // adminUid -> msgId, чекаємо підпис
 const JP_GIFT_TEXT = '👑 Джекпот за активність у чаті StarForge! Дякуємо, що ти з нами 🔥';
 
 const JP_PRIZES = {
@@ -253,7 +251,7 @@ function register(bot, hooks) {
     const inBot = !!(users.get(who.uid) || {}).lang;
     jpDone.delete(msgId);
     return ctx.reply(`👑 Джекпот за активність для ${who.plain}` + (inBot ? '' : '\n⚠️ Ця людина ще не запускала бота — приз чекатиме її') +
-      '\n\nЯкий приз?\nДля подарунка далі — підпис і від кого надіслати (ваш акаунт / бот).', { parse_mode: 'HTML', ...jpPrizeKb(msgId) });
+      '\n\nЯкий приз?\nПодарунок переможець забере сам у боті — сам обере підпис і від кого.', { parse_mode: 'HTML', ...jpPrizeKb(msgId) });
   }
   function jpPrizeKb(msgId) {
     return ui.kb([
@@ -272,52 +270,89 @@ function register(bot, hooks) {
     await jackpotAsk(ctx, text);
     return true;
   });
-  // Подарунок: спершу прев'ю — підпис і від кого (акаунт власника / бот). Решта — одразу.
+  // Подарунок: переможець сам обирає підпис і від кого (акаунт власника / бот) — у боті.
+  // Решта призів — одразу.
   bot.action(/^jp_(\d+)_(heart|bear|rose|gift|cake|bouquet|champagne|ring|diamond|s5|t20|x100|p100)$/, async (ctx) => {
     if (!isAdminCtx(ctx)) return ctx.answerCbQuery().catch(() => {});
     await ctx.answerCbQuery().catch(() => {});
     const msgId = Number(ctx.match[1]);
     const key = ctx.match[2] === 'p100' ? 'x100' : ctx.match[2];
+    // Друге натискання (або інша кнопка) по тому самому повідомленню — приз уже видано.
     if (jpDone.has(msgId)) return ctx.reply('Цей джекпот уже видано.').catch(() => {});
-    if (JP_PRIZES[key].kind === 'tier') {
-      const d = { key, text: JP_GIFT_TEXT, entities: [], via: 'account', status: 'draft' };
-      jpDrafts.set(msgId, d);
-      return ctx.editMessageText(jpPreview(msgId, d), { parse_mode: 'HTML', ...jpPreviewKb(msgId, d) }).catch(() => ctx.reply(jpPreview(msgId, d), { parse_mode: 'HTML', ...jpPreviewKb(msgId, d) }).catch(() => {}));
-    }
     jpDone.add(msgId);
-    await jpDeliver(ctx, msgId, JP_PRIZES[key], null);
+    await jpDeliver(ctx, msgId, JP_PRIZES[key]);
   });
 
-  bot.action(/^jpd_(\d+)_(text|clear|acc|bot|send|back)$/, async (ctx) => {
-    if (!isAdminCtx(ctx)) return ctx.answerCbQuery().catch(() => {});
-    const msgId = Number(ctx.match[1]), act = ctx.match[2];
-    const d = jpDrafts.get(msgId);
-    if (!d || jpDone.has(msgId)) { await ctx.answerCbQuery('Цей джекпот уже видано або скасовано').catch(() => {}); return; }
-    if (act === 'bot' && E.JACKPOT.botLocked) return ctx.answerCbQuery('🔒 Від бота — поки закрито. Подарунок піде від вашого акаунта.', { show_alert: true }).catch(() => {});
-    if (act === 'send' && d.via === 'account' && !usergifts.enabled()) return ctx.answerCbQuery('Акаунт не підключено — спершу /tg_login', { show_alert: true }).catch(() => {});
-    // Подвійне «Надіслати» — прапорець синхронно, до першого await.
-    if (act === 'send') { jpDone.add(msgId); jpDrafts.delete(msgId); }
+  // ─── Переможець: підпис і від кого ────────────────────────────────────
+  const claimOf = (uid, id) => (((users.get(uid) || {}).jpClaims) || {})[id] || null;
+  const setClaim = (uid, id, patch) => {
+    const all = { ...((users.get(uid) || {}).jpClaims || {}) };
+    all[id] = patch === null ? undefined : { ...(all[id] || {}), ...patch };
+    if (patch === null) delete all[id];
+    users.patch(uid, { jpClaims: all });
+  };
+  const whoLabel = (via) => via === 'bot' ? '🤖 бот StarForge' : '👤 акаунт StarForge';
+  function claimCard(c) {
+    return withEmoji(ui.card('crown', 'ТВІЙ ДЖЕКПОТ: ' + c.label.toUpperCase(), [
+      '{:eye} <b>Підпис:</b> ' + (c.text ? '\n<blockquote>' + esc(c.text) + '</blockquote>' : 'без підпису'),
+      '{:lightning} <b>Від кого:</b> ' + whoLabel(c.via),
+    ]));
+  }
+  function claimKb(id, c) {
+    return ui.kb([
+      [ui.cb((c.via !== 'bot' ? '✅ ' : '') + 'ВІД АКАУНТА', `jpc_${id}_acc`, c.via !== 'bot' ? 'success' : undefined),
+        ui.cb((E.JACKPOT.botLocked ? '🔒 ' : c.via === 'bot' ? '✅ ' : '') + 'ВІД БОТА', `jpc_${id}_bot`)],
+      [ui.cb(c.text ? 'ЗМІНИТИ ПІДПИС' : 'НАПИСАТИ ПІДПИС', `jpc_${id}_text`, 'primary', 'lightning'), c.text ? ui.cb('БЕЗ ПІДПИСУ', `jpc_${id}_clear`) : null],
+      [ui.cb('ЗАБРАТИ ' + c.label.toUpperCase(), `jpc_${id}_send`, 'success', 'giftBox')],
+    ]);
+  }
+  const jpcAwait = new Map();   // uid -> id джекпоту, чекаємо підпис
+
+  bot.action(/^jpc_(\d+)_(text|clear|acc|bot|send)$/, async (ctx) => {
+    const uid = String(ctx.from.id), id = ctx.match[1], act = ctx.match[2];
+    const c = claimOf(uid, id);
+    if (!c || c.status !== 'pending') return ctx.answerCbQuery(c && c.status === 'sent' ? 'Подарунок уже надіслано 🎁' : c ? '⏳ Уже надсилаю…' : 'Цей приз не твій 🙂').catch(() => {});
+    if (act === 'bot' && E.JACKPOT.botLocked) return ctx.answerCbQuery('🔒 Від бота — поки закрито', { show_alert: true }).catch(() => {});
+    // Подвійне «Забрати» — стан синхронно, до першого await.
+    if (act === 'send') setClaim(uid, id, { status: 'sending' });
     await ctx.answerCbQuery().catch(() => {});
-    if (act === 'text') { jpAwaitText.set(String(ctx.from.id), msgId); return ctx.reply(withEmoji('{:lightning} Напишіть підпис до подарунка одним повідомленням — до ' + usergifts.TEXT_MAX + ' символів. Форматування й преміум-емодзі збережуться.'), { parse_mode: 'HTML' }).catch(() => {}); }
-    if (act === 'clear') d.text = '', d.entities = [];
-    if (act === 'acc') d.via = 'account';
-    if (act === 'bot') d.via = 'bot';
-    if (act === 'back') { jpDrafts.delete(msgId); return jpAsk(ctx, msgId); }
-    if (act === 'send') return jpDeliver(ctx, msgId, JP_PRIZES[d.key], d);
-    await ctx.editMessageText(jpPreview(msgId, d), { parse_mode: 'HTML', ...jpPreviewKb(msgId, d) }).catch(() => {});
+    if (act === 'text') { jpcAwait.set(uid, id); return ctx.reply(withEmoji('{:lightning} Напиши підпис до подарунка одним повідомленням — до ' + usergifts.TEXT_MAX + ' символів. Емодзі можна 😉'), { parse_mode: 'HTML' }).catch(() => {}); }
+    if (act === 'clear') setClaim(uid, id, { text: '', entities: [] });
+    if (act === 'acc') setClaim(uid, id, { via: 'account' });
+    if (act === 'bot') setClaim(uid, id, { via: 'bot' });
+    if (act !== 'send') { const n = claimOf(uid, id); return ctx.editMessageText(claimCard(n), { parse_mode: 'HTML', ...claimKb(id, n) }).catch(() => ctx.reply(claimCard(n), { parse_mode: 'HTML', ...claimKb(id, n) }).catch(() => {})); }
+    await ctx.editMessageText('⏳ Надсилаю ' + c.label + '…').catch(() => {});
+    const u = users.get(uid) || {};
+    const g = c.via === 'bot'
+      ? await tggifts.send(uid, c.id, c.text, c.entities)
+      : usergifts.enabled() ? await usergifts.send(u.username ? '@' + u.username : uid, c.id, c.text, c.entities) : { ok: false, error: 'account_off' };
+    if (!g.ok) {
+      setClaim(uid, id, { status: 'pending', lastError: g.error });
+      notify.admin(`⚠️ Джекпот: не вдалось надіслати ${c.label} для ${u.username ? '@' + u.username : uid} (${c.via === 'bot' ? 'бот' : 'акаунт'})\n<code>${esc(g.error)}</code>` + (g.error === 'account_off' ? '\nПідключіть акаунт: /tg_login' : ''));
+      return ctx.reply(withEmoji('{:warn} Не вийшло надіслати зараз — спробуй ще раз за кілька хвилин, приз за тобою.'), { parse_mode: 'HTML', ...claimKb(id, claimOf(uid, id)) }).catch(() => {});
+    }
+    setClaim(uid, id, { status: 'sent', sentAt: Date.now() });
+    const a = applications.create(uid, c.id, 'chat_jackpot', { autoSent: true, via: c.via }, { silent: true });
+    a.status = 'approved'; a.decidedAt = Date.now(); store.save();
+    await ctx.reply(withEmoji(ui.card('check', c.label.toUpperCase() + ' НАДІСЛАНО!', [
+      '{:giftBox} Глянь у свій профіль Telegram → «Подарунки»',
+    ], 'Дякуємо, що ти з нами — спілкуйся далі!')), { parse_mode: 'HTML' }).catch(() => {});
+    notify.admin(`🎁 Джекпот забрано: ${u.username ? '@' + u.username : uid} — ${c.label} від ${c.via === 'bot' ? 'бота' : 'акаунта'}` + (c.text ? `\nПідпис: ${esc(c.text)}` : '\nБез підпису'));
   });
 
-  hooks.onAdminText.push(async (ctx, text) => {
-    const aid = String(ctx.from.id);
-    if (!jpAwaitText.has(aid) || /^\//.test(text)) return false;
-    const msgId = jpAwaitText.get(aid); jpAwaitText.delete(aid);
-    const d = jpDrafts.get(msgId);
-    if (!d) return false;
-    if (text.length > usergifts.TEXT_MAX) { jpAwaitText.set(aid, msgId); await ctx.reply(`❌ Задовго: ${text.length}/${usergifts.TEXT_MAX}.`).catch(() => {}); return true; }
-    d.text = text; d.entities = tggifts.cleanEntities(ctx.message.entities);
-    await ctx.reply(jpPreview(msgId, d), { parse_mode: 'HTML', ...jpPreviewKb(msgId, d) }).catch(() => {});
+  hooks.onText.push(async (ctx, uid, text) => {
+    if (!jpcAwait.has(uid)) return false;
+    const id = jpcAwait.get(uid); jpcAwait.delete(uid);
+    const c = claimOf(uid, id);
+    if (!c || c.status !== 'pending') return false;
+    if (!text.trim()) return true;
+    if (text.length > usergifts.TEXT_MAX) { jpcAwait.set(uid, id); await ctx.reply(`❌ Задовго: ${text.length}/${usergifts.TEXT_MAX}. Коротше, будь ласка.`).catch(() => {}); return true; }
+    setClaim(uid, id, { text, entities: tggifts.cleanEntities(ctx.message.entities) });
+    const n = claimOf(uid, id);
+    await ctx.reply(claimCard(n), { parse_mode: 'HTML', ...claimKb(id, n) }).catch(() => {});
     return true;
   });
+  hooks.onCommand.push((uid) => jpcAwait.delete(uid));
 
   function jpWho(msgId) {
     const known = chat() ? chat().authorOf(msgId) : null;
@@ -325,60 +360,30 @@ function register(bot, hooks) {
     const u = uid ? users.get(uid) || {} : {};
     return { uid, known, name: u.username ? '@' + u.username : (known ? known.name : 'гравець') };
   }
-  function jpPreview(msgId, d) {
-    const p = JP_PRIZES[d.key], c = tggifts.CATALOG[p.id] || {};
-    return withEmoji(ui.card('crown', 'ДЖЕКПОТ — ПОДАРУНОК', [
-      '{:giftBox} Кому: <b>' + jpWho(msgId).name + '</b>',
-      '{:starIcon} Що: <b>' + p.label + '</b> · ' + (c.stars || '?') + '⭐',
-      '{:lightning} Від кого: <b>' + (d.via === 'account' ? 'ваш акаунт' + (usergifts.enabled() ? '' : ' ⚠️ не підключено — /tg_login') : 'бот') + '</b>',
-      '',
-      d.text ? '{:eye} <b>Підпис:</b>\n<blockquote>' + esc(d.text) + '</blockquote>' : '{:eye} Без підпису',
-    ], 'Перевірте й натисніть «Надіслати»'));
-  }
-  function jpPreviewKb(msgId, d) {
-    return ui.kb([
-      [ui.cb((d.via === 'account' ? '✅ ' : '') + 'ВІД АКАУНТА', `jpd_${msgId}_acc`, d.via === 'account' ? 'success' : undefined),
-        ui.cb((E.JACKPOT.botLocked ? '🔒 ' : d.via === 'bot' ? '✅ ' : '') + 'ВІД БОТА', `jpd_${msgId}_bot`)],
-      [ui.cb('ЗМІНИТИ ПІДПИС', `jpd_${msgId}_text`, 'primary', 'lightning'), d.text ? ui.cb('БЕЗ ПІДПИСУ', `jpd_${msgId}_clear`) : null],
-      [ui.cb('НАДІСЛАТИ', `jpd_${msgId}_send`, 'success', 'giftBox')],
-      [ui.cb('◀️ ІНШИЙ ПРИЗ', `jpd_${msgId}_back`, 'danger')],
-    ]);
-  }
-  async function jpAsk(ctx, msgId) {
-    const w = jpWho(msgId);
-    await ctx.editMessageText(`👑 Джекпот за активність для ${w.name}\n\nЯкий приз?`, { parse_mode: 'HTML', ...jpPrizeKb(msgId) }).catch(() => {});
-  }
 
-  // Видати приз і оголосити в чаті. d — чернетка подарунка (підпис, від кого).
-  async function jpDeliver(ctx, msgId, prize, d) {
+  // Видати приз і оголосити в чаті. Подарунок — переможець забирає сам у боті.
+  async function jpDeliver(ctx, msgId, prize) {
     const { uid, known, name } = jpWho(msgId);
     if (!uid) { jpDone.delete(msgId); return ctx.reply('Автора вже не знаю — надішли посилання ще раз із @username.'); }
     if (!users.get(uid) && known) users.ensure({ id: uid, first_name: known.plain });
-    const u = users.get(uid) || {};
     // Приз видається СПРАВЖНІЙ — інакше публічний «джекпот» обернеться хейтом.
-    let note, auto = false;
+    let note, claim = null;
     if (prize.kind === 'tier') {
-      const text = d ? d.text : JP_GIFT_TEXT, ents = d ? d.entities : [];
-      const g = d && d.via === 'account'
-        ? await usergifts.send(u.username ? '@' + u.username : uid, prize.id, text, ents)
-        : tggifts.canSend(prize.id) ? await tggifts.send(uid, prize.id, text, ents) : { ok: false, error: 'manual' };
-      const a = applications.create(uid, prize.id, 'chat_jackpot', g.ok ? { autoSent: true, via: d ? d.via : 'bot' } : {}, { silent: true });
-      if (g.ok) {
-        a.status = 'approved'; a.decidedAt = Date.now(); store.save();
-        auto = true; note = 'надіслано одразу ' + (d && d.via === 'account' ? 'від вашого акаунта' : 'від бота') + ' ✅';
-      } else {
-        note = 'заявка #' + a.id + ' (автоматично не вийшло: ' + g.error + (g.lowBalance ? ' — замало зірок' : '') + ')';
-      }
+      claim = { id: prize.id, label: prize.label, text: JP_GIFT_TEXT, entities: [], via: 'account', status: 'pending', at: Date.now() };
+      setClaim(uid, String(msgId), claim);
+      note = 'переможець обирає підпис і від кого — у боті';
     } else if (prize.kind === 'stars') { users.move(uid, { stars: prize.n }, 'jackpot', {}); note = 'на балансі'; }
     else if (prize.kind === 'tickets') { users.move(uid, { tickets: prize.n }, 'jackpot', {}); note = 'на балансі'; }
     else { progress.addXp(uid, 'admin', prize.n, { why: 'jackpot' }); note = 'XP зараховано'; }
     await ctx.editMessageText(`⏳ Джекпот ${name}: ${prize.label} — оголошую в чаті…`).catch(() => {});
     const kind = prize.kind === 'tier' ? prize.id : prize.kind;
-    const ok = chat() ? await chat().jackpot(msgId, { name }, prize.label, { kind, auto }) : false;
-    notify.dm(uid, withEmoji(`{:crown} <b>ДЖЕКПОТ ЗА АКТИВНІСТЬ!</b>\n━━━━━━━━━━━━━━\nStarForge помітив твою активність у чаті — <b>${prize.label}</b> твоя!\n\n` +
-      (auto ? '{:lightning} <b>Подарунок уже надіслано</b> — глянь у свій профіль Telegram → «Подарунки» {:giftBox}'
-        : prize.kind === 'tier' ? '{:pendingIcon} Заявку створено — видамо найближчим часом.' : '{:check} Уже зараховано на баланс.') +
-      '\n\n{:almost} Дякуємо, що ти з нами — спілкуйся далі!'));
+    const ok = chat() ? await chat().jackpot(msgId, { name }, prize.label, { kind, claim: !!claim }) : false;
+    if (claim) {
+      // Переможцю — лише картка: підпис і від кого.
+      if (!(await notify.dm(uid, claimCard(claim), { parse_mode: 'HTML', ...claimKb(String(msgId), claim) }))) note += ' ⚠️ повідомлення не дійшло — людина ще не запускала бота';
+    } else {
+      notify.dm(uid, withEmoji(`{:crown} <b>ДЖЕКПОТ ЗА АКТИВНІСТЬ!</b>\n━━━━━━━━━━━━━━\nStarForge помітив твою активність у чаті — <b>${prize.label}</b> твоя!\n\n{:check} Уже зараховано на баланс.\n\n{:almost} Дякуємо, що ти з нами — спілкуйся далі!`));
+    }
     jpPending.delete(msgId);
     await ctx.editMessageText(`✅ Джекпот ${name}: ${prize.label} (${note})` + (ok ? '\nОголошено в чаті 🎉' : '\n⚠️ У чат написати не вдалось — /chat_status')).catch(() => {});
   }
