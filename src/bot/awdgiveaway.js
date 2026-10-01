@@ -1,6 +1,6 @@
 // ==========================================================================
 // РОЗІГРАШ АВТОВИДАЧІ. Адмін: /awd_giveaway [учасників=100] [@канал…].
-// Призи за місцями — E.AWD_GIVEAWAY.places (1-ше: автовидача + 🚀 + 15⭐ … 25-те).
+// Призи за місцями — E.AWD_GIVEAWAY.places (1-ше: автовидача + 🚀 + 🎁 … 25-те).
 // Участь — лише з підпискою на канали g.mustSub (за замовчуванням AWD_SUB_CHANNELS).
 // Бот публікує пост у каналі з кнопкою «УЧАСТЬ» (веде в бота) і розсилає
 // анонс усім. Лічильник у пості оновлюється. Щойно набирається потрібна
@@ -36,6 +36,7 @@ function prizeText(p) {
   const out = [];
   if (p.autowd) out.push('🧸 <b>АВТОВИДАЧА</b>');
   if (p.gift) out.push('<b>' + GIFT_NAME[p.gift] + '</b>');
+  if (p.gift2) out.push('<b>' + GIFT_NAME[p.gift2] + '</b>');
   if (p.stars) out.push('<b>' + p.stars + '⭐</b>');
   if (p.tickets) out.push(p.tickets + '🎫');
   if (p.xp) out.push(p.xp + ' XP');
@@ -58,7 +59,7 @@ function bar(n, need) {
 function postText(g) {
   const n = count(g), subs = (g.mustSub || []).map(esc).join(', ');
   return withEmoji(ui.card('giftBox', 'МЕГА-РОЗІГРАШ STARFORGE — ' + placesTotal() + ' ПРИЗІВ', [
-    '{:crown} <b>Головний приз — АВТОВИДАЧА!</b> Бот сам, без черги й заявок, надсилає тобі справжній подарунок Telegram 🧸 з твоїм підписом. Плюс 🚀 Ракета і 15⭐ зверху!',
+    '{:crown} <b>Головний приз — АВТОВИДАЧА!</b> Бот сам, без черги й заявок, надсилає тобі справжній подарунок Telegram 🧸 з твоїм підписом. Плюс 🚀 Ракета і 🎁 Подарунок зверху!',
     '',
     '{:trophy} <b>Призи:</b>',
     prizeTable(),
@@ -139,13 +140,14 @@ async function finish(g) {
   for (let i = 0; i < winners.length; i++) {
     const w = winners[i], n = i + 1, p = placeOf(n);
     const gift = p.gift ? await giveGift(w, p.gift) : null;
+    const gift2 = p.gift2 ? await giveGift(w, p.gift2) : null;
     log.push((MEDAL[n] || n + '.') + ' ' + nameOf(users.get(w)) + ' · <code>' + w + '</code> — ' + prizeText(p) +
-      (codes[w] ? ' · код <code>' + codes[w] + '</code>' : '') + (gift && gift !== 'sent' ? ' · ⚠️ подарунок заявкою ' + gift : ''));
+      (codes[w] ? ' · код <code>' + codes[w] + '</code>' : '') + (gift && gift !== 'sent' ? ' · ⚠️ подарунок заявкою ' + gift : '') + (gift2 && gift2 !== 'sent' ? ' · ⚠️ подарунок заявкою ' + gift2 : ''));
     await notify.dm(w, withEmoji(ui.card(n <= 3 ? 'crown' : 'giftBox', (MEDAL[n] || '🏅') + ' ТИ ПОСІВ ' + n + ' МІСЦЕ!', [
       'Твій приз: ' + prizeText(p),
       '',
       p.stars || p.tickets || p.xp ? '{:check} Зірки, білети й XP уже на балансі.' : null,
-      p.gift ? (gift === 'sent' ? '{:check} ' + GIFT_NAME[p.gift] + ' уже в профілі Telegram → «Подарунки».' : '⏳ ' + GIFT_NAME[p.gift] + ' — адмін надішле найближчим часом.') : null,
+      ...[[p.gift, gift], [p.gift2, gift2]].filter(([t]) => t).map(([t, r]) => r === 'sent' ? '{:check} ' + GIFT_NAME[t] + ' уже в профілі Telegram → «Подарунки».' : '⏳ ' + GIFT_NAME[t] + ' — адмін надішле найближчим часом.'),
       codes[w] ? '\n{:lightning} Твій промокод на <b>АВТОВИДАЧУ</b>: <code>' + codes[w] + '</code>\nТисни кнопку — і бот сам надішле тобі 🧸 з твоїм підписом.' : null,
     ], 'Вітаємо! Грай далі в StarForge — призів ще багато')), { parse_mode: 'HTML', ...ui.kb([
       codes[w] ? [ui.cb('АКТИВУВАТИ АВТОВИДАЧУ', 'awdga:code', 'success', 'teddyBear')] : null,
@@ -197,7 +199,7 @@ function joinText(res) {
   if (res.r === 'closed') return withEmoji('{:warn} Цей розіграш уже завершено. Стеж за каналом — наступний скоро {:eye}');
   const g = res.g, n = count(g);
   return withEmoji(ui.card('check', res.r === 'joined' ? 'ТИ В ГРІ!' : 'ТИ ВЖЕ БЕРЕШ УЧАСТЬ', [
-    '{:giftBox} Мега-розіграш — <b>' + placesTotal() + ' призів</b>, 1-ше місце: 🧸 автовидача + 🚀 + 15⭐',
+    '{:giftBox} Мега-розіграш — <b>' + placesTotal() + ' призів</b>, 1-ше місце: 🧸 автовидача + 🚀 + 🎁',
     '{:lightning} Учасників: <b>' + n + '/' + g.need + '</b>',
     bar(n, g.need),
     '',

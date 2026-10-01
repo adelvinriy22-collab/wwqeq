@@ -852,7 +852,7 @@ test('розіграш автовидачі: пост у каналі, учас�
   assert.strictEqual(g.winnerIds.length, 3, 'учасників менше, ніж місць — призи всім');
   const w = Number(g.winnerIds[0]);
   const dm = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === String(w) && /ТИ ПОСІВ 1 МІСЦЕ/.test(c.payload.text || '')));
-  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendGift' && c.payload.user_id === w)), '1-ше місце — ще й 🚀 Ракета');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendGift' && c.payload.user_id === w)), '1-ше місце — ще й 🚀 і 🎁');
   assert.ok(dm, 'переможцю — промокод');
   assert.match(dm.payload.text, new RegExp(g.codes[w]));
   // Чужий не активує, переможець — відкриває автовидачу.
