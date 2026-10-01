@@ -23,7 +23,7 @@ const { esc, fmtStars } = require('../lib/util');
 
 const T = {
   uk: {
-    hi: '{:lightning} <b>Привіт, {name}!</b>', lead: 'Колеса удачі, ігри на зірки, спільний банк і <b>справжні Telegram-подарунки</b> {:giftBox}',
+    hi: '{:lightning} <b>Привіт, {name}!</b>', lead: 'Колеса удачі, ігри на зірки і <b>справжні Telegram-подарунки</b> {:giftBox}',
     bal: '{:starIcon} Баланс: <b>{s}</b> ⭐', tix: '🎫 Білети: <b>{t}</b>', lvl: '{:crown} Рівень {n}: <b>{e} {title}</b>',
     bankLine: '{:almost} У банку <b>{p}⭐</b> — розіграш {when}', tease: '<i>А що буде далі...</i> {:eye}',
     open: 'ВІДКРИТИ STARFORGE', rewards: 'МОЇ НАГОРОДИ', games: '🎲 ІГРИ НА ЗІРКИ', bank: '🏦 СПІЛЬНИЙ БАНК — {p}⭐', topup: 'ПОПОВНИТИ БАЛАНС',
@@ -53,7 +53,7 @@ const T = {
     backHint: '👇 Кнопка «Назад» унизу завжди поверне в меню', backKey: 'Назад',
   },
   en: {
-    hi: '{:lightning} <b>Hi, {name}!</b>', lead: 'Wheels of luck, star games, a shared bank and <b>real Telegram gifts</b> {:giftBox}',
+    hi: '{:lightning} <b>Hi, {name}!</b>', lead: 'Wheels of luck, star games and <b>real Telegram gifts</b> {:giftBox}',
     bal: '{:starIcon} Balance: <b>{s}</b> ⭐', tix: '🎫 Tickets: <b>{t}</b>', lvl: '{:crown} Level {n}: <b>{e} {title}</b>',
     bankLine: '{:almost} The bank holds <b>{p}⭐</b> — draw {when}', tease: '<i>What comes next...</i> {:eye}',
     open: 'OPEN STARFORGE', rewards: 'MY REWARDS', games: '🎲 STAR GAMES', bank: '🏦 SHARED BANK — {p}⭐', topup: 'TOP UP',
@@ -83,7 +83,7 @@ const T = {
     backHint: '👇 The “Back” button below always returns to the menu', backKey: 'Back',
   },
   ru: {
-    hi: '{:lightning} <b>Привет, {name}!</b>', lead: 'Колёса удачи, игры на звёзды, общий банк и <b>настоящие Telegram-подарки</b> {:giftBox}',
+    hi: '{:lightning} <b>Привет, {name}!</b>', lead: 'Колёса удачи, игры на звёзды и <b>настоящие Telegram-подарки</b> {:giftBox}',
     bal: '{:starIcon} Баланс: <b>{s}</b> ⭐', tix: '🎫 Билеты: <b>{t}</b>', lvl: '{:crown} Уровень {n}: <b>{e} {title}</b>',
     bankLine: '{:almost} В банке <b>{p}⭐</b> — розыгрыш {when}', tease: '<i>А что будет дальше...</i> {:eye}',
     open: 'ОТКРЫТЬ STARFORGE', rewards: 'МОИ НАГРАДЫ', games: '🎲 ИГРЫ НА ЗВЁЗДЫ', bank: '🏦 ОБЩИЙ БАНК — {p}⭐', topup: 'ПОПОЛНИТЬ БАЛАНС',
@@ -134,7 +134,7 @@ function mainMenu(uid) {
   const u = users.get(uid) || {};
   const lv = progress.view(u, lang).level;
   const b = bank.get();
-  const bankOpen = b && b.status === 'open' && b.drawAt > Date.now();
+  const bankOpen = false;   // банк прибрано з меню
   const f = store.getFeatureFlags() || {};
   const lines = [
     tt(lang, 'hi', { name: esc(u.name || u.username || '') }), '',

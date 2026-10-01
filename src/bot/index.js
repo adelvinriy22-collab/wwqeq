@@ -127,7 +127,6 @@ async function setupUi(bot) {
   await tg.setMyCommands([
     { command: 'start', description: '🏠 Головне меню' },
     { command: 'menu', description: '📋 Меню' },
-    { command: 'bank', description: '🏦 Спільний банк' },
     { command: 'topup', description: '⭐ Поповнити баланс' },
     { command: 'games', description: '🎲 Ігри на зірки' },
     { command: 'level', description: '🏅 Мій рівень і привілеї' },

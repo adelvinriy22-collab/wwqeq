@@ -41,9 +41,7 @@ async function load(nav, body) {
 function draw(nav, body) {
   const d = data;
   const out = [];
-  if (S.me.autowd) {
-    out.push(el('div', { class: 'banner mt12' }, el('div', { class: 'bi' }, '🤖'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wallet.autowd', { p: S.me.autowd })), el('div', { class: 'bs' }, t('wallet.autowdS')))));
-  }
+  out.push(el('div', { class: 'banner green mt12' }, el('div', { class: 'bi' }, '⚡'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wd.auto')), el('div', { class: 'bs' }, t('wd.autoS')))));
   // Магазин
   const sh = d.shop;
   out.push(...section(t('shop.title'), el('div', null,

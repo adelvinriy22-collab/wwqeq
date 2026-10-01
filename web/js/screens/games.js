@@ -14,9 +14,9 @@ import { section, list, row, button, seg, bar, empty, pill, toast, fail, sheet, 
 let wheelId = 'daily';
 
 export function render(nav, v) {
-  if (v === 'bank') wheelId = 'bank';
-  else if (v === 'wheels' && wheelId === 'bank') wheelId = 'daily';
-  return [el('div', { class: 'h1' }, t('games.title')), wheelId === 'bank' ? null : bankTeaser(nav), wheels(nav), diceCard()];
+  // Банк прибрано з застосунку: старі посилання на нього ведуть до коліс.
+  if (wheelId === 'bank') wheelId = 'daily';
+  return [el('div', { class: 'h1' }, t('games.title')), wheels(nav), diceCard()];
 }
 
 // Ігри на зірки живуть у боті: Telegram сам кидає кубик з анімацією.
@@ -47,7 +47,7 @@ function tierImg(id) { const x = (S.me.tiers || []).find(q => q.id === id); retu
 function wheels(nav) {
   const W = S.me.wheels.wheels;
   if (wheelId !== 'bank' && !W[wheelId]) wheelId = 'daily';
-  const ids = ['daily', 'referral', 'paid'].filter(id => W[id]).concat(['bank']);
+  const ids = ['daily', 'referral', 'paid'].filter(id => W[id]);
   const bk = S.me.bank || {};
   const tabs = el('div', { class: 'wheel-tabs' }, ids.map(id => {
     const w = W[id];
