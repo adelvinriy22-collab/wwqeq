@@ -471,26 +471,33 @@ test('автовивід: адмін відкриває, гравець пише
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendMessage' && String(c.payload.chat_id) === ADMIN && /уже отримав/.test(c.payload.text || '')), 'адміну сказано, що вже отримав');
 });
 
-test('джекпот за активність: адмін обирає, Мішка видається одразу (sendGift) рівно раз, у чаті — фото й закріплення', async () => {
+test('джекпот за активність: подарунок — прев\'ю з підписом, «від бота» під замком, надсилання від акаунта рівно раз', async () => {
   const n0 = tg.calls.length;
   adminCmd('/jackpot https://t.me/starforge_chat/555 @user960');
   const waitFor = async (pred) => { for (let i = 0; i < 40; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
   const ask = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /jp_555_bear/.test(JSON.stringify(c.payload.reply_markup || {}))));
   assert.ok(ask, 'адміну — вибір призу');
-  const click = () => tg.push({ callback_query: { id: 'j' + Math.random(), from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, chat_instance: 'a', data: 'jp_555_bear', message: { message_id: 3, date: 0, chat: { id: Number(ADMIN), type: 'private' } } } });
-  click(); click();
-  const gift = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendGift'));
-  assert.ok(gift, 'Мішку надіслано подарунком');
-  assert.strictEqual(gift.payload.user_id, 960);
+  const click = (data) => tg.push({ callback_query: { id: 'j' + Math.random(), from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, chat_instance: 'a', data, message: { message_id: 3, date: 0, chat: { id: Number(ADMIN), type: 'private' } } } });
+  click('jp_555_bear');
+  const pv = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'editMessageText' && /jpd_555_send/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  assert.ok(pv, 'прев\'ю подарунка');
+  assert.match(JSON.stringify(pv.payload.reply_markup), /🔒 ВІД БОТА/);
+  click('jpd_555_bot');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'answerCallbackQuery' && /закрито/.test(c.payload.text || ''))), 'бот під замком');
+  click('jpd_555_text');
+  await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /Напишіть підпис/.test(c.payload.text || '')));
+  tg.push({ message: { message_id: 4001, date: Math.floor(Date.now() / 1000), chat: { id: Number(ADMIN), type: 'private' }, from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, text: 'Ти топ чату!' } });
+  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /Ти топ чату!/.test(c.payload.text || '') && /jpd_555_send/.test(JSON.stringify(c.payload.reply_markup || {})))), 'новий підпис у прев\'ю');
+  click('jpd_555_send'); click('jpd_555_send');
   assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'pinChatMessage')), 'джекпот закріплено');
-  assert.strictEqual(tg.calls.slice(n0).filter(c => c.method === 'sendGift').length, 1, 'подвійне натискання — одна Мішка');
+  assert.ok(!tg.calls.slice(n0).some(c => c.method === 'sendGift'), 'від бота нічого не йшло');
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '-1001' && /Хтось у чаті дуже активний/.test(c.payload.text || '')), 'інтрига в чаті');
   assert.ok(!tg.calls.slice(n0).some(c => /адмін/i.test(String(c.payload.text || c.payload.caption || '')) && String(c.payload.chat_id) !== ADMIN), 'ніде не видно, що обирає адмін');
-  assert.ok(!tg.calls.slice(n0).some(c => c.method === 'sendDice'), 'це не гра — без кубика');
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendPhoto'), 'картка JACKPOT');
-  await sleep(500);
-  const app = readDb().applications.find(a => a.uid === '960' && a.source === 'chat_jackpot');
-  assert.ok(app && app.status === 'approved' && app.autoSent, 'в історії — видано автоматично');
+  await sleep(600);
+  const apps = readDb().applications.filter(a => a.uid === '960' && a.source === 'chat_jackpot');
+  assert.strictEqual(apps.length, 1, 'подвійне натискання — один подарунок');
+  assert.ok(apps[0].status === 'approved' && apps[0].autoSent && apps[0].via === 'account', 'видано від акаунта');
 });
 
 test('перший коментар у каналі: бот ловить першого, кнопки лише для нього, подарунок одразу', async () => {
