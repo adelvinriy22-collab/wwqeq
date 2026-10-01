@@ -29,6 +29,8 @@ const config = {
   TG_API_HASH: env.TG_API_HASH || '',
   TG_SESSION: env.TG_SESSION || '',
   // Сухий прогін /ugift: усі повідомлення, але без MTProto і без витрати зірок.
+  // Розіграш автовидачі: обов'язкова підписка (через кому). Бот має бути адміном там.
+  AWD_SUB_CHANNELS: String(env.AWD_SUB_CHANNELS || '@Sanichkap').split(',').map(s => s.trim()).filter(Boolean),
   USERGIFT_DRY_RUN: env.USERGIFT_DRY_RUN === '1',
 
   CHANNEL_USERNAME: env.CHANNEL_USERNAME || '@starforge_news',

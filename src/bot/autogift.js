@@ -110,6 +110,8 @@ const i18nOpen = (lang) => require('../i18n').t(lang, 'btn.open');
 const cleanEntities = tggifts.cleanEntities;
 
 function register(bot, hooks) {
+  // Промокод з автовидачею → відкрити автовивід (той самий одноразовий сценарій).
+  require('../features/promo').hooks.onAutowd.push((uid) => grant(uid, 'promo'));
   const awaiting = new Set();
   const priv = (ctx) => !ctx.chat || ctx.chat.type === 'private';
 

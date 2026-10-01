@@ -24,12 +24,13 @@ const HELP = `<b>Адмін</b> — найзручніше в застосунк
 <b>Заявки</b>: /apps · /requests [pending|approved|rejected] · /approve 1 2 · /reject 1 2 · /reopen N · /inactive 2 · /cancel_inactive 2 так · /reset_requests · /all_requests
 <b>Гравці</b>: /user @нік · /adjust @нік 10 [білети] [причина] · /spins @нік 1 [платні] · /punish_user @нік · /top50 · /active_today · /dbstats
 <b>Зловживання</b>: /wheel_abuse_check · /wheel_abuse_punish так · /wheel_log 30
-<b>Промокоди</b>: /promo КОД 10з 3б 2с 50 · /promo_list · /promo_del КОД
+<b>Промокоди</b>: /promo КОД 10з 3б 2с 50 (або КОД авто 1 — автовидача) · /promo_list · /promo_del КОД
 <b>Техроботи</b>: /maint · /maint withdraw|full|off · /maint 2г · /maint text …
 <b>Баланс</b>: /stars @нік 10 · /stars @нік -10 · /tickets @нік 5 · /tickets @нік -5 (у кінці можна дописати причину)
 <b>Банк</b>: /bank_start 2026-10-01 21:00 · /bank_cancel · /bank_auto on 21 · /bank_verify
 <b>Ліга</b>: /league on|off · /league_stats · /league_hide @нік · /league_unhide @нік · /league_finalize W2026-09-28
 <b>Перший коментар</b>: /first_gift — пост у канал «першому коментарю — гіфт за 15⭐», бот сам відповість першому й надішле 🧸/💝 · /first_gift status · /first_gift cancel
+<b>Розіграш автовидачі</b>: /awd_giveaway 100 1 [@канал] — пост у каналі з «УЧАСТЬ» + розсилка, участь лише з підпискою на @Sanichkap; на 100 учасниках — переможцям промокод на автовидачу · /awd_giveaway status · cancel
 <b>Автовивід</b>: /autowd @нік — бот сам надішле гравцю справжню 🧸 Мішку з його підписом (один раз) · /autowd — список
 <b>Розсилки</b>: /broadcast (відповіддю) · <b>/say</b> — пост у чат від імені бота (текст, pin, кнопки, відповіддю — фото/відео) · /post_all · /chat_say · /chat_post · /send_reminders · /winback так · /gift_all 1 мітка так
 <b>Події</b>: /event_status · /event_stop … · /giveaway_start · /giveaway_solo_start 21 00 · /joint_giveaway_start · /giveaway_stats · /deleteticket @нік 1 · /password_challenge_start · /external_ref_announce посилання · /unlock_event · /goal_reset · /goal_stats

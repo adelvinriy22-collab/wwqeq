@@ -55,6 +55,8 @@ function seedV2() {
       // Клани: лідер (3-й рівень, 150🎫), учасники, заявка в закритий клан.
       990: U('990', { tickets: 150, ticketsUsed: 0, starBalance: 100, chatPts: 100 }), 991: U('991', { starBalance: 100 }),
       992: U('992', { starBalance: 100 }), 993: U('993', {}),
+      // Розіграш автовидачі.
+      995: U('995', {}), 996: U('996', {}), 997: U('997', {}),
     },
     giveaways: {}, applications: [], nextApplicationId: 1,
     featureFlags: {
@@ -830,4 +832,34 @@ test('/tg_login без TG_API_ID — підказка, які ключі дод�
   let r;
   for (let i = 0; i < 20 && !r; i++) { await sleep(150); r = tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /TG_API_HASH/.test(c.payload.text || '')); }
   assert.ok(r);
+});
+
+test('розіграш автовидачі: пост у каналі, участь, на N учасниках — промокод переможцю відкриває автовидачу', async () => {
+  const waitFor = async (pred) => { for (let i = 0; i < 40; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  const cb = (id, data) => tg.push({ callback_query: { id: 'w' + Math.random(), from: { id, is_bot: false, first_name: 'P' + id, username: 'user' + id }, chat_instance: 'x', data, message: { message_id: 9, date: 0, chat: { id, type: 'private' } } } });
+  const n0 = tg.calls.length;
+  adminCmd('/awd_giveaway 3 1');
+  const post = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /РОЗІГРАШ АВТОВИДАЧІ/.test(c.payload.text || '') && /start=awdga/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  assert.ok(post, 'пост у каналі з кнопкою участі');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /awdga:join/.test(JSON.stringify(c.payload.reply_markup || {})))), 'розсилка');
+  cb(995, 'awdga:join'); cb(995, 'awdga:join'); await sleep(300);
+  cb(996, 'awdga:join'); await sleep(300);
+  cb(997, 'awdga:join');
+  await waitFor(() => readDb().featureFlags.awdGiveaway && readDb().featureFlags.awdGiveaway.status === 'done');
+  const g = readDb().featureFlags.awdGiveaway;
+  assert.strictEqual(g.status, 'done');
+  assert.strictEqual(Object.keys(g.participants).length, 3, 'повторна участь не рахується');
+  assert.strictEqual(g.winnerIds.length, 1);
+  const w = Number(g.winnerIds[0]);
+  const dm = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === String(w) && /ТИ ВИГРАВ АВТОВИДАЧУ/.test(c.payload.text || '')));
+  assert.ok(dm, 'переможцю — промокод');
+  assert.match(dm.payload.text, new RegExp(g.codes[w]));
+  // Чужий не активує, переможець — відкриває автовидачу.
+  const loser = [995, 996, 997].find(x => x !== w);
+  const pr = await (await fetch(base + '/api/promo', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Init-Data': signInitData(TOKEN, { id: loser, first_name: 'L' }) }, body: JSON.stringify({ code: g.codes[w] }) })).json();
+  assert.strictEqual(pr.ok, false, 'код лише для переможця');
+  const n1 = tg.calls.length;
+  cb(w, 'awdga:code');
+  assert.ok(await waitFor(() => tg.calls.slice(n1).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === String(w) && /ag:text/.test(JSON.stringify(c.payload.reply_markup || {})))), 'автовидачу відкрито');
+  assert.ok(await waitFor(() => ((readDb().users[String(w)] || {}).autoGift || {}).status === 'granted'), 'стан автовидачі збережено');
 });
