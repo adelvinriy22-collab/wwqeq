@@ -147,6 +147,7 @@ function mainMenu(uid) {
   const rows = [
     [ui.app(bt(lang, 'open'), null, 'success', 'rocket')],
     [ui.cb(bt(lang, 'rewards'), 'rewards', 'primary', 'giftBox')],
+    [require('./sponsor').menuButton(u)].filter(Boolean),
     [ui.cb(bt(lang, 'games'), 'dice_menu', 'danger', 'starIcon')],
     bankOpen ? [ui.cb(bt(lang, 'bank', { p: fmtStars(bank.prizeOf(b).stars) }), 'bank_show', 'danger', 'almost')] : null,
     [ui.cb(bt(lang, 'topup'), 'topup_menu', 'success', 'starIcon')],

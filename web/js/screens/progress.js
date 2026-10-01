@@ -248,6 +248,24 @@ function questsView(nav, body, d) {
             })))));
   }
 
+  // Місія: підписка на канал-спонсора (перевіряє бот).
+  const sp = d.sponsor;
+  if (sp) {
+    out.push(...section(t('sp.section'), list([row({
+      icon: sp.done ? '✅' : '📢', title: t('sp.title', { c: sp.channel }),
+      sub: sp.done ? t('quest.done') : '+' + sp.reward.tickets + '🎫 · +' + sp.reward.xp + ' XP', strong: !sp.done,
+      onClick: sp.done ? null : () => sheet((s) => [
+        el('h3', null, t('sp.title', { c: sp.channel })),
+        el('p', null, t('sp.lead', { c: sp.channel })),
+        el('div', { class: 'stack' },
+          button(t('sp.sub'), () => openLink(sp.link), 'tinted'),
+          button(t('sp.check'), async () => {
+            try { const r = await api.post('/sponsor/claim'); toast(t('sp.ok', { t: r.tickets, x: r.xp }), 'success'); s.close(); reload(nav, body); refreshSoon(); } catch (e) { fail(e); }
+          })),
+      ]),
+    })])));
+  }
+
   if (d.tasks && d.tasks.length) {
     out.push(...section(t('quest.partner'), list(d.tasks.map(tk => row({
       icon: tk.done ? '✅' : '🤝', title: tk.label,

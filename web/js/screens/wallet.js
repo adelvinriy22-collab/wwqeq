@@ -134,6 +134,7 @@ function withdraw(nav, body) {
     const reqs = list(
       row({ icon: w.haveRefs >= w.needRefs ? '✅' : '▫️', title: t('wd.reqRefs', { n: w.needRefs }), value: w.haveRefs + '/' + w.needRefs }),
       row({ icon: w.hasUsername ? '✅' : '▫️', title: t('wd.reqUser'), sub: w.hasUsername ? null : t('wd.reqUserS') }),
+      w.needSub ? row({ icon: w.hasSub ? '✅' : '▫️', title: t('wd.reqSub', { c: w.needSub }) }) : null,
       row({ icon: w.maxPayout >= w.min ? '✅' : '▫️', title: t('wd.reqMin', { n: w.min }) }));
     return [
       el('h3', null, t('wd.title')),

@@ -182,7 +182,7 @@ router.get('/progress', h(async (req) => {
     ok: true, xp: progress.view(u, req.lang), levels: progress.ladder(u, req.lang),
     pass: pass.view(u, req.lang), league: league.view(req.uid, req.lang),
     daily: quests.dailyView(u, req.lang), quiz: quests.quizView(u, req.lang),
-    tasks: quests.tasksView(u), partner: quests.partnerView(u),
+    tasks: quests.tasksView(u), partner: quests.partnerView(u), sponsor: require('../features/sponsor').view(u),
     xpSources: E.XP, xpRates: E.XP_RATES,
   };
 }));
@@ -191,6 +191,7 @@ router.post('/pass/buy', notInMaintenance, h(async (req) => pass.buy(req.uid)));
 router.post('/pass/invoice', h(async (req) => wallet.invoiceLink(req.uid, 'pass')));
 router.post('/quiz/answer', notInMaintenance, h(async (req) => quests.quizAnswer(req.uid, req.body.choice)));
 router.post('/tasks/proof', notInMaintenance, h(async (req) => quests.taskProof(req.uid, String(req.body.taskId || ''), req.body.photo)));
+router.post('/sponsor/claim', notInMaintenance, h(async (req) => require('../features/sponsor').claim(req.uid)));
 router.post('/partner/claim', notInMaintenance, h(async (req) => quests.partnerClaim(req.uid)));
 router.post('/promo', notInMaintenance, h(async (req) => {
   const r = await promo.redeem(req.uid, req.body.code);

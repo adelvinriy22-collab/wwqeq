@@ -26,6 +26,7 @@ function withdrawInfo(u) {
   return {
     min: E.WITHDRAW.min, feePercent: fee, baseFeePercent: E.WITHDRAW.feePercent,
     needRefs: E.WITHDRAW.minReferrals, haveRefs: refs, hasUsername: !!u.username,
+    needSub: require('./sponsor').channel(), hasSub: !!(u.taskDone || {}).sponsor,
     maxPayout: Math.max(0, max), blocked: maintenance.state().mode !== 'off',
   };
 }
@@ -35,6 +36,8 @@ async function withdraw(uid, amount) {
   if (m.mode !== 'off' && !users.isAdmin(uid)) return { ok: false, status: 503, error: 'maintenance', message: m.text };
   const payout = Number(amount);
   if (!Number.isInteger(payout) || payout < E.WITHDRAW.min) return { ok: false, status: 400, error: 'bad_amount', min: E.WITHDRAW.min };
+  // Обов'язкова підписка на канал-спонсора — перевіряємо до блокування.
+  if (!(await require('./sponsor').okForWithdraw(uid))) return { ok: false, status: 400, error: 'need_sub', channel: require('./sponsor').channel() };
   return users.withLock(uid, () => {
     const u = users.get(uid);
     if (!u) return { ok: false, status: 400, error: 'no_user' };

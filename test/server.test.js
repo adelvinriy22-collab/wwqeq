@@ -863,3 +863,15 @@ test('розіграш автовидачі: пост у каналі, учас�
   assert.ok(await waitFor(() => tg.calls.slice(n1).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === String(w) && /ag:text/.test(JSON.stringify(c.payload.reply_markup || {})))), 'автовидачу відкрито');
   assert.ok(await waitFor(() => ((readDb().users[String(w)] || {}).autoGift || {}).status === 'granted'), 'стан автовидачі збережено');
 });
+
+test('місія «підпишись на канал-спонсора»: бот перевіряє підписку, нагорода один раз', async () => {
+  const call = (id) => fetch(base + '/api/sponsor/claim', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Init-Data': init(id) }, body: '{}' }).then(r => r.json());
+  const n0 = tg.calls.length;
+  const r = await call('993');
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.tickets, 10);
+  assert.ok(tg.calls.slice(n0).some(c => c.method === 'getChatMember' && c.payload.chat_id === '@Sanichkap'), 'перевірка в @Sanichkap');
+  assert.strictEqual((await call('993')).error, 'already_done', 'нагорода один раз');
+  const q = await (await fetch(base + '/api/progress', { headers: { 'X-Init-Data': init('993') } })).json();
+  assert.strictEqual(q.sponsor.done, true);
+});
