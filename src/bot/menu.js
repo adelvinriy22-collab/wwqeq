@@ -49,7 +49,7 @@ const T = {
     tpBonus: '{:giftBox} Бонус <b>+{p}%</b> ще на {n} поповнення.', tpLvl: '{:crown} Бонус твого рівня: <b>+{p}%</b> до кожного поповнення.', tpPick: 'Обери суму 👇', tpOwn: 'СВОЯ СУМА',
     tpAsk: '{:starIcon} Напиши суму числом, наприклад <code>75</code>.', tpPay: 'ОПЛАТИТИ {a}⭐', tpReady: '{:check} Рахунок на <b>{a}⭐</b> готовий:', tpErr: 'Не вдалось створити рахунок, спробуй ще раз.',
     evTitle: 'ПОДІЯ: ЗАПРОСИ ДРУЗІВ', evWhen: '{:clockIcon} До {when}', evMine: '👥 Твоїх нових друзів: <b>{mine}</b>', evFoot: 'Топ-3 отримають 🚀 Ракету, 🎁 Подарунок і 🧸 Мішку.',
-    wdLead: '{:withdrawBox} Вивід зірок — у застосунку: там видно комісію й умови.',
+    wdLead: '{:withdrawBox} Вивід зірок — у застосунку: там видно комісію й умови.\n\n{:lightning} <b>Автовидача — доступна для обраних!</b> {:crown}\n<i>Обраним бот сам, без черги, надсилає подарунок одразу.</i>',
     backHint: '👇 Кнопка «Назад» унизу завжди поверне в меню', backKey: 'Назад',
   },
   en: {
@@ -79,7 +79,7 @@ const T = {
     tpBonus: '{:giftBox} <b>+{p}%</b> bonus for {n} more top-ups.', tpLvl: '{:crown} Your level bonus: <b>+{p}%</b> on every top-up.', tpPick: 'Pick an amount 👇', tpOwn: 'CUSTOM AMOUNT',
     tpAsk: '{:starIcon} Send the amount as a number, e.g. <code>75</code>.', tpPay: 'PAY {a}⭐', tpReady: '{:check} Invoice for <b>{a}⭐</b> is ready:', tpErr: 'Couldn’t create the invoice, please try again.',
     evTitle: 'EVENT: INVITE FRIENDS', evWhen: '{:clockIcon} Until {when}', evMine: '👥 Your new friends: <b>{mine}</b>', evFoot: 'Top 3 get a 🚀 Rocket, 🎁 Gift and 🧸 Teddy.',
-    wdLead: '{:withdrawBox} Withdrawals are in the app — fees and rules are shown there.',
+    wdLead: '{:withdrawBox} Withdrawals are in the app — fees and rules are shown there.\n\n{:lightning} <b>Auto-delivery — available for the chosen!</b> {:crown}\n<i>For the chosen the bot sends the gift instantly, no queue.</i>',
     backHint: '👇 The “Back” button below always returns to the menu', backKey: 'Back',
   },
   ru: {
@@ -109,7 +109,7 @@ const T = {
     tpBonus: '{:giftBox} Бонус <b>+{p}%</b> ещё на {n} пополнения.', tpLvl: '{:crown} Бонус твоего уровня: <b>+{p}%</b> к каждому пополнению.', tpPick: 'Выбери сумму 👇', tpOwn: 'СВОЯ СУММА',
     tpAsk: '{:starIcon} Напиши сумму числом, например <code>75</code>.', tpPay: 'ОПЛАТИТЬ {a}⭐', tpReady: '{:check} Счёт на <b>{a}⭐</b> готов:', tpErr: 'Не удалось создать счёт, попробуй ещё раз.',
     evTitle: 'СОБЫТИЕ: ПРИГЛАСИ ДРУЗЕЙ', evWhen: '{:clockIcon} До {when}', evMine: '👥 Твоих новых друзей: <b>{mine}</b>', evFoot: 'Топ-3 получат 🚀 Ракету, 🎁 Подарок и 🧸 Мишку.',
-    wdLead: '{:withdrawBox} Вывод звёзд — в приложении: там видно комиссию и условия.',
+    wdLead: '{:withdrawBox} Вывод звёзд — в приложении: там видно комиссию и условия.\n\n{:lightning} <b>Автовыдача — доступна для избранных!</b> {:crown}\n<i>Избранным бот сам, без очереди, отправляет подарок сразу.</i>',
     backHint: '👇 Кнопка «Назад» внизу всегда вернёт в меню', backKey: 'Назад',
   },
 };

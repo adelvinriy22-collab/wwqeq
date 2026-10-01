@@ -141,6 +141,7 @@ function withdraw(nav, body) {
       el('h3', null, t('wd.title')),
       w.blocked ? el('div', { class: 'banner red' }, el('div', { class: 'bi' }, '🛠'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wd.blocked')))) : null,
       el('p', null, t('wd.lead', { f: w.feePercent })),
+      el('div', { class: 'banner green' }, el('div', { class: 'bi' }, '⚡'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wd.auto')), el('div', { class: 'bs' }, t('wd.autoS')))),
       w.baseFeePercent != null && w.feePercent < w.baseFeePercent ? el('div', { class: 'banner green' }, el('div', { class: 'bi' }, '🏅'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wd.levelFee', { f: w.feePercent, b: w.baseFeePercent })))) : null,
       reqs,
       el('div', { class: 'label' }, t('wd.amount')),
