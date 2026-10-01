@@ -29,6 +29,8 @@ function saveSession(s) {
 }
 
 const dryRun = () => config.USERGIFT_DRY_RUN;
+// Справжній акаунт підключено (без сухого прогону).
+const accountReady = () => !!(config.TG_API_ID && config.TG_API_HASH && session());
 const enabled = () => dryRun() || !!(config.TG_API_ID && config.TG_API_HASH && session());
 
 let clientP = null;
@@ -97,4 +99,4 @@ async function send(target, tierId, text, entities) {
   }
 }
 
-module.exports = { send, enabled, dryRun, saveSession, TEXT_MAX };
+module.exports = { send, enabled, accountReady, dryRun, saveSession, TEXT_MAX };

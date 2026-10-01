@@ -16,12 +16,27 @@ const users = require('../core/users');
 const notify = require('../core/notify');
 const applications = require('../features/applications');
 const tggifts = require('../features/tggifts');
+const usergifts = require('../features/usergifts');
 const { withEmoji } = require('../emoji');
 const { esc } = require('../lib/util');
 
 const CHOICES = { bear: '🧸 Мішка', heart: '💝 Сердечко' };
 const POST_TEXT = '{:giftBox} <b>Першому коментарю — будь-який гіфт за 15⭐️</b>';
 const GIFT_TEXT = '🎁 Подарунок за перший коментар у каналі StarForge!';
+
+// Подарунок: від акаунта власника (якщо підключено через /tg_login), інакше — від бота.
+// Акаунт шукає людину за @ніком; не вийшло — пробуємо ботом.
+async function sendGift(winner, choice) {
+  if (usergifts.accountReady()) {
+    const r = await usergifts.send(winner.username ? '@' + winner.username : winner.uid, choice, GIFT_TEXT);
+    if (r.ok) return { ...r, via: 'account' };
+    console.error('first comment: account gift failed:', r.error);
+    const b = await tggifts.send(winner.uid, choice, GIFT_TEXT);
+    return b.ok ? { ...b, via: 'bot' } : { ...b, error: 'акаунт: ' + r.error + ' · бот: ' + b.error };
+  }
+  const b = await tggifts.send(winner.uid, choice, GIFT_TEXT);
+  return { ...b, via: 'bot' };
+}
 
 const st = () => (store.getFeatureFlags() || {}).firstComment || null;
 const setSt = (patch) => store.setFeatureFlags({ firstComment: patch === null ? null : { ...(st() || {}), ...patch } });
@@ -63,7 +78,7 @@ function middleware() {
       if (s.status === 'sending') return ctx.answerCbQuery('⏳ Уже надсилаю…').catch(() => {});
       setSt({ status: 'sending', choice });                         // до await — подвійне натискання не надішле двічі
       await ctx.answerCbQuery('⏳ Надсилаю ' + CHOICES[choice] + '…').catch(() => {});
-      const r = await tggifts.send(s.winner.uid, choice, GIFT_TEXT);
+      const r = await sendGift(s.winner, choice);
       const who = s.winner.name;
       if (r.ok) {
         setSt({ status: 'sent', sentAt: Date.now() });
@@ -73,9 +88,9 @@ function middleware() {
         // Дописуємо в пост каналу, хто забрав, — видно, що все чесно й реально.
         if (s.channelMsgId && s.channelId) {
           notify.tg.telegram.editMessageText(s.channelId, s.channelMsgId, undefined,
-            withEmoji(s.text + `\n\n{:check} Забрав <b>${who}</b> — бот уже надіслав ${CHOICES[choice]}!`), { parse_mode: 'HTML' }).catch(() => {});
+            withEmoji(s.text + `\n\n{:check} Забрав <b>${who}</b> — ${CHOICES[choice]} уже надіслано!`), { parse_mode: 'HTML' }).catch(() => {});
         }
-        notify.admin(`🎁 Перший коментар: ${who} · <code>${s.winner.uid}</code> — надіслано ${CHOICES[choice]}`);
+        notify.admin(`🎁 Перший коментар: ${who} · <code>${s.winner.uid}</code> — надіслано ${CHOICES[choice]} (${r.via === 'account' ? 'від вашого акаунта' : 'від бота'})`);
       } else {
         setSt({ status: 'won', lastError: r.error });
         const bot = notify.tg.botUsername;
@@ -101,10 +116,10 @@ function middleware() {
     if (s.status === 'waiting' && isCommentToPost(m, s) && m.from && !m.from.is_bot && !m.sender_chat && !users.isAdmin(m.from.id)) {
       const cur = st();
       if (cur.status !== 'waiting') return next();
-      const winner = { uid: String(m.from.id), name: nameOf(m.from), commentId: m.message_id, at: Date.now() };
+      const winner = { uid: String(m.from.id), username: m.from.username || null, name: nameOf(m.from), commentId: m.message_id, at: Date.now() };
       setSt({ status: 'won', winner });                               // синхронно: другий коментар уже не переможе
       users.ensure(m.from);
-      await ctx.reply(withEmoji(`{:crown} <b>${winner.name}</b>, ти перший! {:lightning}\nОбирай подарунок — бот надішле його одразу:`), {
+      await ctx.reply(withEmoji(`{:crown} <b>${winner.name}</b>, ти перший! {:lightning}\nОбирай подарунок — надішлю його одразу:`), {
         parse_mode: 'HTML', reply_to_message_id: m.message_id, allow_sending_without_reply: true,
         reply_markup: { inline_keyboard: [[btn(CHOICES.bear, `fc:${cur.id}:bear`, 'success', 'teddyBear'), btn(CHOICES.heart, `fc:${cur.id}:heart`, 'danger')]] },
       }).catch((e) => console.error('first comment reply:', e.message));
