@@ -8,8 +8,28 @@ const config = require('../config');
 const tggifts = require('./tggifts');
 
 const TEXT_MAX = 255;   // ліміт підпису подарунка для акаунтів
+const fs = require('fs');
+const path = require('path');
+
+// Сесія: TG_SESSION з оточення або збережена через /tg_login (QR) у DATA_DIR.
+const SESSION_FILE = path.join(config.DATA_DIR, 'tg-session.txt');
+function session() {
+  if (config.TG_SESSION) return config.TG_SESSION;
+  try { return fs.readFileSync(SESSION_FILE, 'utf8').trim(); } catch (e) { return ''; }
+}
+// Зберегти (або '' — видалити) сесію. → чи була збережена раніше.
+function saveSession(s) {
+  let had = false;
+  try { had = fs.existsSync(SESSION_FILE); } catch (e) {}
+  if (s) { fs.mkdirSync(config.DATA_DIR, { recursive: true }); fs.writeFileSync(SESSION_FILE, s, { mode: 0o600 }); }
+  else { try { fs.unlinkSync(SESSION_FILE); } catch (e) {} }
+  if (clientP) clientP.then(c => c.disconnect()).catch(() => {});
+  clientP = null;
+  return had;
+}
+
 const dryRun = () => config.USERGIFT_DRY_RUN;
-const enabled = () => dryRun() || !!(config.TG_API_ID && config.TG_API_HASH && config.TG_SESSION);
+const enabled = () => dryRun() || !!(config.TG_API_ID && config.TG_API_HASH && session());
 
 let clientP = null;
 function client() {
@@ -17,10 +37,10 @@ function client() {
     clientP = (async () => {
       const { TelegramClient } = require('telegram');
       const { StringSession } = require('telegram/sessions');
-      const c = new TelegramClient(new StringSession(config.TG_SESSION), Number(config.TG_API_ID), config.TG_API_HASH, { connectionRetries: 3 });
+      const c = new TelegramClient(new StringSession(session()), Number(config.TG_API_ID), config.TG_API_HASH, { connectionRetries: 3 });
       c.setLogLevel('error');
       await c.connect();
-      if (!(await c.checkAuthorization())) throw new Error('TG_SESSION недійсна — створіть нову: node scripts/tg-login.js');
+      if (!(await c.checkAuthorization())) throw new Error('сесія недійсна — увійдіть знову: /tg_login');
       return c;
     })().catch(e => { clientP = null; throw e; });
   }
@@ -77,4 +97,4 @@ async function send(target, tierId, text, entities) {
   }
 }
 
-module.exports = { send, enabled, dryRun, TEXT_MAX };
+module.exports = { send, enabled, dryRun, saveSession, TEXT_MAX };

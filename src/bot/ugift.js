@@ -84,7 +84,7 @@ async function doSend(ctx, aid) {
     d.status = 'draft';
     const hint = /BALANCE_TOO_LOW/i.test(r.error) ? 'На балансі акаунта замало зірок.'
       : /USERNAME|PEER|INPUT_USER|entity/i.test(r.error) ? 'Не знайшов отримувача — перевірте @нік (за id — лише якщо акаунт уже бачив цю людину).'
-      : /AUTH|SESSION/i.test(r.error) ? 'Сесія недійсна — створіть нову: node scripts/tg-login.js' : 'Спробуйте ще раз за хвилину.';
+      : /AUTH|SESSION/i.test(r.error) ? 'Сесія недійсна — увійдіть знову: /tg_login' : 'Спробуйте ще раз за хвилину.';
     return ctx.reply(withEmoji(ui.card('warn', 'НЕ ВДАЛОСЯ', ['<code>' + esc(r.error) + '</code>', '', hint], 'Чернетка збережена — можна натиснути ще раз')),
       { parse_mode: 'HTML', ...ui.kb([[ui.cb('СПРОБУВАТИ ЩЕ', 'ug:send', 'primary', 'lightning'), ui.cb('СКАСУВАТИ', 'ug:cancel', 'danger')]]) }).catch(() => {});
   }
@@ -117,7 +117,7 @@ function register(bot, hooks) {
     if (!usergifts.enabled()) {
       return ctx.reply(withEmoji(ui.card('warn', 'ПОДАРУНКИ ВІД АКАУНТА ВИМКНЕНІ', [
         'Задайте змінні оточення:', '• <code>TG_API_ID</code>, <code>TG_API_HASH</code> — з my.telegram.org',
-        '• <code>TG_SESSION</code> — дає <code>node scripts/tg-login.js</code>',
+        '• потім <code>/tg_login</code> — QR-код, скануєте телефоном',
       ], 'Сесія = повний доступ до акаунта, нікому не передавайте')), { parse_mode: 'HTML' }).catch(() => {});
     }
     const text = String(ctx.message.text || '');

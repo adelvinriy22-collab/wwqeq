@@ -823,3 +823,11 @@ test('/ugift: прев\'ю → зміна підпису → надсиланн�
   await sleep(500);
   assert.strictEqual(toAdmin(n0, /ПОДАРУНОК НАДІСЛАНО/).length, 1, 'подвійне натискання — один подарунок');
 });
+
+test('/tg_login без TG_API_ID — підказка, які ключі додати', async () => {
+  const n0 = tg.calls.length;
+  adminCmd('/tg_login');
+  let r;
+  for (let i = 0; i < 20 && !r; i++) { await sleep(150); r = tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /TG_API_HASH/.test(c.payload.text || '')); }
+  assert.ok(r);
+});
