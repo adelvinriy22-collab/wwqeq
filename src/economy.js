@@ -176,7 +176,7 @@ const SPONSOR = { tickets: 10, xp: 50 };
 const AWD_GIVEAWAY = {
   need: 100,
   places: [
-    { from: 1,  to: 1,  autowd: true, gift: 'rocket', gift2: 'gift' },
+    { from: 1,  to: 1,  gift: 'rocket', gift2: 'gift' },
     { from: 2,  to: 2,  gift: 'rocket' },
     { from: 3,  to: 3,  gift: 'gift' },
     { from: 4,  to: 5,  gift: 'bear' },
@@ -184,7 +184,7 @@ const AWD_GIVEAWAY = {
     { from: 7,  to: 7,  stars: 8 },
     { from: 8,  to: 8,  stars: 5 },
     { from: 9,  to: 9,  stars: 3 },
-    { from: 10, to: 10, stars: 2, xp: 35 },
+    { from: 10, to: 10, stars: 2 },
     { from: 11, to: 25, tickets: 2, xp: 50 },
   ],
 };

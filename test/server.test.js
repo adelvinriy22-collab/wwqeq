@@ -834,7 +834,7 @@ test('/tg_login без TG_API_ID — підказка, які ключі дод�
   assert.ok(r);
 });
 
-test('розіграш автовидачі: пост у каналі, участь, на N учасниках — промокод переможцю відкриває автовидачу', async () => {
+test('мега-розіграш: пост у каналі, участь, на N учасниках — призи за місцями', async () => {
   const waitFor = async (pred) => { for (let i = 0; i < 40; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
   const cb = (id, data) => tg.push({ callback_query: { id: 'w' + Math.random(), from: { id, is_bot: false, first_name: 'P' + id, username: 'user' + id }, chat_instance: 'x', data, message: { message_id: 9, date: 0, chat: { id, type: 'private' } } } });
   const n0 = tg.calls.length;
@@ -852,17 +852,8 @@ test('розіграш автовидачі: пост у каналі, учас�
   assert.strictEqual(g.winnerIds.length, 3, 'учасників менше, ніж місць — призи всім');
   const w = Number(g.winnerIds[0]);
   const dm = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === String(w) && /ТИ ПОСІВ 1 МІСЦЕ/.test(c.payload.text || '')));
-  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendGift' && c.payload.user_id === w)), '1-ше місце — ще й 🚀 і 🎁');
-  assert.ok(dm, 'переможцю — промокод');
-  assert.match(dm.payload.text, new RegExp(g.codes[w]));
-  // Чужий не активує, переможець — відкриває автовидачу.
-  const loser = [995, 996, 997].find(x => x !== w);  // інше місце — без коду
-  const pr = await (await fetch(base + '/api/promo', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Init-Data': signInitData(TOKEN, { id: loser, first_name: 'L' }) }, body: JSON.stringify({ code: g.codes[w] }) })).json();
-  assert.strictEqual(pr.ok, false, 'код лише для переможця');
-  const n1 = tg.calls.length;
-  cb(w, 'awdga:code');
-  assert.ok(await waitFor(() => tg.calls.slice(n1).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === String(w) && /ag:text/.test(JSON.stringify(c.payload.reply_markup || {})))), 'автовидачу відкрито');
-  assert.ok(await waitFor(() => ((readDb().users[String(w)] || {}).autoGift || {}).status === 'granted'), 'стан автовидачі збережено');
+  assert.ok(dm, 'переможцю — картка з місцем');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).filter(c => c.method === 'sendGift' && c.payload.user_id === w).length === 2), '1-ше місце — 🚀 і 🎁');
 });
 
 test('місія «підпишись на канал-спонсора»: бот перевіряє підписку, нагорода один раз', async () => {
