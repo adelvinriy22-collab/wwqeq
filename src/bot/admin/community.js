@@ -337,7 +337,9 @@ function register(bot, hooks) {
     await ctx.reply(withEmoji(ui.card('check', c.label.toUpperCase() + ' НАДІСЛАНО!', [
       '{:giftBox} Глянь у свій профіль Telegram → «Подарунки»',
     ], 'Дякуємо, що ти з нами — спілкуйся далі!')), { parse_mode: 'HTML' }).catch(() => {});
-    notify.admin(`🎁 Джекпот забрано: ${u.username ? '@' + u.username : uid} — ${c.label} від ${c.via === 'bot' ? 'бота' : 'акаунта'}` + (c.text ? `\nПідпис: ${esc(c.text)}` : '\nБез підпису'));
+    const shown = chat() ? await chat().jackpot(Number(id), { name: c.name || (u.username ? '@' + esc(u.username) : 'гравець') }, c.label,
+      { kind: c.id, claimed: true, via: c.via, text: c.text ? esc(c.text) : '' }) : false;
+    notify.admin((shown ? '' : '⚠️ У чат оголосити не вдалось — /chat_status\n') + `🎁 Джекпот забрано: ${u.username ? '@' + u.username : uid} — ${c.label} від ${c.via === 'bot' ? 'бота' : 'акаунта'}` + (c.text ? `\nПідпис: ${esc(c.text)}` : '\nБез підпису'));
   });
 
   hooks.onText.push(async (ctx, uid, text) => {
@@ -371,13 +373,17 @@ function register(bot, hooks) {
     if (prize.kind === 'tier') {
       claim = { id: prize.id, label: prize.label, text: JP_GIFT_TEXT, entities: [], via: 'account', status: 'pending', at: Date.now() };
       setClaim(uid, String(msgId), claim);
-      note = 'переможець обирає підпис і від кого — у боті';
+      claim.name = name;
+      note = 'переможець обирає підпис і від кого — у боті; у чаті оголошу, щойно забере';
     } else if (prize.kind === 'stars') { users.move(uid, { stars: prize.n }, 'jackpot', {}); note = 'на балансі'; }
     else if (prize.kind === 'tickets') { users.move(uid, { tickets: prize.n }, 'jackpot', {}); note = 'на балансі'; }
     else { progress.addXp(uid, 'admin', prize.n, { why: 'jackpot' }); note = 'XP зараховано'; }
-    await ctx.editMessageText(`⏳ Джекпот ${name}: ${prize.label} — оголошую в чаті…`).catch(() => {});
-    const kind = prize.kind === 'tier' ? prize.id : prize.kind;
-    const ok = chat() ? await chat().jackpot(msgId, { name }, prize.label, { kind, claim: !!claim }) : false;
+    // Подарунок — в чаті оголошуємо, коли переможець забере (з його підписом); решту — одразу.
+    let ok = null;
+    if (!claim) {
+      await ctx.editMessageText(`⏳ Джекпот ${name}: ${prize.label} — оголошую в чаті…`).catch(() => {});
+      ok = chat() ? await chat().jackpot(msgId, { name }, prize.label, { kind: prize.kind }) : false;
+    }
     if (claim) {
       // Переможцю — лише картка: підпис і від кого.
       if (!(await notify.dm(uid, claimCard(claim), { parse_mode: 'HTML', ...claimKb(String(msgId), claim) }))) note += ' ⚠️ повідомлення не дійшло — людина ще не запускала бота';
@@ -385,7 +391,7 @@ function register(bot, hooks) {
       notify.dm(uid, withEmoji(`{:crown} <b>ДЖЕКПОТ ЗА АКТИВНІСТЬ!</b>\n━━━━━━━━━━━━━━\nStarForge помітив твою активність у чаті — <b>${prize.label}</b> твоя!\n\n{:check} Уже зараховано на баланс.\n\n{:almost} Дякуємо, що ти з нами — спілкуйся далі!`));
     }
     jpPending.delete(msgId);
-    await ctx.editMessageText(`✅ Джекпот ${name}: ${prize.label} (${note})` + (ok ? '\nОголошено в чаті 🎉' : '\n⚠️ У чат написати не вдалось — /chat_status')).catch(() => {});
+    await ctx.editMessageText(`✅ Джекпот ${name}: ${prize.label} (${note})` + (ok === null ? '' : ok ? '\nОголошено в чаті 🎉' : '\n⚠️ У чат написати не вдалось — /chat_status')).catch(() => {});
   }
 }
 

@@ -486,10 +486,12 @@ function createChat(bot, opts) {
     const gift = !['stars', 'tickets', 'xp'].includes(o.kind);
     const caption = card('crown', 'ДЖЕКПОТ ЗА АКТИВНІСТЬ', [
       E('crown', '👑') + ' <b>' + winner.name + '</b>, StarForge помітив твою активність у чаті — тримай <b>' + prizeLabel + '</b>!',
-      o.auto && gift
-        ? E('lightning', '⚡') + ' <b>Бот уже видав подарунок сам — без черги!</b>\n' + E('giftBox', '🎁') + ' Він уже в профілі переможця → «Подарунки»'
-        : o.claim && gift
-          ? E('giftBox', '🎁') + ' <b>Справжній подарунок Telegram</b> — переможець сам обирає підпис і забирає його в боті'
+      o.claimed && gift
+        ? E('giftBox', '🎁') + ' <b>Подарунок уже в профілі переможця</b> → «Подарунки»\n' +
+          E('lightning', '⚡') + ' Від: <b>' + (o.via === 'bot' ? 'бот StarForge' : 'акаунт StarForge') + '</b>' +
+          (o.text ? '\n' + E('eye', '👁') + ' Підпис: <i>«' + o.text + '»</i>' : '')
+        : o.auto && gift
+          ? E('lightning', '⚡') + ' <b>Бот уже видав подарунок сам — без черги!</b>\n' + E('giftBox', '🎁') + ' Він уже в профілі переможця → «Подарунки»'
           : E('check', '✅') + ' <b>Приз уже зараховано</b> — він у боті',
       '',
       E('almost', '🔥') + ' <b>Хочеш так само? Будь живим у чаті!</b>',

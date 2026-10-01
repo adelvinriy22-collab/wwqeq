@@ -486,9 +486,8 @@ test('джекпот за активність: переможець сам об
   assert.match(card.payload.text, /Підпис:/);
   assert.match(card.payload.text, /Від кого:/);
   assert.match(JSON.stringify(card.payload.reply_markup), /🔒 ВІД БОТА/);
-  assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'pinChatMessage')), 'джекпот оголошено й закріплено');
-  assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '-1001' && /Хтось у чаті дуже активний/.test(c.payload.text || '')), 'інтрига в чаті');
-  assert.ok(!tg.calls.slice(n0).some(c => /адмін/i.test(String(c.payload.text || c.payload.caption || '')) && String(c.payload.chat_id) !== ADMIN), 'ніде не видно, що обирає адмін');
+  await sleep(500);
+  assert.ok(!tg.calls.slice(n0).some(c => c.method === 'pinChatMessage'), 'у чаті — лише після того, як переможець забере');
   win('jpc_555_bot');
   assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'answerCallbackQuery' && /закрито/.test(c.payload.text || ''))), 'бот під замком');
   win('jpc_555_text');
@@ -497,6 +496,10 @@ test('джекпот за активність: переможець сам об
   assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '960' && /Я король чату!/.test(c.payload.text || ''))), 'підпис у картці');
   win('jpc_555_send'); win('jpc_555_send');
   assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '960' && /НАДІСЛАНО/.test(c.payload.text || ''))), 'надіслано');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'pinChatMessage')), 'джекпот оголошено й закріплено');
+  assert.ok(tg.calls.slice(n0).some(c => c.method === 'sendPhoto'), 'картка JACKPOT у чаті (multipart — підпис фейк не бачить)');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === ADMIN && /Джекпот забрано/.test(c.payload.text || '') && /Я король чату!/.test(c.payload.text || ''))), 'адміну — звіт із підписом');
+  assert.ok(!tg.calls.slice(n0).some(c => /адмін/i.test(String(c.payload.text || c.payload.caption || '')) && String(c.payload.chat_id) !== ADMIN), 'ніде не видно, що обирає адмін');
   await sleep(600);
   const apps = readDb().applications.filter(a => a.uid === '960' && a.source === 'chat_jackpot');
   assert.strictEqual(apps.length, 1, 'подвійне натискання — один подарунок');
