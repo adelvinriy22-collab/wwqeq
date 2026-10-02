@@ -490,10 +490,12 @@ test('джекпот за активність: переможець сам об
   assert.ok(!tg.calls.slice(n0).some(c => c.method === 'pinChatMessage'), 'у чаті — лише після того, як переможець забере');
   win('jpc_555_bot');
   assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'answerCallbackQuery' && /закрито/.test(c.payload.text || ''))), 'бот під замком');
+  await sleep(2100);
   win('jpc_555_text');
   await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '960' && /Напиши підпис/.test(c.payload.text || '')));
   tg.push({ message: { message_id: 4001, date: Math.floor(Date.now() / 1000), chat: { id: 960, type: 'private' }, from, text: 'Я король чату!' } });
   assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '960' && /Я король чату!/.test(c.payload.text || ''))), 'підпис у картці');
+  await sleep(2100);
   win('jpc_555_send'); win('jpc_555_send');
   assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '960' && /НАДІСЛАНО/.test(c.payload.text || ''))), 'надіслано');
   assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'pinChatMessage')), 'джекпот оголошено й закріплено');
@@ -505,6 +507,27 @@ test('джекпот за активність: переможець сам об
   assert.strictEqual(apps.length, 1, 'подвійне натискання — один подарунок');
   assert.ok(apps[0].status === 'approved' && apps[0].via === 'account', 'видано від акаунта');
   assert.strictEqual(readDb().users['960'].jpClaims['555'].text, 'Я король чату!');
+});
+
+test('джекпот 💝: лише від бота, антиспам кнопок, /jackpots показує, що чекає', async () => {
+  const waitFor = async (pred) => { for (let i = 0; i < 40; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  const n0 = tg.calls.length;
+  adminCmd('/jackpot https://t.me/starforge_chat/556 @user400');
+  await waitFor(() => tg.calls.slice(n0).find(c => /jp_556_heart/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  tg.push({ callback_query: { id: 'h' + Math.random(), from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, chat_instance: 'a', data: 'jp_556_heart', message: { message_id: 3, date: 0, chat: { id: Number(ADMIN), type: 'private' } } } });
+  const card = await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === '400' && /jpc_556_send/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  assert.ok(card);
+  assert.match(card.payload.text, /бот StarForge/, '💝 — від бота');
+  assert.match(JSON.stringify(card.payload.reply_markup), /🔒 ВІД АКАУНТА/);
+  adminCmd('/jackpots');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === ADMIN && /чекають на переможця/.test(c.payload.text || '') && /@user400/.test(c.payload.text || ''))), '/jackpots');
+  const from = { id: 400, is_bot: false, first_name: 'P400', username: 'user400' };
+  const tap = (data) => tg.push({ callback_query: { id: 'x' + Math.random(), from, chat_instance: 'b', data, message: { message_id: 8, date: 0, chat: { id: 400, type: 'private' } } } });
+  tap('jpc_556_send'); tap('jpc_556_send'); tap('jpc_556_send');
+  const g = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendGift' && c.payload.user_id === 400));
+  assert.ok(g, 'Сердечко надіслав бот');
+  assert.strictEqual(g.payload.gift_id && tg.calls.slice(n0).filter(c => c.method === 'sendGift' && c.payload.user_id === 400).length, 1);
+  assert.ok(tg.calls.slice(n0).some(c => c.method === 'answerCallbackQuery' && /Не так швидко/.test(c.payload.text || '')), 'антиспам');
 });
 
 test('перший коментар у каналі: бот ловить першого, кнопки лише для нього, подарунок одразу', async () => {

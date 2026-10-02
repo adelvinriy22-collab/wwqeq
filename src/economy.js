@@ -170,8 +170,10 @@ const GAME_BET = { min: 1, max: 1000, presets: [1, 5, 10, 25, 50, 100] };
 const TICKETS = { perFriend: 1, exchangeTickets: 10, exchangeStars: 1 };   // 10🎫 = 1⭐
 const WITHDRAW = { min: 15, feePercent: 5, minReferrals: 3 };
 // Місія «підпишись на канал-спонсора» (config.SPONSOR_CHANNEL): нагорода один раз.
-// Джекпот у чаті: подарунок «від бота» поки закрито (лише від акаунта власника).
-const JACKPOT = { botLocked: true };
+// Джекпот у чаті: переможець забирає подарунок у боті.
+// viaOnly — подарунок лише від одного відправника (💝 — поки лише від бота); решта — від акаунта
+// власника, «від бота» під замком (botLocked). claimTtlMs — за скільки приз згорає; tapGapMs — антиспам кнопок.
+const JACKPOT = { botLocked: true, viaOnly: { heart: 'bot' }, claimTtlMs: 3600e3, tapGapMs: 2000 };
 const SPONSOR = { tickets: 10, xp: 50 };
 // Розіграш автовидачі (/awd_giveaway): призи за місцями. autowd — промокод на автовидачу,
 // gift/gift2 — подарунки Telegram (від акаунта власника / бота / заявкою), stars/tickets/xp — у боті.
