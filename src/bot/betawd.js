@@ -43,6 +43,12 @@ function startCard() {
 }
 
 function register(bot, hooks) {
+  // Вимкнено (E.BETA_WD.enabled) — команда й кнопки нічого не роблять.
+  if (!E.BETA_WD.enabled) {
+    bot.command('beta_wd', (ctx) => ctx.reply('🧪 Бета-вивід зараз вимкнено.').catch(() => {}));
+    bot.action(/^bw:/, (ctx) => ctx.answerCbQuery('🧪 Бета-вивід зараз вимкнено').catch(() => {}));
+    return;
+  }
   const open = async (ctx) => {
     const uid = String(ctx.from.id);
     if (!usergifts.accountReady() && !usergifts.dryRun()) return ctx.reply('🧪 Бета-вивід тимчасово недоступний.').catch(() => {});

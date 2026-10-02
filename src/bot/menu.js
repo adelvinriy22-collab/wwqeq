@@ -155,7 +155,7 @@ function mainMenu(uid) {
     [ui.cb(bt(lang, 'clans'), 'cl:h', 'danger', 'trophy')],
     [ui.cb(bt(lang, 'profile'), 'my_profile', 'primary', 'statsIcon'), ui.cb(bt(lang, 'promo'), 'promo_code_start', 'success', 'promoCode')],
     [ui.app(bt(lang, 'withdraw'), 'withdraw', users.stars(u) >= E.WITHDRAW.min ? 'success' : undefined, 'withdrawBox')],
-    [ui.cb('🧪 БЕТА-ВИВІД 1–4⭐ НА КАНАЛ', 'bw:start', 'primary')],
+    E.BETA_WD.enabled ? [ui.cb('🧪 БЕТА-ВИВІД 1–4⭐ НА КАНАЛ', 'bw:start', 'primary')] : null,
   ];
   for (const [gid, g] of Object.entries(store.listGiveaways() || {})) {
     if (g && g.active && Date.now() < g.endsAt) {

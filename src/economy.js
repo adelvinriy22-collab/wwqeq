@@ -175,7 +175,8 @@ const WITHDRAW = { min: 15, feePercent: 5, minReferrals: 3 };
 // власника, «від бота» під замком (botLocked). claimTtlMs — за скільки приз згорає; tapGapMs — антиспам кнопок.
 const JACKPOT = { botLocked: true, viaOnly: { heart: 'bot' }, claimTtlMs: 3600e3, tapGapMs: 2000, realStars: [1, 2, 3, 4] };
 // Бета-вивід зірок на канал гравця (платна реакція ⭐ від акаунта власника, анонімно).
-const BETA_WD = { amounts: [1, 2, 3, 4], cooldownMs: 24 * 3600e3 };
+// enabled: false — вимкнено: реальні зірки на канал поки лише в джекпотах.
+const BETA_WD = { enabled: false, amounts: [1, 2, 3, 4], cooldownMs: 24 * 3600e3 };
 const SPONSOR = { tickets: 10, xp: 50 };
 // Розіграш автовидачі (/awd_giveaway): призи за місцями. autowd — промокод на автовидачу,
 // gift/gift2 — подарунки Telegram (від акаунта власника / бота / заявкою), stars/tickets/xp — у боті.
