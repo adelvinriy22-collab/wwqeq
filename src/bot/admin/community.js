@@ -291,6 +291,8 @@ function register(bot, hooks) {
   bot.command('jackpot', async (ctx) => { if (!isAdminCtx(ctx)) return; await jackpotAsk(ctx, ctx.message.text); });
   hooks.onAdminText.push(async (ctx, text) => {
     if (!jpParseLink(text) || /^\//.test(text)) return false;
+    // Адмін сам виграв і надсилає посилання на пост свого каналу — це не новий джекпот.
+    if (rsWaiting(String(ctx.from.id))) return false;
     await jackpotAsk(ctx, text);
     return true;
   });
@@ -410,6 +412,7 @@ function register(bot, hooks) {
   function rsCard(c) {
     return withEmoji(ui.card('crown', 'ТВІЙ ДЖЕКПОТ: ' + c.n + '⭐ НА КАНАЛ', [
       '{:megaphone} <b>Пост:</b> ' + (c.link ? esc(c.link) : 'ще не вказано'),
+      c.status === 'review' ? '{:pendingIcon} <b>На перевірці</b> — зірки прийдуть, щойно модератор підтвердить посилання.' : null,
       '{:lightning} Як: платна реакція ⭐, анонімно',
       '',
       DISCLAIMER,
@@ -417,8 +420,8 @@ function register(bot, hooks) {
   }
   function rsKb(id, c) {
     return ui.kb([
-      [ui.cb(c.link ? 'ЗМІНИТИ ПОСИЛАННЯ' : 'НАДІСЛАТИ ПОСИЛАННЯ НА ПОСТ', `jpr_${id}_link`, 'primary', 'megaphone')],
-      c.link ? [ui.cb('ЗАБРАТИ ' + c.n + '⭐', `jpr_${id}_send`, 'success', 'starIcon')] : null,
+      c.status === 'review' ? null : [ui.cb(c.link ? 'ЗМІНИТИ ПОСИЛАННЯ' : 'НАДІСЛАТИ ПОСИЛАННЯ НА ПОСТ', `jpr_${id}_link`, 'primary', 'megaphone')],
+      c.link && c.status !== 'review' ? [ui.cb('ЗАБРАТИ ' + c.n + '⭐', `jpr_${id}_send`, 'success', 'starIcon')] : null,
     ]);
   }
   const jprAwait = new Map();   // uid -> id, чекаємо посилання
@@ -440,31 +443,64 @@ function register(bot, hooks) {
       return ctx.reply(withEmoji('{:megaphone} Надішли посилання на пост у своєму <b>публічному</b> каналі.\nПриклад: <code>https://t.me/mychannel/15</code>'), { parse_mode: 'HTML' }).catch(() => {});
     }
     if (!c.link) return ctx.answerCbQuery('Спершу надішли посилання на пост', { show_alert: true }).catch(() => {});
-    // Подвійне «Забрати» — стан синхронно, до першого await.
+    // «Забрати» → на перевірку модератору (подвійне натискання — стан синхронно, до await).
+    setClaim(uid, id, { status: 'review', reviewAt: Date.now() });
+    await ctx.answerCbQuery('📨 Надіслано на перевірку').catch(() => {});
+    const n = claimOf(uid, id);
+    await ctx.editMessageText(rsCard(n), { parse_mode: 'HTML', disable_web_page_preview: true, ...rsKb(id, n) }).catch(() => {});
+    const u = users.get(uid) || {};
+    notify.admin(`⭐ <b>Джекпот ${c.n}⭐ на канал — перевірте посилання</b>\n${u.username ? '@' + esc(u.username) : esc(u.name || uid)} · <code>${uid}</code>\nПост: ${esc(c.link)}\n\nВідкрийте пост: це публічний канал, платні реакції ⭐ увімкнені?`,
+      { disable_web_page_preview: false, ...ui.kb([[ui.cb('✅ ПРИЙНЯТИ — НАДІСЛАТИ ' + c.n + '⭐', `jprm_${uid}_${id}_ok`, 'success'), ui.cb('❌ ВІДХИЛИТИ', `jprm_${uid}_${id}_no`, 'danger')]]) });
+  });
+
+  // Модератор: прийняти (надіслати зірки) або відхилити (переможець дає інше посилання).
+  bot.action(/^jprm_(\d+)_(\d+)_(ok|no)$/, async (ctx) => {
+    if (!isAdminCtx(ctx)) return ctx.answerCbQuery().catch(() => {});
+    const uid = ctx.match[1], id = ctx.match[2], ok = ctx.match[3] === 'ok';
+    const c = claimOf(uid, id);
+    if (!c || c.status !== 'review') return ctx.answerCbQuery(c && c.status === 'sent' ? 'Уже надіслано' : 'Уже оброблено').catch(() => {});
+    const u = users.get(uid) || {};
+    const who = u.username ? '@' + esc(u.username) : esc(c.name || uid);
+    if (!ok) {
+      // Відхилено — назад у «чекає», годинник перезапускаємо, щоб встиг дати інше посилання.
+      setClaim(uid, id, { status: 'pending', link: null, at: Date.now() });
+      await ctx.answerCbQuery('Відхилено').catch(() => {});
+      await ctx.editMessageText(`❌ Відхилено: ${who} — ${c.n}⭐, пост ${esc(c.link)}`, { parse_mode: 'HTML', disable_web_page_preview: true }).catch(() => {});
+      const n = claimOf(uid, id);
+      notify.dm(uid, withEmoji('{:warn} <b>Посилання не підійшло.</b> Перевір: пост у <b>публічному</b> каналі й <b>увімкнені платні реакції ⭐</b>. Надішли інше посилання — приз за тобою ще ' + leftMin(n) + ' хв.'), { parse_mode: 'HTML', disable_web_page_preview: true, ...rsKb(id, n) });
+      return;
+    }
+    // Прийнято — стан синхронно, до await (подвійне натискання модератора).
     setClaim(uid, id, { status: 'sending' });
     await ctx.answerCbQuery('⏳ Надсилаю…').catch(() => {});
-    await ctx.editMessageText('⏳ Надсилаю ' + c.n + '⭐ на канал…').catch(() => {});
+    await ctx.editMessageText(`⏳ Надсилаю ${c.n}⭐ → ${esc(c.link)}…`, { parse_mode: 'HTML', disable_web_page_preview: true }).catch(() => {});
     const r = await usergifts.sendPaidReaction(c.link, c.n);
-    const u = users.get(uid) || {};
     if (!r.ok) {
-      setClaim(uid, id, { status: 'pending', lastError: r.error });
-      notify.admin(`⚠️ Джекпот ${c.n}⭐ на канал не вдався: ${u.username ? '@' + u.username : uid} → ${esc(c.link)}\n<code>${esc(r.error)}</code>`);
-      const n = claimOf(uid, id);
-      return ctx.reply(withEmoji('{:warn} <b>Не вдалося надіслати.</b> ' + (HINT[r.hint] || HINT.other) + '\nПриз за тобою, поки не згорів.'), { parse_mode: 'HTML', disable_web_page_preview: true, ...rsKb(id, n) }).catch(() => {});
+      setClaim(uid, id, { status: 'review', lastError: r.error });
+      return ctx.editMessageText(`⚠️ Не вдалося: ${who} — ${c.n}⭐ → ${esc(c.link)}\n<code>${esc(r.error)}</code>\n${HINT[r.hint] || HINT.other}`, { parse_mode: 'HTML', disable_web_page_preview: true,
+        ...ui.kb([[ui.cb('🔁 ЩЕ РАЗ', `jprm_${uid}_${id}_ok`, 'primary'), ui.cb('❌ ВІДХИЛИТИ', `jprm_${uid}_${id}_no`, 'danger')]]) }).catch(() => {});
     }
     setClaim(uid, id, { status: 'sent', sentAt: Date.now() });
     store.appendLedger({ ts: Date.now(), uid, s: 0, t: 0, r: 'jackpot_realstars', m: { n: c.n, link: c.link } });
-    await ctx.reply(withEmoji(ui.card('check', c.n + '⭐ НАДІСЛАНО НА КАНАЛ!', ['{:megaphone} Під постом: ' + esc(c.link), '{:lightning} Платна реакція ⭐, анонімно.'], 'Вивід із каналу в Telegram — від 1000⭐')), { parse_mode: 'HTML', disable_web_page_preview: true }).catch(() => {});
-    const shown = chat() ? await chat().jackpot(Number(id), { name: c.name || (u.username ? '@' + esc(u.username) : 'гравець') }, c.n + ' справжніх ⭐', { kind: 'stars', realStars: true }) : false;
-    notify.admin((shown ? '' : '⚠️ У чат оголосити не вдалось\n') + `⭐ Джекпот забрано: ${u.username ? '@' + u.username : uid} — ${c.n}⭐ на канал ${esc(c.link)}` + (r.dry ? ' (сухий прогін)' : ''));
+    await ctx.editMessageText(`✅ Надіслано: ${who} — ${c.n}⭐ → ${esc(c.link)}` + (r.dry ? ' (сухий прогін)' : ''), { parse_mode: 'HTML', disable_web_page_preview: true }).catch(() => {});
+    notify.dm(uid, withEmoji(ui.card('check', c.n + '⭐ НАДІСЛАНО НА КАНАЛ!', ['{:megaphone} Під постом: ' + esc(c.link), '{:lightning} Платна реакція ⭐, анонімно.'], 'Вивід із каналу в Telegram — від 1000⭐')), { parse_mode: 'HTML', disable_web_page_preview: true });
   });
+  // Джекпот, що чекає посилання (очікування в пам'яті губиться при перезапуску — шукаємо в базі).
+  function rsWaiting(uid) {
+    if (jprAwait.has(uid)) return jprAwait.get(uid);
+    const all = (users.get(uid) || {}).jpClaims || {};
+    const hit = Object.entries(all).find(([, c]) => c && c.kind === 'realstars' && c.status === 'pending' && !c.link && !isExpired(c));
+    return hit ? hit[0] : null;
+  }
   hooks.onText.push(async (ctx, uid, text) => {
-    if (!jprAwait.has(uid)) return false;
-    const id = jprAwait.get(uid); jprAwait.delete(uid);
+    const id = rsWaiting(uid);
+    if (!id) return false;
+    if (!jprAwait.has(uid) && !/t\.me\//i.test(text)) return false;
+    jprAwait.delete(uid);
     const c = claimOf(uid, id);
     if (!c || c.status !== 'pending' || isExpired(c)) return false;
     const p = usergifts.parsePostLink(text);
-    if (!p) { jprAwait.set(uid, id); await ctx.reply('❌ Це не посилання на пост публічного каналу. Формат: https://t.me/канал/123').catch(() => {}); return true; }
+    if (!p) { jprAwait.set(uid, id); await ctx.reply('❌ Не бачу посилання на пост публічного каналу. Формат: https://t.me/канал/123 (посилання виду t.me/c/… — це приватний канал, не підійде)').catch(() => {}); return true; }
     setClaim(uid, id, { link: p.link });
     const n = claimOf(uid, id);
     await ctx.reply(rsCard(n), { parse_mode: 'HTML', disable_web_page_preview: true, ...rsKb(id, n) }).catch(() => {});
@@ -508,12 +544,15 @@ function register(bot, hooks) {
     } else if (prize.kind === 'realstars') {
       claim = { kind: 'realstars', n: prize.n, label: prize.label, link: null, status: 'pending', at: Date.now(), name };
       setClaim(uid, String(msgId), claim);
-      note = 'переможець дає посилання на пост свого каналу — у чаті оголошу, щойно забере';
+      note = 'переможцю в особисті — дати посилання на свій канал; ви підтвердите його перед відправкою';
     } else if (prize.kind === 'stars') { users.move(uid, { stars: prize.n }, 'jackpot', {}); note = 'на балансі'; }
     else if (prize.kind === 'tickets') { users.move(uid, { tickets: prize.n }, 'jackpot', {}); note = 'на балансі'; }
     else { progress.addXp(uid, 'admin', prize.n, { why: 'jackpot' }); note = 'XP зараховано'; }
     // Подарунок — в чаті оголошуємо, коли переможець забере (з його підписом); решту — одразу.
     let ok = null;
+    if (claim && claim.kind === 'realstars') {
+      ok = chat() ? await chat().jackpot(msgId, { name }, prize.n + ' справжні ⭐', { kind: 'stars', realStarsWon: true }) : false;
+    }
     if (!claim) {
       await ctx.editMessageText(`⏳ Джекпот ${name}: ${prize.label} — оголошую в чаті…`).catch(() => {});
       ok = chat() ? await chat().jackpot(msgId, { name }, prize.label, { kind: prize.kind }) : false;

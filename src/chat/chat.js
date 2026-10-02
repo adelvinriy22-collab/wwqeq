@@ -486,7 +486,9 @@ function createChat(bot, opts) {
     const gift = !['stars', 'tickets', 'xp'].includes(o.kind);
     const caption = card('crown', 'ДЖЕКПОТ ЗА АКТИВНІСТЬ', [
       E('crown', '👑') + ' <b>' + winner.name + '</b>, StarForge помітив твою активність у чаті — тримай <b>' + prizeLabel + '</b>!',
-      o.realStars
+      o.realStarsWon
+        ? E('starIcon', '⭐') + ' <b>Справжні зірки Telegram</b> — підуть на канал переможця. Посилання на канал — в особистих із ботом'
+        : o.realStars
         ? E('starIcon', '⭐') + ' <b>Справжні зірки вже на каналі переможця</b> — платною реакцією, анонімно'
         : o.claimed && gift
         ? E('giftBox', '🎁') + ' <b>Подарунок уже в профілі переможця</b> → «Подарунки»\n' +

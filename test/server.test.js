@@ -539,15 +539,16 @@ test('бета-вивід вимкнено: /beta_wd відповідає, що 
   assert.ok(!tg.calls.slice(n0).some(c => /bw:a2/.test(JSON.stringify(c.payload.reply_markup || {}))));
 });
 
-test('джекпот 3⭐ на канал: переможець дає посилання й забирає', async () => {
+test('джекпот 3⭐ на канал: анонс у чаті одразу, посилання в особистих, модератор приймає', async () => {
   const waitFor = async (pred) => { for (let i = 0; i < 40; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
   const n0 = tg.calls.length;
   adminCmd('/jackpot https://t.me/starforge_chat/557 @user600');
   await waitFor(() => tg.calls.slice(n0).find(c => /jp_557_rs3/.test(JSON.stringify(c.payload.reply_markup || {}))));
-  tg.push({ callback_query: { id: 'r' + Math.random(), from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, chat_instance: 'a', data: 'jp_557_rs3', message: { message_id: 3, date: 0, chat: { id: Number(ADMIN), type: 'private' } } } });
+  const adm = (data) => tg.push({ callback_query: { id: 'r' + Math.random(), from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, chat_instance: 'a', data, message: { message_id: 3, date: 0, chat: { id: Number(ADMIN), type: 'private' } } } });
+  adm('jp_557_rs3');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'pinChatMessage')), 'анонс у чаті — одразу');
   const card = await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === '600' && /jpr_557_link/.test(JSON.stringify(c.payload.reply_markup || {}))));
   assert.ok(card, 'картка переможцю');
-  assert.match(card.payload.text, /1000⭐/);
   const from = { id: 600, is_bot: false, first_name: 'P600', username: 'user600' };
   const tap = (data) => tg.push({ callback_query: { id: 'q' + Math.random(), from, chat_instance: 'd', data, message: { message_id: 6, date: 0, chat: { id: 600, type: 'private' } } } });
   tap('jpr_557_link');
@@ -556,9 +557,22 @@ test('джекпот 3⭐ на канал: переможець дає поси�
   await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === '600' && /jpr_557_send/.test(JSON.stringify(c.payload.reply_markup || {}))));
   await sleep(2100);
   tap('jpr_557_send');
+  const rev = await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === ADMIN && /jprm_600_557_ok/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  assert.ok(rev, 'адміну — на перевірку');
+  adm('jprm_600_557_no');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === '600' && /не підійшло/.test(c.payload.text || ''))), 'відхилено — переможцю сказано');
+  await sleep(2100);
+  tap('jpr_557_link');
+  await sleep(300);
+  tg.push({ message: { message_id: 6002, date: Math.floor(Date.now() / 1000), chat: { id: 600, type: 'private' }, from, text: 'ось мій пост https://t.me/mychan/8?single дякую' } });
+  await sleep(2100);
+  const n1 = tg.calls.length;
+  tap('jpr_557_send');
+  await waitFor(() => tg.calls.slice(n1).find(c => String(c.payload.chat_id) === ADMIN && /jprm_600_557_ok/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  adm('jprm_600_557_ok'); adm('jprm_600_557_ok');
   assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === '600' && /3⭐ НАДІСЛАНО НА КАНАЛ/.test(c.payload.text || ''))), 'надіслано');
-  assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'pinChatMessage')), 'оголошено в чаті');
   assert.ok(await waitFor(() => (readDb().users['600'].jpClaims || {})['557'] && readDb().users['600'].jpClaims['557'].status === 'sent'));
+  assert.strictEqual(readDb().users['600'].jpClaims['557'].link, 'https://t.me/mychan/8');
 });
 
 test('перший коментар у каналі: бот ловить першого, кнопки лише для нього, подарунок одразу', async () => {

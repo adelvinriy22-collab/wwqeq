@@ -101,7 +101,8 @@ async function send(target, tierId, text, entities) {
 
 // Посилання на пост публічного каналу: t.me/канал/123 → { channel, msgId }.
 function parsePostLink(text) {
-  const m = String(text || '').trim().match(/^(?:https?:\/\/)?(?:t\.me|telegram\.me)\/([A-Za-z][A-Za-z0-9_]{3,31})\/(\d+)(?:[/?#].*)?$/);
+  // Шукаємо посилання будь-де в тексті (люди дописують слова, ?single тощо).
+  const m = String(text || '').match(/(?:https?:\/\/)?(?:t\.me|telegram\.me)\/(?!c\/)([A-Za-z][A-Za-z0-9_]{3,31})\/(\d+)/);
   return m ? { channel: m[1], msgId: Number(m[2]), link: 'https://t.me/' + m[1] + '/' + m[2] } : null;
 }
 
