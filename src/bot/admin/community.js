@@ -40,6 +40,9 @@ const JP_PRIZES = {
   s5:   { label: '5 ⭐', kind: 'stars', n: 5 },
   t20:  { label: '20 🎫', kind: 'tickets', n: 20 },
   x100: { label: '✨ +100 XP', kind: 'xp', n: 100 },
+  // Реальні зірки на канал переможця (платна реакція від акаунта, анонімно).
+  rs1: { label: '1⭐ на канал', kind: 'realstars', n: 1 }, rs2: { label: '2⭐ на канал', kind: 'realstars', n: 2 },
+  rs3: { label: '3⭐ на канал', kind: 'realstars', n: 3 }, rs4: { label: '4⭐ на канал', kind: 'realstars', n: 4 },
 };
 
 const chat = () => notify.tg.chat;
@@ -263,6 +266,7 @@ function register(bot, hooks) {
       [ui.cb('💍 Кільце · 100⭐', `jp_${msgId}_ring`, 'danger'), ui.cb('💎 Діамант · 100⭐', `jp_${msgId}_diamond`, 'danger')],
       [ui.cb('20 🎫', `jp_${msgId}_t20`, 'primary'), ui.cb('5 ⭐', `jp_${msgId}_s5`, 'primary')],
       [ui.cb('✨ +100 XP (безкоштовно)', `jp_${msgId}_x100`, 'success')],
+      E.JACKPOT.realStars.map(n => ui.cb('⭐' + n + ' на канал', `jp_${msgId}_rs${n}`, 'primary')),
     ]);
   }
   // Джекпоти, які чекають, поки переможець забере.
@@ -281,7 +285,7 @@ function register(bot, hooks) {
       return ctx.reply('🚫 Скасовано: ' + mine.map(r => r.c.label).join(', ')).catch(() => {});
     }
     await ctx.reply('👑 <b>Джекпоти, що чекають на переможця</b> (згорають за ' + Math.round(E.JACKPOT.claimTtlMs / 60000) + ' хв)\n\n' +
-      (rows.length ? rows.map(r => '• ' + (r.u.username ? '@' + esc(r.u.username) : esc(r.u.name || r.u.id)) + ' — ' + r.c.label + ' · ' + whoLabel(r.c.via) + ' · лишилось ' + leftMin(r.c) + ' хв').join('\n') : 'Немає.') +
+      (rows.length ? rows.map(r => '• ' + (r.u.username ? '@' + esc(r.u.username) : esc(r.u.name || r.u.id)) + ' — ' + r.c.label + ' · ' + (r.c.kind === 'realstars' ? 'на канал' : whoLabel(r.c.via)) + ' · лишилось ' + leftMin(r.c) + ' хв').join('\n') : 'Немає.') +
       '\n\nНовий джекпот: надішліть посилання на повідомлення з чату або <code>/jackpot посилання [@нік]</code>\nСкасувати: <code>/jackpots @нік cancel</code>\n💝 Сердечко — лише від бота; інші подарунки — від акаунта.', { parse_mode: 'HTML' }).catch(() => {});
   });
   bot.command('jackpot', async (ctx) => { if (!isAdminCtx(ctx)) return; await jackpotAsk(ctx, ctx.message.text); });
@@ -292,7 +296,7 @@ function register(bot, hooks) {
   });
   // Подарунок: переможець сам обирає підпис і від кого (акаунт власника / бот) — у боті.
   // Решта призів — одразу.
-  bot.action(/^jp_(\d+)_(heart|bear|rose|gift|cake|bouquet|champagne|ring|diamond|s5|t20|x100|p100)$/, async (ctx) => {
+  bot.action(/^jp_(\d+)_(heart|bear|rose|gift|cake|bouquet|champagne|ring|diamond|s5|t20|x100|p100|rs[1-4])$/, async (ctx) => {
     if (!isAdminCtx(ctx)) return ctx.answerCbQuery().catch(() => {});
     await ctx.answerCbQuery().catch(() => {});
     const msgId = Number(ctx.match[1]);
@@ -401,6 +405,73 @@ function register(bot, hooks) {
     notify.admin((shown ? '' : '⚠️ У чат оголосити не вдалось — /chat_status\n') + `🎁 Джекпот забрано: ${u.username ? '@' + u.username : uid} — ${c.label} від ${c.via === 'bot' ? 'бота' : 'акаунта'}` + (c.text ? `\nПідпис: ${esc(c.text)}` : '\nБез підпису'));
   });
 
+  // ─── Джекпот реальними зірками: посилання на пост каналу переможця ────
+  const { DISCLAIMER, HINT } = require('../betawd');
+  function rsCard(c) {
+    return withEmoji(ui.card('crown', 'ТВІЙ ДЖЕКПОТ: ' + c.n + '⭐ НА КАНАЛ', [
+      '{:megaphone} <b>Пост:</b> ' + (c.link ? esc(c.link) : 'ще не вказано'),
+      '{:lightning} Як: платна реакція ⭐, анонімно',
+      '',
+      DISCLAIMER,
+    ], 'Забери протягом ' + leftMin(c) + ' хв — потім приз згорає'));
+  }
+  function rsKb(id, c) {
+    return ui.kb([
+      [ui.cb(c.link ? 'ЗМІНИТИ ПОСИЛАННЯ' : 'НАДІСЛАТИ ПОСИЛАННЯ НА ПОСТ', `jpr_${id}_link`, 'primary', 'megaphone')],
+      c.link ? [ui.cb('ЗАБРАТИ ' + c.n + '⭐', `jpr_${id}_send`, 'success', 'starIcon')] : null,
+    ]);
+  }
+  const jprAwait = new Map();   // uid -> id, чекаємо посилання
+  bot.action(/^jpr_(\d+)_(link|send)$/, async (ctx) => {
+    const uid = String(ctx.from.id), id = ctx.match[1], act = ctx.match[2];
+    const last = jpcTapAt.get(uid) || 0;
+    if (Date.now() - last < E.JACKPOT.tapGapMs) return ctx.answerCbQuery('⏳ Не так швидко').catch(() => {});
+    jpcTapAt.set(uid, Date.now());
+    const c = claimOf(uid, id);
+    if (isExpired(c)) {
+      expireClaim(uid, id, c);
+      await ctx.answerCbQuery('⌛ Час вийшов — приз згорів', { show_alert: true }).catch(() => {});
+      return ctx.editMessageText(withEmoji('⌛ <b>Час вийшов</b> — джекпот ' + c.label + ' згорів.'), { parse_mode: 'HTML' }).catch(() => {});
+    }
+    if (!c || c.status !== 'pending') return ctx.answerCbQuery(c && c.status === 'sent' ? 'Зірки вже надіслано ⭐' : c && c.status === 'expired' ? '⌛ Приз згорів' : c ? '⏳ Уже надсилаю…' : 'Цей приз не твій 🙂').catch(() => {});
+    if (act === 'link') {
+      await ctx.answerCbQuery().catch(() => {});
+      jprAwait.set(uid, id);
+      return ctx.reply(withEmoji('{:megaphone} Надішли посилання на пост у своєму <b>публічному</b> каналі.\nПриклад: <code>https://t.me/mychannel/15</code>'), { parse_mode: 'HTML' }).catch(() => {});
+    }
+    if (!c.link) return ctx.answerCbQuery('Спершу надішли посилання на пост', { show_alert: true }).catch(() => {});
+    // Подвійне «Забрати» — стан синхронно, до першого await.
+    setClaim(uid, id, { status: 'sending' });
+    await ctx.answerCbQuery('⏳ Надсилаю…').catch(() => {});
+    await ctx.editMessageText('⏳ Надсилаю ' + c.n + '⭐ на канал…').catch(() => {});
+    const r = await usergifts.sendPaidReaction(c.link, c.n);
+    const u = users.get(uid) || {};
+    if (!r.ok) {
+      setClaim(uid, id, { status: 'pending', lastError: r.error });
+      notify.admin(`⚠️ Джекпот ${c.n}⭐ на канал не вдався: ${u.username ? '@' + u.username : uid} → ${esc(c.link)}\n<code>${esc(r.error)}</code>`);
+      const n = claimOf(uid, id);
+      return ctx.reply(withEmoji('{:warn} <b>Не вдалося надіслати.</b> ' + (HINT[r.hint] || HINT.other) + '\nПриз за тобою, поки не згорів.'), { parse_mode: 'HTML', disable_web_page_preview: true, ...rsKb(id, n) }).catch(() => {});
+    }
+    setClaim(uid, id, { status: 'sent', sentAt: Date.now() });
+    store.appendLedger({ ts: Date.now(), uid, s: 0, t: 0, r: 'jackpot_realstars', m: { n: c.n, link: c.link } });
+    await ctx.reply(withEmoji(ui.card('check', c.n + '⭐ НАДІСЛАНО НА КАНАЛ!', ['{:megaphone} Під постом: ' + esc(c.link), '{:lightning} Платна реакція ⭐, анонімно.'], 'Вивід із каналу в Telegram — від 1000⭐')), { parse_mode: 'HTML', disable_web_page_preview: true }).catch(() => {});
+    const shown = chat() ? await chat().jackpot(Number(id), { name: c.name || (u.username ? '@' + esc(u.username) : 'гравець') }, c.n + ' справжніх ⭐', { kind: 'stars', realStars: true }) : false;
+    notify.admin((shown ? '' : '⚠️ У чат оголосити не вдалось\n') + `⭐ Джекпот забрано: ${u.username ? '@' + u.username : uid} — ${c.n}⭐ на канал ${esc(c.link)}` + (r.dry ? ' (сухий прогін)' : ''));
+  });
+  hooks.onText.push(async (ctx, uid, text) => {
+    if (!jprAwait.has(uid)) return false;
+    const id = jprAwait.get(uid); jprAwait.delete(uid);
+    const c = claimOf(uid, id);
+    if (!c || c.status !== 'pending' || isExpired(c)) return false;
+    const p = usergifts.parsePostLink(text);
+    if (!p) { jprAwait.set(uid, id); await ctx.reply('❌ Це не посилання на пост публічного каналу. Формат: https://t.me/канал/123').catch(() => {}); return true; }
+    setClaim(uid, id, { link: p.link });
+    const n = claimOf(uid, id);
+    await ctx.reply(rsCard(n), { parse_mode: 'HTML', disable_web_page_preview: true, ...rsKb(id, n) }).catch(() => {});
+    return true;
+  });
+  hooks.onCommand.push((uid) => jprAwait.delete(uid));
+
   hooks.onText.push(async (ctx, uid, text) => {
     if (!jpcAwait.has(uid)) return false;
     const id = jpcAwait.get(uid); jpcAwait.delete(uid);
@@ -434,6 +505,10 @@ function register(bot, hooks) {
       setClaim(uid, String(msgId), claim);
       claim.name = name;
       note = 'переможець обирає підпис і від кого — у боті; у чаті оголошу, щойно забере';
+    } else if (prize.kind === 'realstars') {
+      claim = { kind: 'realstars', n: prize.n, label: prize.label, link: null, status: 'pending', at: Date.now(), name };
+      setClaim(uid, String(msgId), claim);
+      note = 'переможець дає посилання на пост свого каналу — у чаті оголошу, щойно забере';
     } else if (prize.kind === 'stars') { users.move(uid, { stars: prize.n }, 'jackpot', {}); note = 'на балансі'; }
     else if (prize.kind === 'tickets') { users.move(uid, { tickets: prize.n }, 'jackpot', {}); note = 'на балансі'; }
     else { progress.addXp(uid, 'admin', prize.n, { why: 'jackpot' }); note = 'XP зараховано'; }
@@ -445,7 +520,8 @@ function register(bot, hooks) {
     }
     if (claim) {
       // Переможцю — лише картка: підпис і від кого.
-      if (!(await notify.dm(uid, claimCard(claim), { parse_mode: 'HTML', ...claimKb(String(msgId), claim) }))) note += ' ⚠️ повідомлення не дійшло — людина ще не запускала бота';
+      const card = claim.kind === 'realstars' ? [rsCard(claim), { parse_mode: 'HTML', disable_web_page_preview: true, ...rsKb(String(msgId), claim) }] : [claimCard(claim), { parse_mode: 'HTML', ...claimKb(String(msgId), claim) }];
+      if (!(await notify.dm(uid, card[0], card[1]))) note += ' ⚠️ повідомлення не дійшло — людина ще не запускала бота';
     } else {
       notify.dm(uid, withEmoji(`{:crown} <b>ДЖЕКПОТ ЗА АКТИВНІСТЬ!</b>\n━━━━━━━━━━━━━━\nStarForge помітив твою активність у чаті — <b>${prize.label}</b> твоя!\n\n{:check} Уже зараховано на баланс.\n\n{:almost} Дякуємо, що ти з нами — спілкуйся далі!`));
     }

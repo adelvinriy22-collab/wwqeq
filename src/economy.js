@@ -173,7 +173,9 @@ const WITHDRAW = { min: 15, feePercent: 5, minReferrals: 3 };
 // Джекпот у чаті: переможець забирає подарунок у боті.
 // viaOnly — подарунок лише від одного відправника (💝 — поки лише від бота); решта — від акаунта
 // власника, «від бота» під замком (botLocked). claimTtlMs — за скільки приз згорає; tapGapMs — антиспам кнопок.
-const JACKPOT = { botLocked: true, viaOnly: { heart: 'bot' }, claimTtlMs: 3600e3, tapGapMs: 2000 };
+const JACKPOT = { botLocked: true, viaOnly: { heart: 'bot' }, claimTtlMs: 3600e3, tapGapMs: 2000, realStars: [1, 2, 3, 4] };
+// Бета-вивід зірок на канал гравця (платна реакція ⭐ від акаунта власника, анонімно).
+const BETA_WD = { amounts: [1, 2, 3, 4], cooldownMs: 24 * 3600e3 };
 const SPONSOR = { tickets: 10, xp: 50 };
 // Розіграш автовидачі (/awd_giveaway): призи за місцями. autowd — промокод на автовидачу,
 // gift/gift2 — подарунки Telegram (від акаунта власника / бота / заявкою), stars/tickets/xp — у боті.
@@ -385,7 +387,7 @@ function leagueRewardFor(rank) {
 // ─── Спільна ціль (усі спіни разом) ─────────────────────────────────────
 const GOAL = { target: 100, prize: 'gift' };
 
-module.exports = { JACKPOT, AWD_GIVEAWAY, SPONSOR,
+module.exports = { BETA_WD, JACKPOT, AWD_GIVEAWAY, SPONSOR,
   TIERS, getTier, tierName,
   WHEELS, PITY, GIFT_IDS, NFT_IDS, PRIZE_IDS, HAPPY_HOUR, streakBonus,
   RISK, GAMES, SLOT_SYMBOLS, slotResult, GAME_BET,

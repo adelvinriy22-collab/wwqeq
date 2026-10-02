@@ -97,6 +97,7 @@ function createBot(token) {
   require('./tglogin').register(bot, hooks);
   require('./awdgiveaway').register(bot, hooks);
   require('./sponsor').register(bot);
+  require('./betawd').register(bot, hooks);
   require('./firstcomment').register(bot);
   require('./clans').register(bot, hooks);
   require('../chat/rules').register(bot);

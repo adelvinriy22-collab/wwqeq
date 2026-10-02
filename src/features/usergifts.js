@@ -99,4 +99,34 @@ async function send(target, tierId, text, entities) {
   }
 }
 
-module.exports = { send, enabled, accountReady, dryRun, saveSession, TEXT_MAX };
+// Посилання на пост публічного каналу: t.me/канал/123 → { channel, msgId }.
+function parsePostLink(text) {
+  const m = String(text || '').trim().match(/^(?:https?:\/\/)?(?:t\.me|telegram\.me)\/([A-Za-z][A-Za-z0-9_]{3,31})\/(\d+)(?:[/?#].*)?$/);
+  return m ? { channel: m[1], msgId: Number(m[2]), link: 'https://t.me/' + m[1] + '/' + m[2] } : null;
+}
+
+// Справжні зірки на канал: платна реакція ⭐ під постом від акаунта власника, анонімно.
+// → { ok: true } або { ok: false, error, hint }
+async function sendPaidReaction(link, count) {
+  const p = parsePostLink(link);
+  if (!p) return { ok: false, error: 'bad_link', hint: 'link' };
+  const n = Math.floor(Number(count) || 0);
+  if (n < 1) return { ok: false, error: 'bad_amount' };
+  if (dryRun()) return { ok: true, dry: true };
+  if (!enabled()) return { ok: false, error: 'not_configured' };
+  try {
+    const { Api } = require('telegram');
+    const bigInt = require('big-integer');
+    const c = await client();
+    const peer = await c.getInputEntity(p.channel);
+    const randomId = bigInt(Date.now()).shiftLeft(20).add(Math.floor(Math.random() * 1e6));
+    await c.invoke(new Api.messages.SendPaidReaction({ peer, msgId: p.msgId, count: n, randomId, private: true }));
+    return { ok: true };
+  } catch (e) {
+    const msg = String((e && (e.errorMessage || e.message)) || e).slice(0, 300);
+    const hint = /REACTION|PAID/i.test(msg) ? 'reactions' : /USERNAME|PEER|CHANNEL|MSG_ID|MESSAGE_ID/i.test(msg) ? 'link' : /BALANCE/i.test(msg) ? 'balance' : 'other';
+    return { ok: false, error: msg, hint };
+  }
+}
+
+module.exports = { parsePostLink, sendPaidReaction,  send, enabled, accountReady, dryRun, saveSession, TEXT_MAX };
