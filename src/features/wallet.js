@@ -66,6 +66,18 @@ async function exchange(uid, tickets) {
   });
 }
 
+// ─── Купівля білетів за зірки (зворотний обмін) ─────────────────────────
+async function buyTickets(uid, stars) {
+  const n = Math.floor(Number(stars) || 0);
+  if (n < 1 || n > 10000) return { ok: false, status: 400, error: 'bad_amount', min: 1 };
+  return users.withLock(uid, () => {
+    const tickets = n * E.TICKETS.buyPerStar;
+    const r = users.move(uid, { stars: -n, tickets }, 'buy_tickets', { stars: n });
+    if (!r.ok) return { ok: false, status: 402, error: 'not_enough', balance: users.stars(users.get(uid) || {}) };
+    return { ok: true, stars: n, tickets, balance: r.stars, ticketsLeft: r.tickets };
+  });
+}
+
 // ─── Магазин ────────────────────────────────────────────────────────────
 function shopView(u, lang) {
   const have = u.paidSpinsTotal || 0;
@@ -216,6 +228,6 @@ function history(u) {
 }
 
 module.exports = {
-  withdrawInfo, withdraw, exchange, shopView, shopBuy,
+  withdrawInfo, withdraw, exchange, buyTickets, shopView, shopBuy,
   topupInfo, invoiceLink, precheck, processPayment, history, depositBonus, parseAmount,
 };

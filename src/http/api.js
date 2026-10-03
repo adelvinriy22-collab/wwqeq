@@ -169,10 +169,11 @@ router.post('/bank/bet', notInMaintenance, subscribed, h(async (req) => bank.bet
 router.get('/wallet', h(async (req) => {
   const u = users.get(req.uid);
   return { ok: true, balance: { stars: users.stars(u), tickets: users.tickets(u) }, withdraw: wallet.withdrawInfo(u), topup: wallet.topupInfo(u),
-           exchange: { tickets: E.TICKETS.exchangeTickets, stars: E.TICKETS.exchangeStars }, shop: wallet.shopView(u, req.lang), history: wallet.history(u) };
+           exchange: { tickets: E.TICKETS.exchangeTickets, stars: E.TICKETS.exchangeStars, buyPerStar: E.TICKETS.buyPerStar }, shop: wallet.shopView(u, req.lang), history: wallet.history(u) };
 }));
 router.post('/wallet/withdraw', notInMaintenance, subscribed, h(async (req) => wallet.withdraw(req.uid, req.body.amount)));
 router.post('/wallet/exchange', notInMaintenance, h(async (req) => wallet.exchange(req.uid, req.body.tickets)));
+router.post('/wallet/buy-tickets', notInMaintenance, h(async (req) => wallet.buyTickets(req.uid, req.body.stars)));
 router.post('/wallet/topup', h(async (req) => wallet.invoiceLink(req.uid, 'topup', req.body.amount)));
 router.post('/shop/buy', notInMaintenance, subscribed, h(async (req) => wallet.shopBuy(req.uid, String(req.body.item || ''))));
 

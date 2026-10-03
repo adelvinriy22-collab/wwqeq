@@ -575,6 +575,16 @@ test('джекпот 3⭐ на канал: анонс у чаті одразу, 
   assert.strictEqual(readDb().users['600'].jpClaims['557'].link, 'https://t.me/mychan/8');
 });
 
+test('обмін зірок на білети: 3⭐ → 30🎫, без зірок — помилка', async () => {
+  const post = (id, stars) => fetch(base + '/api/wallet/buy-tickets', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Init-Data': init(id) }, body: JSON.stringify({ stars }) }).then(r => r.json());
+  const r = await post('970', 3);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.tickets, 30);
+  const bad = await post('901', 5);
+  assert.strictEqual(bad.ok, false);
+  assert.strictEqual((await post('970', 0)).ok, false);
+});
+
 test('перший коментар у каналі: бот ловить першого, кнопки лише для нього, подарунок одразу', async () => {
   const G = -2002;
   const waitFor = async (pred) => { for (let i = 0; i < 30; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };

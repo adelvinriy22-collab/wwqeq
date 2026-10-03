@@ -157,6 +157,30 @@ function withdraw(nav, body) {
 }
 
 // ─── Обмін ──────────────────────────────────────────────────────────────
+// Зворотний обмін: зірки → білети.
+function buyTickets(nav, body) {
+  const per = ((data && data.exchange) || {}).buyPerStar || 10;
+  const have = Math.floor(S.me.balance.stars || 0);
+  sheet((s) => {
+    let n = Math.max(1, Math.min(have, 1));
+    const val = el('div', { class: 'result' });
+    const upd = () => { mount(val, el('div', { class: 'big' }, n + '⭐ → ' + n * per + '🎫'), el('div', { class: 's' }, t('bt.rate', { t: per }))); };
+    upd();
+    const step = (d) => { n = Math.max(1, Math.min(Math.max(1, have), n + d)); upd(); };
+    return [
+      el('div', { class: 'btns' }, button(t('ex.toStars'), () => { s.close(); exchange(nav, body); }, 'tinted'), button(t('ex.toTickets'), () => {})),
+      el('h3', { class: 'mt12' }, t('bt.title')),
+      el('p', null, t('bt.have', { n: have })),
+      val,
+      el('div', { class: 'btns mt8' }, button('−', () => step(-1), 'tinted'), button('+', () => step(1), 'tinted'), button('+10', () => step(10), 'tinted')),
+      el('div', { class: 'mt12' }, button(t('bt.go'), async () => {
+        try { const r = await api.post('/wallet/buy-tickets', { stars: n }); setBalance(r.balance, r.ticketsLeft); s.close(); toast(t('bt.done', { t: r.tickets }), 'success'); refreshSoon(); nav.rerender(); }
+        catch (e) { fail(e); }
+      })),
+    ];
+  });
+}
+
 function exchange(nav, body) {
   const ex = (data && data.exchange) || { tickets: 10, stars: 2 };
   const have = S.me.balance.tickets;
@@ -168,7 +192,8 @@ function exchange(nav, body) {
     upd();
     const step = (d) => { n = Math.max(ex.tickets, Math.min(Math.max(ex.tickets, maxN), n + d * ex.tickets)); upd(); };
     return [
-      el('h3', null, t('ex.title')),
+      el('div', { class: 'btns' }, button(t('ex.toStars'), () => {}), button(t('ex.toTickets'), () => { s.close(); buyTickets(nav, body); }, 'tinted')),
+      el('h3', { class: 'mt12' }, t('ex.title')),
       el('p', null, t('ex.have', { n: have })),
       val,
       el('div', { class: 'btns mt8' }, button('−', () => step(-1), 'tinted'), button('+', () => step(1), 'tinted'), button(t('ex.all'), () => { n = Math.max(ex.tickets, maxN); upd(); }, 'tinted')),

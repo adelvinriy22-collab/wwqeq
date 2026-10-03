@@ -167,7 +167,7 @@ function slotResult(v) {
 const GAME_BET = { min: 1, max: 1000, presets: [1, 5, 10, 25, 50, 100] };
 
 // ─── Білети, обмін, вивід, поповнення ───────────────────────────────────
-const TICKETS = { perFriend: 1, exchangeTickets: 10, exchangeStars: 1 };   // 10🎫 = 1⭐
+const TICKETS = { perFriend: 1, exchangeTickets: 10, exchangeStars: 1, buyPerStar: 10 };   // 10🎫 = 1⭐; купівля: 1⭐ → 10🎫
 const WITHDRAW = { min: 15, feePercent: 5, minReferrals: 3 };
 // Місія «підпишись на канал-спонсора» (config.SPONSOR_CHANNEL): нагорода один раз.
 // Джекпот у чаті: переможець забирає подарунок у боті.
