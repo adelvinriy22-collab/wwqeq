@@ -73,7 +73,14 @@ function seedV2() {
       // Розіграш автовидачі.
       995: U('995', {}), 996: U('996', {}), 997: U('997', {}),
     },
-    giveaways: {}, applications: [], nextApplicationId: 1,
+    giveaways: {},
+    // Невиплачені заявки для автовиплати: подарунок, старий вивід зірок 40⭐ (🎁 + 🧸), NFT (лише вручну).
+    applications: [
+      { id: 9001, uid: '1003', tierId: 'bear', status: 'pending', createdAt: Date.now() - 3 * 3600e3, source: 'shop', spentStars: 15 },
+      { id: 9002, uid: '1004', tierId: 'stars_payout', payoutStars: 40, spentStars: 42, fee: 2, status: 'pending', createdAt: Date.now() - 2 * 3600e3, source: 'app_withdrawal' },
+      { id: 9003, uid: '1005', tierId: 'wheel_snake', status: 'pending', createdAt: Date.now() - 3600e3, source: 'wheel_paid' },
+    ],
+    nextApplicationId: 1,
     featureFlags: {
       eventUnlocked: false,
       // Так банк лишила попередня версія: скасувала й повернула ставки, повідомлення ще не пішли.
@@ -296,6 +303,7 @@ test('вивід подарунками: розблокування з розс�
   const risk = await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === ADMIN && /Вивід подарунком/.test(c.payload.text || '') && /admin_cut_/.test(JSON.stringify(c.payload.reply_markup || {}))));
   assert.ok(risk, 'адміну — заявка з ризик-карткою й кнопкою «Урізати»');
   assert.match(risk.payload.text, /справжніх/);
+  assert.match(JSON.stringify(risk.payload.reply_markup), /admin_pay_/, 'кнопка «Надіслати й підтвердити»');
   // Урізання: 🚀 → 🧸 з причиною, різниця не повертається.
   const id = ok.d.applicationId;
   adminCmd('/cut ' + id + ' bear підозра на мультиакаунт');
@@ -848,6 +856,38 @@ test('міні-ігри на зірки в чаті: /dice списує став
   await waitFor(() => moves().length === 2);
   assert.deepStrictEqual(moves(), [['chat_game', -10], ['chat_game_win', 18.5]], 'усе — через журнал');
   assert.ok((readDb().users['1010'].xp || {}).total >= 20, 'XP за ставку — 2 за ⭐');
+});
+
+test('автовиплата: бот надсилає подарунок і одразу підтверджує; вивід зірок — набором подарунків; NFT — вручну', async () => {
+  const waitFor = async (pred) => { for (let i = 0; i < 60; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  let n0 = tg.calls.length;
+  adminCmd('/pay_new 8');
+  const plan = await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === ADMIN && /Найновіші невиплачені/.test(c.payload.text || '')));
+  assert.ok(plan, 'спершу — план');
+  assert.match(plan.payload.text, /#9001/);
+  assert.match(plan.payload.text, /#9002[^\n]*🎁 🧸/, '40⭐ = 🎁 25 + 🧸 15');
+  assert.doesNotMatch(plan.payload.text, /#9003/, 'NFT — не автоматично');
+  assert.match(plan.payload.text, /pay_new 8 так/);
+  assert.ok(!tg.calls.slice(n0).some(c => c.method === 'sendGift'), 'без «так» нічого не надіслано');
+  n0 = tg.calls.length;
+  adminCmd('/pay 9001 9002 9003');
+  const rep = await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === ADMIN && /Автовиплата/.test(c.payload.text || '')));
+  assert.ok(rep, 'звіт');
+  assert.match(rep.payload.text, /#9001[^\n]*✅/);
+  assert.match(rep.payload.text, /#9002[^\n]*✅/);
+  assert.match(rep.payload.text, /#9003[^\n]*лише вручну/);
+  const gifts = tg.calls.slice(n0).filter(c => c.method === 'sendGift');
+  assert.deepStrictEqual(gifts.map(c => c.payload.user_id).sort(), [1003, 1004, 1004]);
+  assert.ok(await waitFor(() => { const db = readDb(); return db.applications.find(a => a.id === 9001).status === 'approved' && db.applications.find(a => a.id === 9002).status === 'approved'; }), 'підтверджено');
+  const db = readDb();
+  assert.strictEqual(db.applications.find(a => a.id === 9003).status, 'pending');
+  assert.deepStrictEqual(db.applications.find(a => a.id === 9002).paidGifts, ['gift', 'bear']);
+  assert.ok(db.applications.find(a => a.id === 9001).autoSent);
+  // Повторно — уже оброблена, подарунків більше немає.
+  const n1 = tg.calls.length;
+  adminCmd('/pay 9001');
+  assert.ok(await waitFor(() => tg.calls.slice(n1).find(c => String(c.payload.chat_id) === ADMIN && /уже оброблена/.test(c.payload.text || ''))));
+  assert.ok(!tg.calls.slice(n1).some(c => c.method === 'sendGift'));
 });
 
 test('секретне завдання сховане: ні на головній, ні в завданнях, заявку не подати', async () => {

@@ -57,12 +57,16 @@ function label(a, lang) {
   return t.emoji + ' ' + (t.name[lang] || t.name.uk);
 }
 
-function adminKeyboard(id, withCut) {
-  return { reply_markup: { inline_keyboard: [[
-    { text: '✅ Підтвердити', callback_data: `admin_approve_${id}`, style: 'success' },
-    withCut ? { text: '✂️ Урізати', callback_data: `admin_cut_${id}`, style: 'primary' } : null,
-    { text: '❌ Відхилити', callback_data: `admin_reject_${id}`, style: 'danger' },
-  ].filter(Boolean)] } };
+// canPay — бот може сам надіслати подарунок і підтвердити (features/payouts.js).
+function adminKeyboard(id, withCut, canPay) {
+  return { reply_markup: { inline_keyboard: [
+    canPay ? [{ text: '🎁 Надіслати й підтвердити', callback_data: `admin_pay_${id}`, style: 'success' }] : null,
+    [
+      { text: '✅ Підтвердити', callback_data: `admin_approve_${id}`, style: canPay ? undefined : 'success' },
+      withCut ? { text: '✂️ Урізати', callback_data: `admin_cut_${id}`, style: 'primary' } : null,
+      { text: '❌ Відхилити', callback_data: `admin_reject_${id}`, style: 'danger' },
+    ].filter(Boolean),
+  ].filter(Boolean) } };
 }
 
 // Нова заявка. opts.silent — без сповіщення адміну; opts.adminText — власний текст.
@@ -78,7 +82,7 @@ function create(uid, tierId, source, extra, opts) {
       : `📥 <b>Заявка #${a.id}</b> · ${esc(label(a, 'uk'))}\nДжерело: ${sourceLabel(source, 'uk')}` + (a.spentStars ? `\nОплачено: ${a.spentStars}⭐` : '');
     // На вивід — ризик-картка й кнопка «Урізати».
     const riskLine = wd ? '\n\n' + require('./withdrawgate').riskText(uid) : '';
-    notify.admin((opts && opts.adminText) || head + '\n' + who + riskLine, adminKeyboard(a.id, wd));
+    notify.admin((opts && opts.adminText) || head + '\n' + who + riskLine, adminKeyboard(a.id, wd, require('./payouts').payable(a)));
   }
   return a;
 }
