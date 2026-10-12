@@ -26,6 +26,7 @@ function startFakeTelegram() {
         }
         case 'sendDice': return ok({ message_id: 2, chat: { id: payload.chat_id }, dice: { emoji: payload.emoji || '🎲', value: 6 } });
         case 'createInvoiceLink': return ok('https://t.me/$invoice');
+        case 'getMyStarBalance': return ok({ amount: 500, nanostar_amount: 0 });
         default: return ok(method.startsWith('send') || method.startsWith('copy') ? { message_id: 1, chat: { id: payload.chat_id }, date: 0 } : true);
       }
     });

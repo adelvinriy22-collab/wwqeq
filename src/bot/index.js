@@ -149,7 +149,7 @@ async function setupUi(bot) {
       { command: 'apps', description: 'Черга заявок' },
       { command: 'wd_unlock', description: 'Розблокування виводу: /wd_unlock так — розсилка з кнопкою' },
       { command: 'cut', description: 'Урізати виплату: /cut N bear причина' },
-      { command: 'pay_new', description: 'Виплатити найновіші заявки подарунками: /pay_new 8' },
+      { command: 'pay_new', description: 'Виплатити найновіші заявки: /pay_new 8 так бот|акаунт' },
       { command: 'event_status', description: 'Що зараз запущено' },
       { command: 'maint', description: 'Техроботи' },
       { command: 'dbstats', description: 'Зріз бази' },

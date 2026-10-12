@@ -69,6 +69,9 @@ function adminKeyboard(id, withCut, canPay) {
   ].filter(Boolean) } };
 }
 
+// Кнопки під заявкою за її станом (щоб повернути їх після вибору балансу).
+const adminKeyboardFor = (a) => adminKeyboard(a.id, a.source === 'app_withdrawal', require('./payouts').payable(a));
+
 // Нова заявка. opts.silent — без сповіщення адміну; opts.adminText — власний текст.
 function create(uid, tierId, source, extra, opts) {
   const a = store.addApplication({ uid: String(uid), tierId, status: 'pending', createdAt: Date.now(), source, ...(extra || {}) });
@@ -82,7 +85,7 @@ function create(uid, tierId, source, extra, opts) {
       : `📥 <b>Заявка #${a.id}</b> · ${esc(label(a, 'uk'))}\nДжерело: ${sourceLabel(source, 'uk')}` + (a.spentStars ? `\nОплачено: ${a.spentStars}⭐` : '');
     // На вивід — ризик-картка й кнопка «Урізати».
     const riskLine = wd ? '\n\n' + require('./withdrawgate').riskText(uid) : '';
-    notify.admin((opts && opts.adminText) || head + '\n' + who + riskLine, adminKeyboard(a.id, wd, require('./payouts').payable(a)));
+    notify.admin((opts && opts.adminText) || head + '\n' + who + riskLine, adminKeyboardFor(a));
   }
   return a;
 }
@@ -177,4 +180,4 @@ function publicView(a, lang) {
   };
 }
 
-module.exports = { create, approve, reject, cut, cancel, refund, refundable, listFor, publicView, label, sourceLabel, adminKeyboard };
+module.exports = { create, approve, reject, cut, cancel, refund, refundable, listFor, publicView, label, sourceLabel, adminKeyboard, adminKeyboardFor };

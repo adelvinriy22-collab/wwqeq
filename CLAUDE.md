@@ -84,7 +84,8 @@
 - **Подарунки Telegram** — `src/features/tggifts.js` (`send(uid, tierId, text)`, каталог з fallback id);
   не вдалося — створюється заявка адміну (`applications.create`).
 - **Заявки** — `src/features/applications.js` (підтвердження/відхилення з поверненням оплаченого; `cut` — урізання виплати з причиною).
-  Автовиплата — `src/features/payouts.js` (`pay(id)`: бот надсилає подарунок(и) й підтверджує; `/pay`, `/pay_new N так`).
+  Автовиплата — `src/features/payouts.js` (`pay(id, from)`: надсилає подарунок(и) з балансу `bot`/`account` і підтверджує;
+  `balances()` — обидва баланси; кнопка під заявкою → вибір балансу; `/pay`, `/pay_new N так бот|акаунт`).
 
 ## Тести й перевірка
 

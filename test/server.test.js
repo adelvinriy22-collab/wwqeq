@@ -79,6 +79,7 @@ function seedV2() {
       { id: 9001, uid: '1003', tierId: 'bear', status: 'pending', createdAt: Date.now() - 3 * 3600e3, source: 'shop', spentStars: 15 },
       { id: 9002, uid: '1004', tierId: 'stars_payout', payoutStars: 40, spentStars: 42, fee: 2, status: 'pending', createdAt: Date.now() - 2 * 3600e3, source: 'app_withdrawal' },
       { id: 9003, uid: '1005', tierId: 'wheel_snake', status: 'pending', createdAt: Date.now() - 3600e3, source: 'wheel_paid' },
+      { id: 9004, uid: '1003', tierId: 'gift', status: 'pending', createdAt: Date.now() - 5 * 3600e3, source: 'shop', spentStars: 25 },
     ],
     nextApplicationId: 1,
     featureFlags: {
@@ -867,7 +868,8 @@ test('автовиплата: бот надсилає подарунок і од
   assert.match(plan.payload.text, /#9001/);
   assert.match(plan.payload.text, /#9002[^\n]*🎁 🧸/, '40⭐ = 🎁 25 + 🧸 15');
   assert.doesNotMatch(plan.payload.text, /#9003/, 'NFT — не автоматично');
-  assert.match(plan.payload.text, /pay_new 8 так/);
+  assert.match(plan.payload.text, /pay_new 8 так бот/);
+  assert.match(plan.payload.text, /Баланс бота: <b>500⭐/, 'видно баланс бота');
   assert.ok(!tg.calls.slice(n0).some(c => c.method === 'sendGift'), 'без «так» нічого не надіслано');
   n0 = tg.calls.length;
   adminCmd('/pay 9001 9002 9003');
@@ -888,6 +890,33 @@ test('автовиплата: бот надсилає подарунок і од
   adminCmd('/pay 9001');
   assert.ok(await waitFor(() => tg.calls.slice(n1).find(c => String(c.payload.chat_id) === ADMIN && /уже оброблена/.test(c.payload.text || ''))));
   assert.ok(!tg.calls.slice(n1).some(c => c.method === 'sendGift'));
+});
+
+test('автовиплата: кнопка → вибір балансу (бот / акаунт) із сумами → надіслати з обраного й підтвердити', async () => {
+  const waitFor = async (pred) => { for (let i = 0; i < 60; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  const press = (data) => tg.push({ callback_query: { id: 'p' + Math.random(), from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, chat_instance: 'a', data, message: { message_id: 4, date: 0, chat: { id: Number(ADMIN), type: 'private' } } } });
+  const markup = (n0, re) => waitFor(() => tg.calls.slice(n0).find(c => c.method === 'editMessageReplyMarkup' && re.test(JSON.stringify(c.payload.reply_markup))));
+  let n0 = tg.calls.length;
+  press('admin_pay_9004');
+  const kb = await markup(n0, /admin_payv_9004_bot/);
+  assert.ok(kb, 'вибір балансу');
+  const s = JSON.stringify(kb.payload.reply_markup);
+  assert.match(s, /З балансу бота · 500⭐/);
+  assert.match(s, /admin_payv_9004_account/, 'акаунт (у тестах — сухий прогін)');
+  assert.match(s, /admin_payback_9004/);
+  assert.ok(!tg.calls.slice(n0).some(c => c.method === 'sendGift'), 'поки не обрано — нічого не надіслано');
+  // «Назад» — звичайні кнопки заявки.
+  n0 = tg.calls.length;
+  press('admin_payback_9004');
+  assert.ok(await markup(n0, /admin_approve_9004/));
+  // З балансу акаунта: бот sendGift не викликає, заявку підтверджено.
+  n0 = tg.calls.length;
+  press('admin_payv_9004_account');
+  const rep = await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === ADMIN && /#9004/.test(c.payload.text || '')));
+  assert.ok(rep, 'звіт');
+  assert.match(rep.payload.text, /✅[^\n]*з балансу акаунта/);
+  assert.ok(!tg.calls.slice(n0).some(c => c.method === 'sendGift'), 'не з балансу бота');
+  assert.ok(await waitFor(() => { const a = readDb().applications.find(x => x.id === 9004); return a.status === 'approved' && a.paidVia === 'account'; }));
 });
 
 test('секретне завдання сховане: ні на головній, ні в завданнях, заявку не подати', async () => {

@@ -70,4 +70,13 @@ async function send(uid, tierId, text, entities) {
   }
 }
 
-module.exports = { send, giftId, canSend, cleanEntities, CATALOG, TEXT_MAX };
+// Баланс зірок бота (Bot API getMyStarBalance). → число або null.
+async function balance() {
+  if (!notify.tg.telegram) return null;
+  try {
+    const r = await notify.tg.telegram.callApi('getMyStarBalance', {});
+    return r && typeof r.amount === 'number' ? r.amount : null;
+  } catch (e) { return null; }
+}
+
+module.exports = { send, balance, giftId, canSend, cleanEntities, CATALOG, TEXT_MAX };

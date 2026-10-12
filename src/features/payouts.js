@@ -5,15 +5,17 @@
 //   • Старий вивід зірок (stars_payout, будь-яка сума) — набором подарунків
 //     рівно на цю суму (100/50/25/15), до PLAN_MAX штук; інакше — лише вручну.
 //   • NFT, Premium тощо — лише вручну.
-// Надсилає бот (sendGift із балансу зірок бота); не вийшло, а акаунт власника
-// підключено (/tg_login) — пробуємо від акаунта. Частково надіслане запам'ятовується
-// (a.paidGifts), тож повторна спроба не надішле те саме вдруге.
+// Баланс, з якого платити, адмін обирає (from): 'bot' — sendGift із балансу зірок
+// бота, 'account' — від акаунта власника (/tg_login). Без вибору — бот, а не вийшло
+// й акаунт підключено — акаунт. Частково надіслане запам'ятовується (a.paidGifts),
+// тож повторна спроба не надішле те саме вдруге.
 // ==========================================================================
 const store = require('../store');
 const users = require('../core/users');
 const tggifts = require('./tggifts');
 const usergifts = require('./usergifts');
 const applications = require('./applications');
+const E = require('../economy');
 
 const PLAN_MAX = 4;
 // Номінали для збирання суми: найдешевший подарунок кожної ціни.
@@ -41,10 +43,44 @@ function planFor(a) {
 }
 const payable = (a) => !!planFor(a);
 
+// Що ще лишилось надіслати (без уже надісланого) і скільки це коштує.
+function todoFor(a) {
+  const todo = (planFor(a) || []).slice();
+  for (const g of a.paidGifts || []) { const i = todo.indexOf(g); if (i !== -1) todo.splice(i, 1); }
+  return todo;
+}
+const costOf = (a) => todoFor(a).reduce((s, g) => s + E.getTier(g).price, 0);
+
+const withTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
+// Баланси зірок для вибору: { bot, account, accountOn } (null — не вдалося дізнатися).
+async function balances() {
+  const accountOn = usergifts.enabled();
+  const [bot, account] = await Promise.all([
+    withTimeout(tggifts.balance(), 6000),
+    accountOn ? withTimeout(usergifts.balance(), 8000) : null,
+  ]);
+  return { bot, account, accountOn };
+}
+
+// Один подарунок з обраного балансу. → { ok, how, error, lowBalance }
+async function sendOne(a, g, text, from) {
+  const u = users.get(a.uid) || {};
+  const viaAccount = async () => {
+    const r = await usergifts.send(u.username ? '@' + u.username : a.uid, g, text);
+    return { ...r, how: 'account', lowBalance: !r.ok && /BALANCE/i.test(r.error || '') };
+  };
+  if (from === 'account') return viaAccount();
+  const r = await tggifts.send(a.uid, g, text);
+  if (r.ok || from === 'bot' || !usergifts.accountReady()) return { ...r, how: 'bot' };
+  const r2 = await viaAccount();
+  return r2.ok ? r2 : { ...r, how: 'bot', error: 'бот: ' + r.error + ' · акаунт: ' + r2.error };
+}
+
 const inFlight = new Set();   // id заявок, що зараз виплачуються (подвійне натискання)
 
-// Надіслати подарунок(и) і підтвердити заявку. → { ok, sent, via, error, partial }
-async function pay(id) {
+// Надіслати подарунок(и) і підтвердити заявку. from — 'bot' | 'account' | без вибору.
+// → { ok, sent, via, from, error, partial }
+async function pay(id, from) {
   const a = store.getApplication(id);
   if (!a) return { ok: false, error: 'not_found' };
   if (a.status !== 'pending') return { ok: false, error: 'not_pending', status: a.status };
@@ -54,24 +90,17 @@ async function pay(id) {
   if (inFlight.has(a.id)) return { ok: false, error: 'busy' };
   inFlight.add(a.id);
   try {
-    const u = users.get(a.uid) || {};
     const text = '🎁 Виплата за заявкою #' + a.id + ' · StarForge';
     const done = (a.paidGifts || []).slice();
-    const todo = plan.slice();
-    for (const g of done) { const i = todo.indexOf(g); if (i !== -1) todo.splice(i, 1); }
+    const todo = todoFor(a);
     const via = [];
     for (const g of todo) {
-      let r = await tggifts.send(a.uid, g, text);
-      let how = 'bot';
-      if (!r.ok && usergifts.accountReady()) {
-        const r2 = await usergifts.send(u.username ? '@' + u.username : a.uid, g, text);
-        if (r2.ok) { r = r2; how = 'account'; } else r = { ...r, error: 'бот: ' + r.error + ' · акаунт: ' + r2.error };
-      }
+      const r = await sendOne(a, g, text, from);
       if (!r.ok) {
         a.paidGifts = done; a.payError = String(r.error || '').slice(0, 300); store.save();
-        return { ok: false, error: 'send_failed', detail: a.payError, lowBalance: !!r.lowBalance, partial: done.length, plan };
+        return { ok: false, error: 'send_failed', detail: a.payError, lowBalance: !!r.lowBalance, from: r.how, partial: done.length, plan };
       }
-      done.push(g); via.push(how);
+      done.push(g); via.push(r.how);
       a.paidGifts = done; store.save();
     }
     a.autoSent = true;
@@ -89,4 +118,4 @@ function newestPayable(n) {
   return store.listApplications('pending').filter(payable).sort((x, y) => y.createdAt - x.createdAt).slice(0, n);
 }
 
-module.exports = { pay, planFor, payable, giftsForSum, newestPayable, PLAN_MAX };
+module.exports = { pay, planFor, payable, costOf, balances, giftsForSum, newestPayable, PLAN_MAX };

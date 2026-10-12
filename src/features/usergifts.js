@@ -99,6 +99,19 @@ async function send(target, tierId, text, entities) {
   }
 }
 
+// Баланс зірок акаунта (payments.getStarsStatus). → число або null.
+async function balance() {
+  if (!accountReady()) return null;
+  try {
+    const { Api } = require('telegram');
+    const c = await client();
+    const r = await c.invoke(new Api.payments.GetStarsStatus({ peer: new Api.InputPeerSelf() }));
+    const b = r && r.balance;
+    const n = Number(String(b && b.amount !== undefined ? b.amount : b));
+    return Number.isFinite(n) ? n : null;
+  } catch (e) { return null; }
+}
+
 // Посилання на пост публічного каналу: t.me/канал/123 → { channel, msgId }.
 function parsePostLink(text) {
   // Шукаємо посилання будь-де в тексті (люди дописують слова, ?single тощо).
@@ -130,4 +143,4 @@ async function sendPaidReaction(link, count) {
   }
 }
 
-module.exports = { parsePostLink, sendPaidReaction,  send, enabled, accountReady, dryRun, saveSession, TEXT_MAX };
+module.exports = { parsePostLink, sendPaidReaction, send, balance, enabled, accountReady, dryRun, saveSession, TEXT_MAX };

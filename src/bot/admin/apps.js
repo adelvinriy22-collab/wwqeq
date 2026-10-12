@@ -71,26 +71,71 @@ function register(bot, hooks) {
   const payouts = require('../../features/payouts');
   const giftLine = (list) => list.map(id => E.getTier(id).emoji).join(' ');
   const whoApp = (a) => { const u = users.get(a.uid) || {}; return u.username ? '@' + u.username : (u.name || a.uid); };
+  const balName = { bot: 'бота', account: 'акаунта' };
   const payLine = (a, r) => `#${a.id} ${applications.label(a, 'uk')} → ${whoApp(a)}: ` + (r.ok
-    ? `✅ надіслано ${giftLine(r.sent)}${r.via === 'bot' ? '' : ' (' + (r.via === 'account' ? 'від акаунта' : 'бот + акаунт') + ')'}`
+    ? `✅ надіслано ${giftLine(r.sent)} (${r.via === 'bot' ? 'з балансу бота' : r.via === 'account' ? 'з балансу акаунта' : 'бот + акаунт'})`
     : r.error === 'manual_only' ? '✋ лише вручну (такий подарунок бот не надсилає)'
     : r.error === 'not_pending' ? '⏭ уже оброблена' : r.error === 'busy' ? '⏳ уже надсилається'
-    : `❌ не вдалося${r.partial ? ` (надіслано ${r.partial} з ${r.plan.length})` : ''}: ${r.detail || r.error}${r.lowBalance ? ' — замало зірок на балансі бота' : ''}`);
+    : `❌ не вдалося${r.partial ? ` (надіслано ${r.partial} з ${r.plan.length})` : ''}: ${r.detail || r.error}${r.lowBalance ? ' — замало зірок на балансі ' + balName[r.from || 'bot'] : ''}`);
+  // Звідки платити: «бот»/«акаунт» у тексті команди, інакше — без вибору (бот, потім акаунт).
+  const fromOf = (ctx) => {
+    const t = String(ctx.message.text);
+    return /(^|\s)(акаунт\S*|акк\S*|account)(\s|$)/i.test(t) ? 'account' : /(^|\s)(бот\S*|bot)(\s|$)/i.test(t) ? 'bot' : undefined;
+  };
+  const starsOr = (n) => (typeof n === 'number' ? n + '⭐' : '?');
+  const balText = (b) => `🤖 Баланс бота: <b>${starsOr(b.bot)}</b>` + (b.accountOn ? ` · 👤 акаунта: <b>${starsOr(b.account)}</b>` : ' · 👤 акаунт не підключено (/tg_login)');
+
+  // Кнопка під заявкою → вибір балансу (з поточними сумами) → надіслати й підтвердити.
   bot.action(/^admin_pay_(\d+)$/, async (ctx) => {
     if (!isAdminCtx(ctx)) return ctx.answerCbQuery().catch(() => {});
     const a = store.getApplication(ctx.match[1]);
     if (!a) return ctx.answerCbQuery('Заявку не знайдено').catch(() => {});
-    await ctx.answerCbQuery('⏳ Надсилаю…').catch(() => {});
-    const r = await payouts.pay(a.id);
-    if (r.ok) await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+    if (!payouts.payable(a)) {
+      await ctx.answerCbQuery(a.status === 'pending' ? 'Лише вручну' : 'Вже оброблена').catch(() => {});
+      return ctx.editMessageReplyMarkup(a.status === 'pending' ? applications.adminKeyboardFor(a).reply_markup : { inline_keyboard: [] }).catch(() => {});
+    }
+    const b = await payouts.balances();
+    const need = payouts.costOf(a);
+    await ctx.answerCbQuery('Потрібно ' + need + '⭐ — обери баланс').catch(() => {});
+    const btn = (label, n, from) => ({
+      text: `${label} · ${starsOr(n)}${typeof n === 'number' && n < need ? ' ⚠️ замало' : ''}`,
+      callback_data: `admin_payv_${a.id}_${from}`,
+      ...(typeof n === 'number' && n < need ? {} : { style: 'success' }),
+    });
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [
+      [btn('🤖 З балансу бота', b.bot, 'bot')],
+      b.accountOn ? [btn('👤 З балансу акаунта', b.account, 'account')] : null,
+      [{ text: '↩️ Назад', callback_data: `admin_payback_${a.id}` }],
+    ].filter(Boolean) }).catch(() => {});
+  });
+  bot.action(/^admin_payv_(\d+)_(bot|account)$/, async (ctx) => {
+    if (!isAdminCtx(ctx)) return ctx.answerCbQuery().catch(() => {});
+    const a = store.getApplication(ctx.match[1]);
+    if (!a) return ctx.answerCbQuery('Заявку не знайдено').catch(() => {});
+    await ctx.answerCbQuery('⏳ Надсилаю з балансу ' + balName[ctx.match[2]] + '…').catch(() => {});
+    const r = await payouts.pay(a.id, ctx.match[2]);
+    if (r.error !== 'busy') {
+      await ctx.editMessageReplyMarkup(r.ok || a.status !== 'pending' ? { inline_keyboard: [] } : applications.adminKeyboardFor(a).reply_markup).catch(() => {});
+    }
     await ctx.reply(payLine(a, r)).catch(() => {});
   });
+  bot.action(/^admin_payback_(\d+)$/, async (ctx) => {
+    if (!isAdminCtx(ctx)) return ctx.answerCbQuery().catch(() => {});
+    const a = store.getApplication(ctx.match[1]);
+    await ctx.answerCbQuery().catch(() => {});
+    if (a) await ctx.editMessageReplyMarkup(a.status === 'pending' ? applications.adminKeyboardFor(a).reply_markup : { inline_keyboard: [] }).catch(() => {});
+  });
+
   bot.command('pay', async (ctx) => {
     if (!isAdminCtx(ctx)) return;
     const list = ids(ctx);
-    if (!list.length) return ctx.reply('Формат: /pay 142 143 — бот надішле подарунки й підтвердить заявки.\nНайновіші невиплачені: /pay_new 8').catch(() => {});
+    if (!list.length) {
+      return ctx.reply('Формат: <code>/pay 142 143 бот</code> або <code>/pay 142 143 акаунт</code> — з якого балансу надіслати подарунки; ' +
+        'бот надішле й підтвердить заявки.\nНайновіші невиплачені: /pay_new 8\n\n' + balText(await payouts.balances()), { parse_mode: 'HTML' }).catch(() => {});
+    }
+    const from = fromOf(ctx);
     const out = [];
-    for (const id of list) { const a = store.getApplication(id); out.push(a ? payLine(a, await payouts.pay(id)) : `#${id} — не знайдено`); }
+    for (const id of list) { const a = store.getApplication(id); out.push(a ? payLine(a, await payouts.pay(id, from)) : `#${id} — не знайдено`); }
     await ui.replyLong(ctx, '🎁 Автовиплата\n\n' + out.join('\n'));
   });
   bot.command('pay_new', async (ctx) => {
@@ -99,15 +144,18 @@ function register(bot, hooks) {
     const list = payouts.newestPayable(n);
     const manual = store.listApplications('pending').filter(a => !payouts.payable(a)).length;
     if (!list.length) return ctx.reply('Невиплачених заявок, які бот може надіслати сам, немає.' + (manual ? `\nЛише вручну: ${manual}.` : '')).catch(() => {});
-    const cost = list.reduce((s, a) => s + payouts.planFor(a).reduce((x, g) => x + E.getTier(g).price, 0), 0);
-    const plan = list.map(a => `#${a.id} ${applications.label(a, 'uk')} → ${whoApp(a)} · ${giftLine(payouts.planFor(a))}`).join('\n');
+    const cost = list.reduce((s, a) => s + payouts.costOf(a), 0);
+    const plan = list.map(a => `#${a.id} ${esc(applications.label(a, 'uk'))} → ${esc(whoApp(a))} · ${giftLine(payouts.planFor(a))}`).join('\n');
+    const from = fromOf(ctx);
     if (!yes(ctx)) {
-      return ui.replyLong(ctx, `🎁 Найновіші невиплачені (${list.length}):\n\n${plan}\n\nРазом ≈ ${cost}⭐ з балансу зірок бота.` +
-        (manual ? `\nЩе ${manual} — лише вручну (NFT, Premium, нестандартні суми).` : '') + `\n\nНадіслати й підтвердити: /pay_new ${n} так`);
+      const b = await payouts.balances();
+      return ui.replyLong(ctx, `🎁 Найновіші невиплачені (${list.length}):\n\n${plan}\n\nРазом: <b>${cost}⭐</b>\n${balText(b)}` +
+        (manual ? `\nЩе ${manual} — лише вручну (NFT, Premium, нестандартні суми).` : '') +
+        `\n\nОбери баланс — надіслати й підтвердити:\n<code>/pay_new ${n} так бот</code>` + (b.accountOn ? `\n<code>/pay_new ${n} так акаунт</code>` : ''), { parse_mode: 'HTML' });
     }
-    await ctx.reply(`⏳ Надсилаю ${list.length} заявок…`).catch(() => {});
+    await ctx.reply(`⏳ Надсилаю ${list.length} заявок${from ? ' з балансу ' + balName[from] : ''}…`).catch(() => {});
     const out = [];
-    for (const a of list) { out.push(payLine(a, await payouts.pay(a.id))); await new Promise(r => setTimeout(r, 300)); }
+    for (const a of list) { out.push(payLine(a, await payouts.pay(a.id, from))); await new Promise(r => setTimeout(r, 300)); }
     const okN = out.filter(l => / ✅ /.test(l)).length;
     await ui.replyLong(ctx, `🎁 Автовиплата: ${okN} з ${list.length}\n\n` + out.join('\n'));
   });
