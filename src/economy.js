@@ -184,14 +184,14 @@ const TICKETS = { enabled: false, xpPerTicket: 5, perFriend: 1, exchange: false,
 // Безкоштовні зірки — у стільки разів менше, ніж було.
 const EARN_DIVISOR = 5;
 const earn = (n) => Math.round(n / EARN_DIVISOR * 100) / 100;
-// Вивід — лише подарунками (без «будь-якої суми»), до dayCap⭐ виплат на день.
+// Вивід — лише подарунками (без «будь-якої суми»). dayCap — межа виплат на день, 0 — без межі.
 // Розблокування: кнопка з розсилки (/wd_unlock) за unlockWindowMs, якщо гравець був
 // у боті щонайменше unlockNeedDays різних днів за останні unlockLookbackDays.
 // Антиабуз: вік акаунта, «справжні» друзі, одна заявка в черзі, бан виводу.
 const WITHDRAW = {
   min: 15, feePercent: 5, minReferrals: 3,
   gifts: ['bear', 'gift', 'rocket'],      // 🧸15 · 🎁25 · 🚀50
-  dayCap: 75,                             // ⭐ виплат на день (сума подарунків)
+  dayCap: 0,                              // ⭐ виплат на день (сума подарунків); 0 — без межі
   needUnlock: true, unlockWindowMs: 24 * 3600e3, unlockNeedDays: 3, unlockLookbackDays: 7,
   minAgeDays: 3,                          // акаунт у боті — від 3 днів
   maxPending: 1,                          // одна заявка на вивід у черзі

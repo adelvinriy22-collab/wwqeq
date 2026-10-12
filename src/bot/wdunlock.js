@@ -22,7 +22,7 @@ const giftsLine = () => W().gifts.map(id => { const t = E.getTier(id); return t.
 const T = {
   uk: {
     post: () => '{:rocket} <b>STARFORGE — ВЕЛИКЕ ОНОВЛЕННЯ</b>\n━━━━━━━━━━━━━━\n' +
-      '{:giftBox} <b>Вивід — тепер подарунками:</b> ' + giftsLine() + ' (до ' + W().dayCap + '⭐ на день)\n' +
+      '{:giftBox} <b>Вивід — тепер подарунками:</b> ' + giftsLine() + (W().dayCap ? ' (до ' + W().dayCap + '⭐ на день)' : '') + '\n' +
       '{:lockIcon} <b>Захист від абузу</b> — виплати лише справжнім гравцям\n' +
       '{:lightning} <b>Білети прибрано</b> — усі нагороди тепер у XP\n' +
       '{:starIcon} <b>Зірки стали ціннішими</b> — заробити їх тепер складніше\n\n' +
@@ -37,7 +37,7 @@ const T = {
   },
   en: {
     post: () => '{:rocket} <b>STARFORGE — BIG UPDATE</b>\n━━━━━━━━━━━━━━\n' +
-      '{:giftBox} <b>Withdrawals are now gifts:</b> 🧸 · 🎁 · 🚀 (up to ' + W().dayCap + '⭐ a day)\n' +
+      '{:giftBox} <b>Withdrawals are now gifts:</b> 🧸 · 🎁 · 🚀' + (W().dayCap ? ' (up to ' + W().dayCap + '⭐ a day)' : '') + '\n' +
       '{:lockIcon} <b>Anti-abuse protection</b> — payouts only for real players\n' +
       '{:lightning} <b>Tickets are gone</b> — all rewards are now XP\n' +
       '{:starIcon} <b>Stars are worth more</b> — they are harder to earn now\n\n' +
@@ -52,7 +52,7 @@ const T = {
   },
   ru: {
     post: () => '{:rocket} <b>STARFORGE — БОЛЬШОЕ ОБНОВЛЕНИЕ</b>\n━━━━━━━━━━━━━━\n' +
-      '{:giftBox} <b>Вывод — теперь подарками:</b> 🧸 · 🎁 · 🚀 (до ' + W().dayCap + '⭐ в день)\n' +
+      '{:giftBox} <b>Вывод — теперь подарками:</b> 🧸 · 🎁 · 🚀' + (W().dayCap ? ' (до ' + W().dayCap + '⭐ в день)' : '') + '\n' +
       '{:lockIcon} <b>Защита от абуза</b> — выплаты только настоящим игрокам\n' +
       '{:lightning} <b>Билеты убраны</b> — все награды теперь в XP\n' +
       '{:starIcon} <b>Звёзды стали ценнее</b> — заработать их теперь сложнее\n\n' +

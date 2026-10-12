@@ -262,14 +262,15 @@ test('щоденне безкоштовне колесо: зірки або XP (
   assert.strictEqual((await api('POST', '/spin', { wheel: '__proto__' }, '400')).status, 400);
 });
 
-test('вивід подарунками: розблокування з розсилки, умови, одна заявка, урізання, денний ліміт 75⭐', async () => {
+test('вивід подарунками: розблокування з розсилки, умови, одна заявка, урізання, без денної межі', async () => {
   const waitFor = async (pred) => { for (let i = 0; i < 60; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
   const W = (id, gift) => api('POST', '/wallet/withdraw', { gift }, id);
   assert.strictEqual((await W('1002', 'bear')).d.error, 'wd_locked', 'до розблокування — закрито');
   assert.strictEqual((await W('1002', 'trophy')).d.error, 'bad_gift', 'будь-яку суму чи 🏆 не вивести');
   const info = (await api('GET', '/wallet', null, '1002')).d.withdraw;
   assert.deepStrictEqual(info.gifts.map(g => g.id), ['bear', 'gift', 'rocket']);
-  assert.strictEqual(info.dayCap, 75);
+  assert.strictEqual(info.dayCap, 0, 'денної межі немає');
+  assert.strictEqual(info.leftToday, null);
   // Розсилка «оновлення» з кнопкою.
   const n0 = tg.calls.length;
   adminCmd('/wd_unlock так');
@@ -305,12 +306,13 @@ test('вивід подарунками: розблокування з розс�
   assert.strictEqual(app.cutFrom, 'rocket');
   adminCmd('/approve ' + id);
   await waitFor(() => (readDb().applications.find(a => a.id === id) || {}).status === 'approved');
-  // Денний ліміт: сьогодні вже 15⭐; 🎁 25 → 40; ще 🚀 50 → 90 > 75.
+  // Денної межі немає: після 🧸 і 🎁 ще й 🚀 за той самий день.
   const g2 = await W('1002', 'gift');
   assert.strictEqual(g2.status, 200, JSON.stringify(g2.d));
   adminCmd('/approve ' + g2.d.applicationId);
   await waitFor(() => (readDb().applications.find(a => a.id === g2.d.applicationId) || {}).status === 'approved');
-  assert.strictEqual((await W('1002', 'rocket')).d.error, 'day_cap');
+  const g3 = await W('1002', 'rocket');
+  assert.strictEqual(g3.status, 200, 'третій вивід за день (15 + 25 + 50 = 90⭐) — без денної межі: ' + JSON.stringify(g3.d));
 });
 
 test('паралельні виводи: проходить рівно один (блокування на гравця)', async () => {

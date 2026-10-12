@@ -41,7 +41,7 @@ function withdrawInfo(u) {
     needSub: require('./sponsor').channel(), hasSub: !!(u.taskDone || {}).sponsor,
     needUnlock: E.WITHDRAW.needUnlock, unlocked: gate.isUnlocked(u),
     minAgeDays: E.WITHDRAW.minAgeDays, ageDays, ageOk: ageDays >= E.WITHDRAW.minAgeDays,
-    dayCap: E.WITHDRAW.dayCap, usedToday, leftToday: Math.max(0, E.WITHDRAW.dayCap - usedToday),
+    dayCap: E.WITHDRAW.dayCap, usedToday, leftToday: E.WITHDRAW.dayCap ? Math.max(0, E.WITHDRAW.dayCap - usedToday) : null,
     pending: gate.pendingCount(u.id), maxPending: E.WITHDRAW.maxPending, banned: !!u.wdBan,
     maxPayout: Math.floor(users.stars(u)), blocked: maintenance.state().mode !== 'off',
   };
@@ -68,7 +68,7 @@ async function withdraw(uid, giftId) {
     if (gate.pendingCount(uid) >= E.WITHDRAW.maxPending) return { ok: false, status: 429, error: 'pending_exists' };
     const t = E.getTier(giftId);
     const used = gate.payoutToday(uid);
-    if (used + t.price > E.WITHDRAW.dayCap) return { ok: false, status: 429, error: 'day_cap', max: E.WITHDRAW.dayCap, have: used };
+    if (E.WITHDRAW.dayCap && used + t.price > E.WITHDRAW.dayCap) return { ok: false, status: 429, error: 'day_cap', max: E.WITHDRAW.dayCap, have: used };
     const w = E.withdrawCost(t.price, feeOf(u));
     const r = users.move(uid, { stars: -w.cost }, 'withdraw', { payout: w.payout, gift: giftId });
     if (!r.ok) return { ok: false, status: 402, error: 'not_enough', balance: users.stars(u), cost: w.cost, payout: w.payout };

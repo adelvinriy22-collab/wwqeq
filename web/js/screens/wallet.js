@@ -131,9 +131,9 @@ function withdraw(nav, body) {
       row({ icon: ok(w.hasUsername), title: t('wd.reqUser'), sub: w.hasUsername ? null : t('wd.reqUserS') }),
       w.needSub ? row({ icon: ok(w.hasSub), title: t('wd.reqSub', { c: w.needSub }) }) : null,
       row({ icon: ok(w.pending < w.maxPending), title: t('wd.reqPending'), value: w.pending + '/' + w.maxPending }),
-      row({ icon: ok(w.leftToday > 0), title: t('wd.reqDay', { n: w.dayCap }), value: fmt(w.usedToday) + '/' + w.dayCap + '⭐' }));
+      w.dayCap ? row({ icon: ok(w.leftToday > 0), title: t('wd.reqDay', { n: w.dayCap }), value: fmt(w.usedToday) + '/' + w.dayCap + '⭐' }) : null);
     const tiles = el('div', { class: 'grid2' }, w.gifts.map(g => {
-      const can = !w.blocked && !w.banned && g.payout <= w.leftToday && S.me.balance.stars >= g.cost;
+      const can = !w.blocked && !w.banned && (w.leftToday == null || g.payout <= w.leftToday) && S.me.balance.stars >= g.cost;
       return el('button', { class: 'tile', type: 'button', disabled: !can, onclick: async () => {
         if (!(await confirm(t('wd.confirmGift', { g: g.emoji + ' ' + (g.name[S.me.user.lang] || g.name.uk), c: g.cost })))) return;
         try { const r = await api.post('/wallet/withdraw', { gift: g.id }); setBalance(r.balance); s.close(); toast(t('wd.done', { id: r.applicationId }), 'success'); refreshSoon(); nav.rerender(); }
@@ -145,7 +145,7 @@ function withdraw(nav, body) {
       el('h3', null, t('wd.title')),
       w.blocked ? el('div', { class: 'banner red' }, el('div', { class: 'bi' }, '🛠'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wd.blocked')))) : null,
       w.banned ? el('div', { class: 'banner red' }, el('div', { class: 'bi' }, '🚫'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wd.banned')))) : null,
-      el('p', null, t('wd.leadGift', { f: w.feePercent, d: w.dayCap })),
+      el('p', null, t(w.dayCap ? 'wd.leadGift' : 'wd.leadGiftNoCap', { f: w.feePercent, d: w.dayCap })),
       w.baseFeePercent != null && w.feePercent < w.baseFeePercent ? el('div', { class: 'banner green' }, el('div', { class: 'bi' }, '🏅'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wd.levelFee', { f: w.feePercent, b: w.baseFeePercent })))) : null,
       tiles,
       el('div', { class: 'label mt12' }, t('wd.reqTitle')),
