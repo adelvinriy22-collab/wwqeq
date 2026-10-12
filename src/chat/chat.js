@@ -882,9 +882,19 @@ function createChat(bot, opts) {
     if (!gMove(uid, -bet, g.name + ' у чаті')) return;
     slotLast.set(uid, now);
     chatGameLog.push(now);
-    const dm = await bot.telegram.sendDice(chatId, { emoji: g.emoji, reply_to_message_id: ctx.message.message_id, allow_sending_without_reply: true }).catch(() => null);
+    // Кубик — окремим повідомленням, НЕ відповіддю на команду: кубик-відповідь клієнти
+    // Telegram у групах часто показують уже зупиненим, без анімації (у приваті бот теж
+    // надсилає без відповіді — там анімація є). Результат нижче відповідає на команду.
+    const dm = await bot.telegram.sendDice(chatId, { emoji: g.emoji }).catch(() => null);
     if (!dm || !dm.dice) { gMove(uid, bet, g.name + ' — повернення'); return; }
     const v = dm.dice.value;
+
+    let mult = 0, combo = '';
+    if (key === 'slot') { const r = slotPay(v); mult = r.m; combo = r.r.map(z => SYM[z]).join(' '); }
+    else mult = g.win(v) ? g.k : 0;
+
+    // Поки кубик котиться — у чаті тиша: XP, квест і можливі оголошення рівня — після.
+    await new Promise(r => setTimeout(r, ANIM_MS[g.emoji] || 4500));   // чекаємо, поки кубик зупиниться
     questProg(uid, 'slot', 1, ctx.message.message_id);
     if (!TIX_ON) {
       // На зірки — XP за ставку, як в іграх у боті (зі своєю денною стелею wager).
@@ -895,12 +905,6 @@ function createChat(bot, opts) {
       const gp = u.gamePtsDay === day ? (u.gamePts || 0) : 0;
       if (gp < SLOT.gamePtsDayCap) { db.upsertUser(uid, { gamePtsDay: day, gamePts: gp + 1 }); addChatPts(uid, 1, null); }
     }
-
-    let mult = 0, combo = '';
-    if (key === 'slot') { const r = slotPay(v); mult = r.m; combo = r.r.map(z => SYM[z]).join(' '); }
-    else mult = g.win(v) ? g.k : 0;
-
-    await new Promise(r => setTimeout(r, ANIM_MS[g.emoji] || 4500));   // чекаємо, поки кубик зупиниться
     // Відповідаємо на КОМАНДУ, а не на кубик: цитата кубика змушує Telegram
     // перемальовувати його, і анімація скидається. Реакцій на кубик теж не ставимо.
     const rep2 = { reply_to_message_id: ctx.message.message_id, allow_sending_without_reply: true };

@@ -840,6 +840,7 @@ test('міні-ігри на зірки в чаті: /dice списує став
   gmsg(1010, '/dice 10');
   const dice = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendDice' && String(c.payload.chat_id) === String(GROUP)));
   assert.ok(dice, 'Telegram кидає кубик у чаті');
+  assert.strictEqual(dice.payload.reply_to_message_id, undefined, 'кубик — не відповіддю (інакше в групах без анімації)');
   const win = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /\+18\.5 ⭐/.test(c.payload.text || '')), 80);
   assert.ok(win, 'виграш: 6 на кубику → 10 × 1.85 = 18.5⭐');
   assert.ok(await waitFor(() => readDb().users['1010'].starBalance === 38.5), 'баланс: 30 − 10 + 18.5');
