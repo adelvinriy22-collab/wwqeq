@@ -3,8 +3,11 @@
 //
 // Дві валюти:
 //   ⭐ зірки  — реальні гроші: поповнення Telegram Stars, вивід, платні спіни
-//   🎫 білети — безкоштовна валюта за активність і друзів: колесо білетів,
-//              ставки в банк, ігри в чаті, обмін 10🎫 = 1⭐
+//   🎫 білети — ПРИБРАНО (TICKETS.enabled = false): кожна нагорода білетами
+//              автоматично стає XP (1🎫 = TICKETS.xpPerTicket XP, див. users.move)
+//
+// Безкоштовний заробіток зірок — у EARN_DIVISOR разів важчий (рівні, пас, ліга,
+// клани, чат, завдання). Платні речі (колесо за зірки, ігри, преміум-пас) — без змін.
 //
 // Один досвід (XP) за будь-яку дію. З нього рахуються:
 //   • рівень гравця (назавжди, з титулами й нагородами за рівні)
@@ -54,7 +57,9 @@ function tierName(id, lang) { const t = getTier(id); return t.name[lang] || t.na
 // weights — справжні шанси (вирішує сервер). segments — як колесо виглядає
 // (однаково на сервері й у застосунку, щоб стрілка завжди падала на свій сектор).
 const WHEELS = {
+  // Щоденне колесо й колесо білетів прибрано (нова економіка). Конфіг — для історії.
   daily: {
+    disabled: true,
     title: { uk: 'Щоденне', en: 'Daily', ru: 'Ежедневное' },
     cost: { stars: 0, tickets: 0 },
     weights: {
@@ -64,7 +69,8 @@ const WHEELS = {
     },
     segments: ['star2', 'gift', 'star3', 'rocket', 'tix1', 'nft', 'star5', 'trophy', 'tix3', 'star8', 'tix5', 'star12', 'tix1', 'star25'],
   },
-  referral: {   // історична назва: тепер це колесо білетів
+  referral: {   // історична назва: колесо білетів
+    disabled: true,
     title: { uk: 'За білети', en: 'Tickets', ru: 'За билеты' },
     cost: { stars: 0, tickets: 5 },
     weights: {
@@ -167,8 +173,24 @@ function slotResult(v) {
 const GAME_BET = { min: 1, max: 1000, presets: [1, 5, 10, 25, 50, 100] };
 
 // ─── Білети, обмін, вивід, поповнення ───────────────────────────────────
-const TICKETS = { perFriend: 1, exchangeTickets: 10, exchangeStars: 1, buyPerStar: 10 };   // 10🎫 = 1⭐; купівля: 1⭐ → 10🎫
-const WITHDRAW = { min: 15, feePercent: 5, minReferrals: 3 };
+// Білети вимкнено: обмін в обидва боки закрито, нарахування білетів → XP.
+const TICKETS = { enabled: false, xpPerTicket: 5, perFriend: 1, exchange: false, exchangeTickets: 10, exchangeStars: 1, buyPerStar: 10 };
+// Безкоштовні зірки — у стільки разів менше, ніж було.
+const EARN_DIVISOR = 5;
+const earn = (n) => Math.round(n / EARN_DIVISOR * 100) / 100;
+// Вивід — лише подарунками (без «будь-якої суми»), до dayCap⭐ виплат на день.
+// Розблокування: кнопка з розсилки (/wd_unlock) за unlockWindowMs, якщо гравець був
+// у боті щонайменше unlockNeedDays різних днів за останні unlockLookbackDays.
+// Антиабуз: вік акаунта, «справжні» друзі, одна заявка в черзі, бан виводу.
+const WITHDRAW = {
+  min: 15, feePercent: 5, minReferrals: 3,
+  gifts: ['bear', 'gift', 'rocket'],      // 🧸15 · 🎁25 · 🚀50
+  dayCap: 75,                             // ⭐ виплат на день (сума подарунків)
+  needUnlock: true, unlockWindowMs: 24 * 3600e3, unlockNeedDays: 3, unlockLookbackDays: 7,
+  minAgeDays: 3,                          // акаунт у боті — від 3 днів
+  maxPending: 1,                          // одна заявка на вивід у черзі
+  realFriendMinDays: 2,                   // друг «справжній», якщо був у боті ≥2 різні дні
+};
 // Місія «підпишись на канал-спонсора» (config.SPONSOR_CHANNEL): нагорода один раз.
 // Джекпот у чаті: переможець забирає подарунок у боті.
 // viaOnly — подарунок лише від одного відправника (💝 — поки лише від бота); решта — від акаунта
@@ -177,7 +199,7 @@ const JACKPOT = { botLocked: true, viaOnly: { heart: 'bot' }, claimTtlMs: 3600e3
 // Бета-вивід зірок на канал гравця (платна реакція ⭐ від акаунта власника, анонімно).
 // enabled: false — вимкнено: реальні зірки на канал поки лише в джекпотах.
 const BETA_WD = { enabled: false, amounts: [1, 2, 3, 4], cooldownMs: 24 * 3600e3 };
-const SPONSOR = { tickets: 10, xp: 50 };
+const SPONSOR = { tickets: 0, xp: 100 };
 // Розіграш автовидачі (/awd_giveaway): призи за місцями. autowd — промокод на автовидачу,
 // gift/gift2 — подарунки Telegram (від акаунта власника / бота / заявкою), stars/tickets/xp — у боті.
 const AWD_GIVEAWAY = {
@@ -217,6 +239,7 @@ const XP = {
   friend:   { per: 75, dayCap: 300 },   // приведений друг (XP — лише за перших 4 на день; білети — за кожного)
   deposit:  { per: 100, dayCap: 300 },
   quest:    { dayCap: 300 },   // питання дня, завдання, промокоди, серія
+  reward:   {},                 // нагороди, що раніше видавались білетами (1🎫 = 5 XP)
   admin:    {},
   clan:     {},                 // нагороди кланової війни (не рахуються в очки клану)
 };
@@ -228,7 +251,7 @@ const XP_RATES = { paidSpinPerStar: 3, gamePerStar: 2, bankPerStar: 1 };
 // бонус одразу за вступ, скрині клану (білети всім учасникам по дорозі до
 // фіналу), а у фіналі — призи топ-3. Перша війна стартує сама, наступні — /clanwar start.
 const CLANS = {
-  createCost: 3,              // 🎫 за створення
+  createCost: 0,              // створення — безкоштовно (білетів більше немає)
   nameMin: 2, nameMax: 20,
   cap: 15,                    // місць у клані
   eventDays: 3,               // скільки триває війна
@@ -245,7 +268,7 @@ const CLANS = {
     { at: 50, tickets: 2 },
     { at: 150, tickets: 3 },
     { at: 300, tickets: 5 },
-    { at: 600, tickets: 5, stars: 1 },
+    { at: 600, tickets: 5, stars: earn(1) },
   ],
   activeMin: 15,              // приз фіналу — тим, хто приніс клану від 15 очок
   // Ліміт XP не зупиняє клан: у клані під час війни денна стеля XP ×2 (чат, спіни,
@@ -267,9 +290,9 @@ const CLANS = {
     order: ['chat', 'paid', 'xp', 'games'],
     kinds: {
       chat:  { emoji: '💬', title: 'ХТО НАЙАКТИВНІШИЙ У ЧАТІ', how: 'пиши в чаті — кожне повідомлення = очко', unit: 'оч.', min: 10, top: [{ tickets: 15 }, { tickets: 10 }, { tickets: 5 }] },
-      paid:  { emoji: '🎡', title: 'ХТО БІЛЬШЕ ПОКРУТИТЬ ПЛАТНИХ КОЛІС', how: 'крути платне колесо в застосунку — рахуються витрачені ⭐', unit: '⭐', min: 5, top: [{ stars: 3 }, { stars: 2 }, { stars: 1 }] },
+      paid:  { emoji: '🎡', title: 'ХТО БІЛЬШЕ ПОКРУТИТЬ ПЛАТНИХ КОЛІС', how: 'крути платне колесо в застосунку — рахуються витрачені ⭐', unit: '⭐', min: 5, top: [{ stars: earn(3) }, { stars: earn(2) }, { stars: earn(1) }] },
       xp:    { emoji: '⚡', title: 'ХТО НАБЕРЕ БІЛЬШЕ XP', how: 'будь-яка активність: чат, колеса, ігри, завдання', unit: 'XP', min: 20, top: [{ tickets: 15 }, { tickets: 10 }, { tickets: 5 }] },
-      games: { emoji: '🎲', title: 'ХТО БІЛЬШЕ ЗІГРАЄ НА ЗІРКИ', how: 'грай на зірки в боті — рахуються ставки ⭐', unit: '⭐', min: 5, top: [{ stars: 3 }, { stars: 2 }, { stars: 1 }] },
+      games: { emoji: '🎲', title: 'ХТО БІЛЬШЕ ЗІГРАЄ НА ЗІРКИ', how: 'грай на зірки в боті — рахуються ставки ⭐', unit: '⭐', min: 5, top: [{ stars: earn(3) }, { stars: earn(2) }, { stars: earn(1) }] },
     },
     win: { points: 100, tickets: 5 },   // клан-переможець: +100 очок у війні, +5🎫 кожному, хто бився
   },
@@ -277,9 +300,9 @@ const CLANS = {
   // Фінал: власнику клану — справжній подарунок Telegram (id з src/features/tggifts.js),
   // кожному активному учаснику (разом із власником) — зірки, білети й XP.
   rewards: [
-    { place: 1, ownerGift: 'gift', stars: 7, tickets: 30, xp: 100 },   // 🎁 Подарунок за 25⭐ власнику
-    { place: 2, ownerGift: 'bear', stars: 3, tickets: 15, xp: 60 },    // 🧸 Мішка за 15⭐ власнику
-    { place: 3, ownerGift: null,   stars: 1, tickets: 10, xp: 30 },
+    { place: 1, ownerGift: 'gift', stars: earn(7), tickets: 30, xp: 100 },   // 🎁 Подарунок за 25⭐ власнику
+    { place: 2, ownerGift: 'bear', stars: earn(3), tickets: 15, xp: 60 },    // 🧸 Мішка за 15⭐ власнику
+    { place: 3, ownerGift: null,   stars: earn(1), tickets: 10, xp: 30 },
   ],
 };
 
@@ -304,22 +327,23 @@ const LEVELS = [
 ];
 // Нагорода за НОВИЙ рівень (index від 0: рівень 2 → index 1). Що вище рівень —
 // то більша; з 6-го через рівень додаються зірки. Видається один раз.
+// Білетів у нагородах рівнів більше немає (XP за рівень дав би рекурсію рівнів); зірки ÷ EARN_DIVISOR.
 const LEVEL_REWARDS = [
   {},                          //  1 🌱
-  { tickets: 2 },              //  2 🙂
-  { tickets: 3 },              //  3 💬
-  { tickets: 5 },              //  4 ⚡
-  { tickets: 7 },              //  5 🔥
-  { tickets: 10, stars: 2 },   //  6 🛡
-  { tickets: 12 },             //  7 ⭐
-  { tickets: 15, stars: 5 },   //  8 💎
-  { tickets: 20 },             //  9 👑
-  { tickets: 25, stars: 10 },  // 10 🌌
-  { tickets: 30 },             // 11 🗿
-  { tickets: 35, stars: 20 },  // 12 🏆
-  { tickets: 40 },             // 13 🎖
-  { tickets: 50, stars: 35 },  // 14 ♾️
-  { tickets: 100, stars: 75 }, // 15 🍀
+  {},                          //  2 🙂
+  {},                          //  3 💬
+  {},                          //  4 ⚡
+  {},                          //  5 🔥
+  { stars: earn(2) },          //  6 🛡
+  {},                          //  7 ⭐
+  { stars: earn(5) },          //  8 💎
+  {},                          //  9 👑
+  { stars: earn(10) },         // 10 🌌
+  {},                          // 11 🗿
+  { stars: earn(20) },         // 12 🏆
+  {},                          // 13 🎖
+  { stars: earn(35) },         // 14 ♾️
+  { stars: earn(75) },         // 15 🍀
 ];
 const levelReward = (index) => LEVEL_REWARDS[index] || {};
 
@@ -357,27 +381,28 @@ const PASS = {
   xtrBonusLevels: 2,
 };
 const r = (type, amount, extra) => Object.assign({ type, amount }, extra || {});
+// Безкоштовна доріжка: зірки ÷ EARN_DIVISOR; білетів і спінів щоденного колеса більше немає.
 PASS.free = {
-  3: r('tickets', 3), 6: r('freeSpin', 1), 9: r('stars', 2), 12: r('tickets', 5), 15: r('freeSpin', 1),
-  18: r('stars', 3), 21: r('tickets', 5), 24: r('freeSpin', 1), 27: r('stars', 5), 30: r('tickets', 10),
+  9: r('stars', earn(2)), 18: r('stars', earn(3)), 27: r('stars', earn(5)),
 };
+// Преміум-доріжку куплено — зірки без змін; білети й спіни щоденного колеса прибрано.
 PASS.prem = {
-  2: r('stars', 2), 4: r('freeSpin', 1), 6: r('tickets', 5), 8: r('stars', 3), 10: r('paidSpin', 1),
-  12: r('stars', 3), 14: r('tickets', 10), 16: r('freeSpin', 2), 18: r('stars', 5), 20: r('paidSpin', 1),
-  22: r('stars', 5), 24: r('tickets', 15), 26: r('freeSpin', 2), 28: r('stars', 8),
+  2: r('stars', 2), 8: r('stars', 3), 10: r('paidSpin', 1),
+  12: r('stars', 3), 18: r('stars', 5), 20: r('paidSpin', 1),
+  22: r('stars', 5), 28: r('stars', 8),
   30: r('final', 0, { stars: 30, paidSpin: 1, prize: 'bear' }),
 };
 
 // ─── Ліга тижня (XP за тиждень) ─────────────────────────────────────────
 const LEAGUE = {
   minXpForPrize: 50,
-  participationXp: 150, participationTickets: 3,
+  participationXp: 150, participationTickets: 0,
   rewards: [
-    { from: 1, to: 1,  items: [{ type: 'tier', id: 'trophy' }, { type: 'tickets', n: 50 }] },
-    { from: 2, to: 2,  items: [{ type: 'tier', id: 'rocket' }, { type: 'tickets', n: 30 }] },
-    { from: 3, to: 3,  items: [{ type: 'tier', id: 'gift' },   { type: 'tickets', n: 20 }] },
-    { from: 4, to: 5,  items: [{ type: 'tier', id: 'bear' },   { type: 'tickets', n: 10 }] },
-    { from: 6, to: 10, items: [{ type: 'stars', n: 10 },       { type: 'tickets', n: 5 }] },
+    { from: 1, to: 1,  items: [{ type: 'tier', id: 'trophy' }] },
+    { from: 2, to: 2,  items: [{ type: 'tier', id: 'rocket' }] },
+    { from: 3, to: 3,  items: [{ type: 'tier', id: 'gift' }] },
+    { from: 4, to: 5,  items: [{ type: 'tier', id: 'bear' }] },
+    { from: 6, to: 10, items: [{ type: 'stars', n: earn(10) }] },
   ],
 };
 function leagueRewardFor(rank) {
@@ -388,7 +413,7 @@ function leagueRewardFor(rank) {
 // ─── Спільна ціль (усі спіни разом) ─────────────────────────────────────
 const GOAL = { target: 100, prize: 'gift' };
 
-module.exports = { BETA_WD, JACKPOT, AWD_GIVEAWAY, SPONSOR,
+module.exports = { EARN_DIVISOR, earn, BETA_WD, JACKPOT, AWD_GIVEAWAY, SPONSOR,
   TIERS, getTier, tierName,
   WHEELS, PITY, GIFT_IDS, NFT_IDS, PRIZE_IDS, HAPPY_HOUR, streakBonus,
   RISK, GAMES, SLOT_SYMBOLS, slotResult, GAME_BET,

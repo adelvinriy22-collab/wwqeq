@@ -62,6 +62,7 @@ function withUser(req, res, next) {
   const patch = {};
   if (!u.lastActiveAt || Date.now() - u.lastActiveAt > 60000) patch.lastActiveAt = Date.now();
   if (!u.lang) patch.lang = langOf(u, a.user);
+  Object.assign(patch, require('../features/withdrawgate').touchPatch(u) || {});   // дні в застосунку — для виводу
   const photo = typeof a.user.photo_url === 'string' && /^https:\/\//.test(a.user.photo_url) ? a.user.photo_url : null;
   if (photo !== (u.photo || null)) patch.photo = photo;
   if (a.user.is_premium !== undefined && !!a.user.is_premium !== !!u.isPremium) patch.isPremium = !!a.user.is_premium;
@@ -118,6 +119,7 @@ function bootstrap(req) {
     user: { id: u.id, name: u.name || '', username: u.username || null, lang, photo: u.photo || null, isAdmin: users.isAdmin(req.uid), anonymous: !!u.anonymous },
     bot: notify.tg.botUsername || null,
     balance: { stars: users.stars(u), tickets: users.tickets(u) },
+    ticketsOff: !E.TICKETS.enabled, xpPerTicket: E.TICKETS.xpPerTicket, exchangeOn: !!E.TICKETS.exchange,
     progress: progress.view(u, lang),
     wheels: wheels.view(u),
     risk: games.riskState(u),
@@ -171,7 +173,7 @@ router.get('/wallet', h(async (req) => {
   return { ok: true, balance: { stars: users.stars(u), tickets: users.tickets(u) }, withdraw: wallet.withdrawInfo(u), topup: wallet.topupInfo(u),
            exchange: { tickets: E.TICKETS.exchangeTickets, stars: E.TICKETS.exchangeStars, buyPerStar: E.TICKETS.buyPerStar }, shop: wallet.shopView(u, req.lang), history: wallet.history(u) };
 }));
-router.post('/wallet/withdraw', notInMaintenance, subscribed, h(async (req) => wallet.withdraw(req.uid, req.body.amount)));
+router.post('/wallet/withdraw', notInMaintenance, subscribed, h(async (req) => wallet.withdraw(req.uid, req.body.gift)));
 router.post('/wallet/exchange', notInMaintenance, h(async (req) => wallet.exchange(req.uid, req.body.tickets)));
 router.post('/wallet/buy-tickets', notInMaintenance, h(async (req) => wallet.buyTickets(req.uid, req.body.stars)));
 router.post('/wallet/topup', h(async (req) => wallet.invoiceLink(req.uid, 'topup', req.body.amount)));

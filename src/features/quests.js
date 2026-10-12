@@ -1,8 +1,8 @@
 // ==========================================================================
 // ЗАВДАННЯ:
-//   • Завдання дня — три прості дії щодня (одна завжди «щоденний спін»),
-//     за кожну +1🎫 і XP, за всі три — ще бонус.
-//   • Питання дня — правильна відповідь дає бонусний спін.
+//   • Завдання дня — три прості дії щодня (одна завжди «питання дня»),
+//     за кожну XP, за всі три — ще бонус XP (білетів більше немає).
+//   • Питання дня — правильна відповідь дає XP.
 //   • Партнерські завдання й секретне завдання — з перевіркою адміном.
 // ==========================================================================
 const config = require('../config');
@@ -21,15 +21,17 @@ const DAILY_POOL = {
   spin_tickets: { need: 1, t: { uk: 'Крутни колесо білетів', en: 'Spin the ticket wheel', ru: 'Крутни колесо билетов' }, go: 'wheel:referral' },
   spin_paid:    { need: 1, t: { uk: 'Крутни колесо «За зірки»', en: 'Spin the stars wheel', ru: 'Крутни колесо «За звёзды»' }, go: 'wheel:paid' },
   bank:         { need: 1, t: { uk: 'Зроби ставку в банк', en: 'Bet in the bank', ru: 'Сделай ставку в банк' }, go: 'bank' },
-  risk:         { need: 1, t: { uk: 'Ризикни ×2 після спіну', en: 'Try risk ×2 after a spin', ru: 'Рискни ×2 после спина' }, go: 'wheel:daily' },
+  risk:         { need: 1, t: { uk: 'Ризикни ×2 після спіну', en: 'Try risk ×2 after a spin', ru: 'Рискни ×2 после спина' }, go: 'wheel:paid' },
 };
-const DAILY_REWARD = { tickets: 1, xp: 10 };
-const DAILY_ALL = { tickets: 3, xp: 30 };
+const DAILY_REWARD = { tickets: 0, xp: 15 };
+const DAILY_ALL = { tickets: 0, xp: 45 };
+const QUIZ_XP = 40;
 
 function dailySet(day) {
   let h = 0; for (const ch of day) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  const extra = ['game', 'spin_tickets', 'bank', 'risk', 'spin_paid'];
-  return ['spin_daily', 'quiz', extra[h % extra.length]];
+  // Щоденне колесо, колесо білетів і банк прибрано — їх у завданнях більше немає.
+  const extra = ['spin_paid', 'risk'];
+  return ['quiz', 'game', extra[h % extra.length]];
 }
 function dailyState(u, day) {
   return u.dq && u.dq.day === day ? u.dq : { day, p: {}, d: {}, all: false };
@@ -51,8 +53,8 @@ function track(uid, key, n) {
   const allNow = !s.all && set.every(k => s.d[k]);
   if (allNow) s.all = true;
   users.patch(uid, { dq: s });
-  if (doneNow) { users.move(uid, { tickets: DAILY_REWARD.tickets }, 'quest', { q: key }); progress.addXp(uid, 'quest', DAILY_REWARD.xp); }
-  if (allNow) { users.move(uid, { tickets: DAILY_ALL.tickets }, 'quest', { q: 'all' }); progress.addXp(uid, 'quest', DAILY_ALL.xp); }
+  if (doneNow) progress.addXp(uid, 'quest', DAILY_REWARD.xp, { q: key });
+  if (allNow) progress.addXp(uid, 'quest', DAILY_ALL.xp, { q: 'all' });
 }
 
 function dailyView(u, lang) {
@@ -68,18 +70,12 @@ function dailyView(u, lang) {
 
 // ─── Питання дня ────────────────────────────────────────────────────────
 const QUIZ = [
-  { q: { uk: 'Скільки секторів на щоденному колесі?', en: 'How many sectors does the daily wheel have?', ru: 'Сколько секторов на ежедневном колесе?' }, a: ['10', '12', '14'], ok: 2 },
   { q: { uk: 'Який шанс виграти в ризик-грі ×2?', en: 'What is the chance to win risk ×2?', ru: 'Какой шанс выиграть в риск ×2?' }, a: ['45%', '50%', '60%'], ok: 0 },
   { q: { uk: 'Скільки коштує спін колеса «За зірки»?', en: 'How much is a stars-wheel spin?', ru: 'Сколько стоит спин колеса «За звёзды»?' }, a: ['10⭐', '15⭐', '25⭐'], ok: 1 },
-  { q: { uk: 'Через скільки годин оновлюється безкоштовний спін?', en: 'How many hours until the free spin refreshes?', ru: 'Через сколько часов обновляется бесплатный спин?' }, a: ['12', '24', '48'], ok: 1 },
   { q: { uk: 'Скільки друзів треба запросити для виводу зірок?', en: 'How many friends are needed to withdraw?', ru: 'Сколько друзей нужно для вывода?' }, a: ['1', '3', '5'], ok: 1 },
   { q: { uk: 'Яка комісія на вивід зірок?', en: 'What is the withdrawal fee?', ru: 'Какая комиссия на вывод?' }, a: ['5%', '10%', '15%'], ok: 0 },
-  { q: { uk: 'Скільки білетів коштує спін колеса білетів?', en: 'How many tickets is a ticket-wheel spin?', ru: 'Сколько билетов стоит спин колеса билетов?' }, a: ['3', '5', '10'], ok: 1 },
   { q: { uk: 'Скільки разів поспіль можна подвоїти виграш?', en: 'How many times in a row can you double?', ru: 'Сколько раз подряд можно удвоить выигрыш?' }, a: ['2', '3', '5'], ok: 1 },
   { q: { uk: 'Який приз найдорожчий у боті?', en: 'Which prize is the most valuable?', ru: 'Какой приз самый дорогой?' }, a: ['Evil Eye', 'Diamond Ring', 'Трофей'], ok: 1 },
-  { q: { uk: 'Скільки білетів дають 2⭐ при обміні?', en: 'How many tickets make 2⭐ in exchange?', ru: 'Сколько билетов дают 2⭐ при обмене?' }, a: ['5', '10', '20'], ok: 1 },
-  { q: { uk: 'Що дає кожен запрошений друг?', en: 'What does each invited friend give?', ru: 'Что даёт каждый приглашённый друг?' }, a: ['1⭐', '1🎫', '5🎫'], ok: 1 },
-  { q: { uk: 'Що отримує кожен учасник банку, навіть програвши?', en: 'What does every bank player get, even when losing?', ru: 'Что получает каждый участник банка, даже проиграв?' }, a: ['Нічого', 'Утішні білети', 'Зірку'], ok: 1 },
 ];
 
 function quizToday() {
@@ -90,7 +86,7 @@ function quizToday() {
 function quizView(u, lang) {
   const q = quizToday();
   const answered = u.quizDay === q.day;
-  return { question: q.q[lang] || q.q.uk, answers: q.a, answered, right: answered ? !!u.quizRight : null, correct: answered ? q.ok : null, reward: 'spin' };
+  return { question: q.q[lang] || q.q.uk, answers: q.a, answered, right: answered ? !!u.quizRight : null, correct: answered ? q.ok : null, reward: 'xp', xp: QUIZ_XP };
 }
 async function quizAnswer(uid, choice) {
   return users.withLock(uid, () => {
@@ -99,13 +95,10 @@ async function quizAnswer(uid, choice) {
     const q = quizToday();
     if (u.quizDay === q.day) return { ok: false, status: 429, error: 'already_answered' };
     const right = Number(choice) === q.ok;
-    const patch = { quizDay: q.day, quizRight: right };
-    // Бонусний спін окремим лічильником — серія днів не ламається.
-    if (right) patch.freeSpins = (u.freeSpins || 0) + 1;
-    users.patch(uid, patch);
-    if (right) progress.addXp(uid, 'quest', 20, { why: 'quiz' });
+    users.patch(uid, { quizDay: q.day, quizRight: right });
+    if (right) progress.addXp(uid, 'quest', QUIZ_XP, { why: 'quiz' });
     track(uid, 'quiz');
-    return { ok: true, right, correct: q.ok, freeSpins: users.get(uid).freeSpins || 0 };
+    return { ok: true, right, correct: q.ok, xp: right ? QUIZ_XP : 0 };
   });
 }
 
@@ -164,7 +157,7 @@ function taskAccept(uid, taskId) {
 // ─── Секретне завдання партнера ─────────────────────────────────────────
 // Прибране: за замовчуванням сховане в застосунку (головна, «Завдання», спливаюче
 // вікно) і не приймає заявок. Повернути — адмін /partner_on, сховати — /partner_off.
-const PARTNER = { on: true, name: 'GramTon Drop', link: config.LINKS.partner, stars: 3, tickets: 15, xp: 50, earlyCount: 20 };
+const PARTNER = { on: true, name: 'GramTon Drop', link: config.LINKS.partner, stars: require('../economy').earn(3), tickets: 0, xp: 125, earlyCount: 20 };
 function partnerFlags() { return (store.getFeatureFlags() || {}).partner || {}; }
 function partnerView(u) {
   const f = partnerFlags();

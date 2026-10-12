@@ -9,6 +9,7 @@
 // ==========================================================================
 const store = require('../store');
 const config = require('../config');
+const E = require('../economy');
 const { round2 } = require('../lib/util');
 
 const TX_KEEP = 60;
@@ -48,7 +49,15 @@ function move(uid, delta, reason, meta) {
   const u = get(uid);
   if (!u) return { ok: false, error: 'no_user' };
   const ds = round2(delta.stars || 0);
-  const dt = Math.trunc(delta.tickets || 0);
+  let dt = Math.trunc(delta.tickets || 0);
+  // Білети вимкнено: нарахування білетів стає XP (1🎫 = xpPerTicket XP). Нагороди
+  // кланів ідуть у XP з джерелом 'clan', щоб не рахуватись в очки клану.
+  if (dt > 0 && !E.TICKETS.enabled && reason !== 'migration') {
+    const xp = dt * E.TICKETS.xpPerTicket;
+    dt = 0;
+    setImmediate(() => { try { require('./progress').addXp(uid, /^clan/.test(String(reason)) ? 'clan' : 'reward', xp, { why: reason }); } catch (e) {} });
+    if (!ds) return { ok: true, stars: stars(u), tickets: tickets(u), xp };
+  }
   if (!ds && !dt) return { ok: true, stars: stars(u), tickets: tickets(u) };
   const ns = round2(stars(u) + ds);
   const nt = tickets(u) + dt;

@@ -22,12 +22,16 @@ export function render(nav) {
       el('button', { class: 'btn small', type: 'button', onclick: () => nav.go('games', 'wheels') }, t('risk.try'))));
   }
 
-  out.push(el('div', { class: 'sec-title' }, el('span', null, t('home.daily'))));
-  out.push(wheelCard(nav, 'daily'));
+  // Щоденне колесо прибрано — на головній колесо «За зірки» (якщо є).
+  const firstWheel = ['daily', 'paid'].find(id => me.wheels.wheels[id]);
+  if (firstWheel) {
+    out.push(el('div', { class: 'sec-title' }, el('span', null, firstWheel === 'daily' ? t('home.daily') : t('home.wheelPaid'))));
+    out.push(wheelCard(nav, firstWheel));
+  }
 
   // Що зараз актуально.
   const rows = [];
-  rows.push(row({
+  if (!me.ticketsOff) rows.push(row({
     icon: '🎫', iconClass: 'c-orange', title: t('home.tickets'), sub: t('home.ticketsSub', { n: me.wheels.wheels.referral ? me.wheels.wheels.referral.cost.tickets : 5 }),
     value: tix(me.balance.tickets), strong: true, onClick: () => nav.go('games', 'wheels'),
   }));

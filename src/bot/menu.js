@@ -34,7 +34,7 @@ const T = {
     share: 'ПОДІЛИТИСЯ ПОСИЛАННЯМ', claim: 'ЗАБРАТИ: {name}', stDone: '{:check} видано', stPend: '{:pendingIcon} в черзі', stRej: '{:redCircle} відхилено', stOk: '{:greenCircle} <b>можна забрати!</b>', stLock: '{:lockIcon} ще {n}',
     claimed: '{:check} <b>Заявку #{id} створено</b>\n{name} — видамо найближчим часом.', claimErr: { already: 'Заявка на цей приз уже є.', need_username: 'Спершу додай @username у налаштуваннях Telegram.', not_enough_friends: 'Поки не вистачає друзів.' },
     pfTitle: 'МІЙ ПРОФІЛЬ', pfSpins: '🎰 Спінів: <b>{spins}</b> (платних {paid})', pfPrizes: '{:giftBox} Призів: <b>{prizes}</b>', pfBest: '{:trophy} Найкращий виграш: <b>{best}</b>',
-    pfBal: '{:starIcon} Баланс: <b>{s}⭐</b> · 🎫 <b>{t}</b>', pfEarned: '{:statsIcon} Виграно за весь час: <b>{earned}⭐</b>', pfGames: '🎲 Ігор: <b>{games}</b>',
+    pfBal: '{:starIcon} Баланс: <b>{s}⭐</b>', pfEarned: '{:statsIcon} Виграно за весь час: <b>{earned}⭐</b>', pfGames: '🎲 Ігор: <b>{games}</b>',
     pfStreak: '{:almost} Серія: <b>{streak}</b> дн. (рекорд {best2})', pfFriends: '👥 Друзів: <b>{friends}</b>', pfLvl: '{:crown} {lvl} · {xp} XP',
     lastWins: '{:inventoryBag} <b>Останні виграші:</b>', nothing: 'ще нічого',
     apTitle: 'МОЇ ЗАЯВКИ', apNone: 'Тут поки порожньо.', fPend: 'В ЧЕРЗІ', fOk: 'ВИДАНІ', fRej: 'ВІДХИЛЕНІ',
@@ -64,7 +64,7 @@ const T = {
     share: 'SHARE THE LINK', claim: 'CLAIM: {name}', stDone: '{:check} sent', stPend: '{:pendingIcon} queued', stRej: '{:redCircle} rejected', stOk: '{:greenCircle} <b>claim it!</b>', stLock: '{:lockIcon} {n} more',
     claimed: '{:check} <b>Request #{id} created</b>\n{name} — we’ll send it soon.', claimErr: { already: 'You already have a request for this prize.', need_username: 'Add a @username in Telegram settings first.', not_enough_friends: 'Not enough friends yet.' },
     pfTitle: 'MY PROFILE', pfSpins: '🎰 Spins: <b>{spins}</b> ({paid} paid)', pfPrizes: '{:giftBox} Prizes: <b>{prizes}</b>', pfBest: '{:trophy} Best win: <b>{best}</b>',
-    pfBal: '{:starIcon} Balance: <b>{s}⭐</b> · 🎫 <b>{t}</b>', pfEarned: '{:statsIcon} Won in total: <b>{earned}⭐</b>', pfGames: '🎲 Games: <b>{games}</b>',
+    pfBal: '{:starIcon} Balance: <b>{s}⭐</b>', pfEarned: '{:statsIcon} Won in total: <b>{earned}⭐</b>', pfGames: '🎲 Games: <b>{games}</b>',
     pfStreak: '{:almost} Streak: <b>{streak}</b> days (best {best2})', pfFriends: '👥 Friends: <b>{friends}</b>', pfLvl: '{:crown} {lvl} · {xp} XP',
     lastWins: '{:inventoryBag} <b>Latest wins:</b>', nothing: 'nothing yet',
     apTitle: 'MY REQUESTS', apNone: 'Nothing here yet.', fPend: 'QUEUED', fOk: 'SENT', fRej: 'REJECTED',
@@ -94,7 +94,7 @@ const T = {
     share: 'ПОДЕЛИТЬСЯ ССЫЛКОЙ', claim: 'ЗАБРАТЬ: {name}', stDone: '{:check} выдано', stPend: '{:pendingIcon} в очереди', stRej: '{:redCircle} отклонено', stOk: '{:greenCircle} <b>можно забрать!</b>', stLock: '{:lockIcon} ещё {n}',
     claimed: '{:check} <b>Заявка #{id} создана</b>\n{name} — выдадим в ближайшее время.', claimErr: { already: 'Заявка на этот приз уже есть.', need_username: 'Сначала добавь @username в настройках Telegram.', not_enough_friends: 'Пока не хватает друзей.' },
     pfTitle: 'МОЙ ПРОФИЛЬ', pfSpins: '🎰 Спинов: <b>{spins}</b> (платных {paid})', pfPrizes: '{:giftBox} Призов: <b>{prizes}</b>', pfBest: '{:trophy} Лучший выигрыш: <b>{best}</b>',
-    pfBal: '{:starIcon} Баланс: <b>{s}⭐</b> · 🎫 <b>{t}</b>', pfEarned: '{:statsIcon} Выиграно за всё время: <b>{earned}⭐</b>', pfGames: '🎲 Игр: <b>{games}</b>',
+    pfBal: '{:starIcon} Баланс: <b>{s}⭐</b>', pfEarned: '{:statsIcon} Выиграно за всё время: <b>{earned}⭐</b>', pfGames: '🎲 Игр: <b>{games}</b>',
     pfStreak: '{:almost} Серия: <b>{streak}</b> дн. (рекорд {best2})', pfFriends: '👥 Друзей: <b>{friends}</b>', pfLvl: '{:crown} {lvl} · {xp} XP',
     lastWins: '{:inventoryBag} <b>Последние выигрыши:</b>', nothing: 'пока ничего',
     apTitle: 'МОИ ЗАЯВКИ', apNone: 'Пока пусто.', fPend: 'В ОЧЕРЕДИ', fOk: 'ВЫДАНЫ', fRej: 'ОТКЛОНЕНЫ',
@@ -139,7 +139,7 @@ function mainMenu(uid) {
   const lines = [
     tt(lang, 'hi', { name: esc(u.name || u.username || '') }), '',
     tt(lang, 'lead'), '',
-    tt(lang, 'bal', { s: fmtStars(users.stars(u)) }), tt(lang, 'tix', { t: users.tickets(u) }),
+    tt(lang, 'bal', { s: fmtStars(users.stars(u)) }), E.TICKETS.enabled ? tt(lang, 'tix', { t: users.tickets(u) }) : null,
     tt(lang, 'lvl', { e: lv.e, title: esc(lv.t), n: lv.n }),
   ];
   if (bankOpen) lines.push('', tt(lang, 'bankLine', { p: fmtStars(bank.prizeOf(b).stars), when: whenOf(b.drawAt, lang) }));
@@ -168,7 +168,7 @@ function mainMenu(uid) {
   if (f.eventUnlocked && ev && ev.active && Date.now() < ev.endsAt) rows.push([ui.cb(bt(lang, 'event'), 'event_view', 'success', 'trophy')]);
   rows.push([ui.cb(bt(lang, 'settings'), 'settings', 'primary')]);
   if (users.isAdmin(uid)) rows.push([ui.app(bt(lang, 'admin'), 'admin', undefined, 'lockIcon')]);
-  return html(lines.join('\n'), rows);
+  return html(lines.filter(l => l !== null).join('\n'), rows);
 }
 const backRow = (lang, data) => [ui.back(lang, data)];
 

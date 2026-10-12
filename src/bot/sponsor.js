@@ -8,12 +8,12 @@ const { esc } = require('../lib/util');
 const E = require('../economy');
 
 const T = {
-  uk: { btn: 'МІСІЯ: ПІДПИШИСЬ +{t}🎫', title: 'МІСІЯ: ПІДПИСКА', body: '{:megaphone} Підпишись на канал <b>{c}</b> — і забирай <b>+{t}🎫</b> та <b>+{x} XP</b>.\n\n{:warn} Підписка також <b>обов\'язкова для виводу</b> зірок.', foot: 'Підписався? Тисни «Перевірити»', sub: 'ПІДПИСАТИСЯ', check: 'ПЕРЕВІРИТИ',
-    ok: '{:check} <b>МІСІЮ ВИКОНАНО!</b>\n━━━━━━━━━━━━━━\n{:giftBox} +<b>{t}🎫</b> · +<b>{x} XP</b>\nДякуємо, що ти з нами {:crown}', no: '{:warn} Не бачу підписки на <b>{c}</b>. Підпишись і натисни «Перевірити» ще раз.', done: '{:check} Місію вже виконано.' },
-  en: { btn: 'MISSION: SUBSCRIBE +{t}🎫', title: 'MISSION: SUBSCRIBE', body: '{:megaphone} Subscribe to <b>{c}</b> and get <b>+{t}🎫</b> and <b>+{x} XP</b>.\n\n{:warn} The subscription is also <b>required for withdrawals</b>.', foot: 'Subscribed? Tap «Check»', sub: 'SUBSCRIBE', check: 'CHECK',
-    ok: '{:check} <b>MISSION COMPLETE!</b>\n━━━━━━━━━━━━━━\n{:giftBox} +<b>{t}🎫</b> · +<b>{x} XP</b>\nThanks for being with us {:crown}', no: '{:warn} I don\'t see your subscription to <b>{c}</b>. Subscribe and tap «Check» again.', done: '{:check} Mission already completed.' },
-  ru: { btn: 'МИССИЯ: ПОДПИШИСЬ +{t}🎫', title: 'МИССИЯ: ПОДПИСКА', body: '{:megaphone} Подпишись на канал <b>{c}</b> — и забирай <b>+{t}🎫</b> и <b>+{x} XP</b>.\n\n{:warn} Подписка также <b>обязательна для вывода</b> звёзд.', foot: 'Подписался? Жми «Проверить»', sub: 'ПОДПИСАТЬСЯ', check: 'ПРОВЕРИТЬ',
-    ok: '{:check} <b>МИССИЯ ВЫПОЛНЕНА!</b>\n━━━━━━━━━━━━━━\n{:giftBox} +<b>{t}🎫</b> · +<b>{x} XP</b>\nСпасибо, что ты с нами {:crown}', no: '{:warn} Не вижу подписки на <b>{c}</b>. Подпишись и нажми «Проверить» ещё раз.', done: '{:check} Миссия уже выполнена.' },
+  uk: { btn: 'МІСІЯ: ПІДПИШИСЬ +{x} XP', title: 'МІСІЯ: ПІДПИСКА', body: '{:megaphone} Підпишись на канал <b>{c}</b> — і забирай <b>+{x} XP</b>.\n\n{:warn} Підписка також <b>обов\'язкова для виводу</b> зірок.', foot: 'Підписався? Тисни «Перевірити»', sub: 'ПІДПИСАТИСЯ', check: 'ПЕРЕВІРИТИ',
+    ok: '{:check} <b>МІСІЮ ВИКОНАНО!</b>\n━━━━━━━━━━━━━━\n{:giftBox} +<b>{x} XP</b>\nДякуємо, що ти з нами {:crown}', no: '{:warn} Не бачу підписки на <b>{c}</b>. Підпишись і натисни «Перевірити» ще раз.', done: '{:check} Місію вже виконано.' },
+  en: { btn: 'MISSION: SUBSCRIBE +{x} XP', title: 'MISSION: SUBSCRIBE', body: '{:megaphone} Subscribe to <b>{c}</b> and get <b>+{x} XP</b>.\n\n{:warn} The subscription is also <b>required for withdrawals</b>.', foot: 'Subscribed? Tap «Check»', sub: 'SUBSCRIBE', check: 'CHECK',
+    ok: '{:check} <b>MISSION COMPLETE!</b>\n━━━━━━━━━━━━━━\n{:giftBox} +<b>{x} XP</b>\nThanks for being with us {:crown}', no: '{:warn} I don\'t see your subscription to <b>{c}</b>. Subscribe and tap «Check» again.', done: '{:check} Mission already completed.' },
+  ru: { btn: 'МИССИЯ: ПОДПИШИСЬ +{x} XP', title: 'МИССИЯ: ПОДПИСКА', body: '{:megaphone} Подпишись на канал <b>{c}</b> — и забирай <b>+{x} XP</b>.\n\n{:warn} Подписка также <b>обязательна для вывода</b> звёзд.', foot: 'Подписался? Жми «Проверить»', sub: 'ПОДПИСАТЬСЯ', check: 'ПРОВЕРИТЬ',
+    ok: '{:check} <b>МИССИЯ ВЫПОЛНЕНА!</b>\n━━━━━━━━━━━━━━\n{:giftBox} +<b>{x} XP</b>\nСпасибо, что ты с нами {:crown}', no: '{:warn} Не вижу подписки на <b>{c}</b>. Подпишись и нажми «Проверить» ещё раз.', done: '{:check} Миссия уже выполнена.' },
 };
 const langOf = (u) => (T[(u || {}).lang] ? u.lang : 'uk');
 const fill = (lang, k) => String(T[lang][k]).replace(/\{(\w)\}/g, (m, x) => ({ t: E.SPONSOR.tickets, x: E.SPONSOR.xp, c: esc(sponsor.channel() || '') })[x] ?? m);

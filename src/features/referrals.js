@@ -57,7 +57,7 @@ function attribute(uid, inviterId) {
   for (const h of hooks.onReferral) { try { h(inviterId, uid); } catch (e) { console.error('onReferral hook:', e.message); } }
   const fresh = users.get(inviterId);
   if (fresh.notifyOnReferral !== false) {
-    notify.dm(inviterId, i18n.t(fresh.lang, 'ref.new', { name: users.displayName(u), tickets: E.TICKETS.perFriend, total: ids.length }),
+    notify.dm(inviterId, i18n.t(fresh.lang, 'ref.new', { name: users.displayName(u), tickets: E.TICKETS.enabled ? E.TICKETS.perFriend : E.TICKETS.perFriend * E.TICKETS.xpPerTicket, total: ids.length }),
       notify.appKeyboard(i18n.t(fresh.lang, 'btn.open'), 'friends'));
   }
   return true;

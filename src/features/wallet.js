@@ -17,44 +17,70 @@ const { round2, fmtStars } = require('../lib/util');
 // Комісія виводу залежить від рівня гравця: що вищий рівень — то менша.
 const feeOf = (u) => progress.perksOf(u).withdrawFee;
 
-function withdrawInfo(u) {
-  const refs = (u.invitedIds || []).length;
-  const bal = users.stars(u);
+// Вивід — лише подарунками (🧸 / 🎁 / 🚀), без «будь-якої суми». Умови: розблокування
+// з розсилки, вік акаунта, «справжні» друзі, @username, підписка на спонсора,
+// одна заявка в черзі й денний ліміт виплат (features/withdrawgate.js).
+function giftOptions(u) {
   const fee = feeOf(u);
-  let max = Math.floor(bal / (1 + fee / 100));
-  while (max > 0 && E.withdrawCost(max, fee).cost > bal) max--;
+  return E.WITHDRAW.gifts.map(id => {
+    const t = E.getTier(id);
+    const c = E.withdrawCost(t.price, fee);
+    return { id, emoji: t.emoji, name: t.name, img: t.img, payout: t.price, cost: c.cost, fee: c.fee };
+  });
+}
+
+function withdrawInfo(u) {
+  const gate = require('./withdrawgate');
+  const refs = gate.realFriends(u);
+  const fee = feeOf(u);
+  const ageDays = Math.floor((Date.now() - (u.joinedAt || u.firstSeenAt || Date.now())) / 86400000);
+  const usedToday = gate.payoutToday(u.id);
   return {
-    min: E.WITHDRAW.min, feePercent: fee, baseFeePercent: E.WITHDRAW.feePercent,
-    needRefs: E.WITHDRAW.minReferrals, haveRefs: refs, hasUsername: !!u.username,
+    gifts: giftOptions(u), min: E.WITHDRAW.min, feePercent: fee, baseFeePercent: E.WITHDRAW.feePercent,
+    needRefs: E.WITHDRAW.minReferrals, haveRefs: refs, haveRefsTotal: (u.invitedIds || []).length, hasUsername: !!u.username,
     needSub: require('./sponsor').channel(), hasSub: !!(u.taskDone || {}).sponsor,
-    maxPayout: Math.max(0, max), blocked: maintenance.state().mode !== 'off',
+    needUnlock: E.WITHDRAW.needUnlock, unlocked: gate.isUnlocked(u),
+    minAgeDays: E.WITHDRAW.minAgeDays, ageDays, ageOk: ageDays >= E.WITHDRAW.minAgeDays,
+    dayCap: E.WITHDRAW.dayCap, usedToday, leftToday: Math.max(0, E.WITHDRAW.dayCap - usedToday),
+    pending: gate.pendingCount(u.id), maxPending: E.WITHDRAW.maxPending, banned: !!u.wdBan,
+    maxPayout: Math.floor(users.stars(u)), blocked: maintenance.state().mode !== 'off',
   };
 }
 
-async function withdraw(uid, amount) {
+async function withdraw(uid, giftId) {
   const m = maintenance.state();
   if (m.mode !== 'off' && !users.isAdmin(uid)) return { ok: false, status: 503, error: 'maintenance', message: m.text };
-  const payout = Number(amount);
-  if (!Number.isInteger(payout) || payout < E.WITHDRAW.min) return { ok: false, status: 400, error: 'bad_amount', min: E.WITHDRAW.min };
+  if (!E.WITHDRAW.gifts.includes(String(giftId))) return { ok: false, status: 400, error: 'bad_gift' };
   // Обов'язкова підписка на канал-спонсора — перевіряємо до блокування.
   if (!(await require('./sponsor').okForWithdraw(uid))) return { ok: false, status: 400, error: 'need_sub', channel: require('./sponsor').channel() };
+  const gate = require('./withdrawgate');
   return users.withLock(uid, () => {
     const u = users.get(uid);
     if (!u) return { ok: false, status: 400, error: 'no_user' };
-    const refs = (u.invitedIds || []).length;
-    if (!users.isAdmin(uid) && refs < E.WITHDRAW.minReferrals) return { ok: false, status: 400, error: 'need_referrals', need: E.WITHDRAW.minReferrals, have: refs };
+    const admin = users.isAdmin(uid);
+    if (u.wdBan) return { ok: false, status: 403, error: 'wd_banned' };
+    if (!admin && !gate.isUnlocked(u)) return { ok: false, status: 403, error: 'wd_locked' };
+    const ageDays = Math.floor((Date.now() - (u.joinedAt || u.firstSeenAt || Date.now())) / 86400000);
+    if (!admin && ageDays < E.WITHDRAW.minAgeDays) return { ok: false, status: 400, error: 'too_new', need: E.WITHDRAW.minAgeDays, have: ageDays };
+    const refs = gate.realFriends(u);
+    if (!admin && refs < E.WITHDRAW.minReferrals) return { ok: false, status: 400, error: 'need_referrals', need: E.WITHDRAW.minReferrals, have: refs };
     if (!u.username) return { ok: false, status: 400, error: 'need_username' };
-    const w = E.withdrawCost(payout, feeOf(u));
-    const r = users.move(uid, { stars: -w.cost }, 'withdraw', { payout: w.payout });
+    if (gate.pendingCount(uid) >= E.WITHDRAW.maxPending) return { ok: false, status: 429, error: 'pending_exists' };
+    const t = E.getTier(giftId);
+    const used = gate.payoutToday(uid);
+    if (used + t.price > E.WITHDRAW.dayCap) return { ok: false, status: 429, error: 'day_cap', max: E.WITHDRAW.dayCap, have: used };
+    const w = E.withdrawCost(t.price, feeOf(u));
+    const r = users.move(uid, { stars: -w.cost }, 'withdraw', { payout: w.payout, gift: giftId });
     if (!r.ok) return { ok: false, status: 402, error: 'not_enough', balance: users.stars(u), cost: w.cost, payout: w.payout };
-    const a = applications.create(uid, 'stars_payout', 'app_withdrawal', { payoutStars: w.payout, spentStars: w.cost, fee: w.fee });
-    notify.dm(uid, i18n.t(u.lang, 'wd.created', { id: a.id, payout: w.payout, cost: w.cost, fee: w.fee }));
-    return { ok: true, applicationId: a.id, payout: w.payout, cost: w.cost, fee: w.fee, balance: r.stars };
+    const a = applications.create(uid, giftId, 'app_withdrawal', { payoutStars: w.payout, spentStars: w.cost, fee: w.fee }, { withdrawal: true });
+    notify.dm(uid, i18n.t(u.lang, 'wd.createdGift', { id: a.id, gift: t.emoji + ' ' + (t.name[u.lang] || t.name.uk), cost: w.cost, fee: w.fee }));
+    return { ok: true, applicationId: a.id, gift: giftId, payout: w.payout, cost: w.cost, fee: w.fee, balance: r.stars };
   });
 }
 
 // ─── Обмін білетів ──────────────────────────────────────────────────────
 async function exchange(uid, tickets) {
+  if (!E.TICKETS.exchange) return { ok: false, status: 410, error: 'disabled' };
   const n = Math.floor(Number(tickets) || 0);
   const step = E.TICKETS.exchangeTickets;
   if (n < step || n % step !== 0) return { ok: false, status: 400, error: 'bad_amount', step };
@@ -68,6 +94,7 @@ async function exchange(uid, tickets) {
 
 // ─── Купівля білетів за зірки (зворотний обмін) ─────────────────────────
 async function buyTickets(uid, stars) {
+  if (!E.TICKETS.exchange) return { ok: false, status: 410, error: 'disabled' };
   const n = Math.floor(Number(stars) || 0);
   if (n < 1 || n > 10000) return { ok: false, status: 400, error: 'bad_amount', min: 1 };
   return users.withLock(uid, () => {
@@ -228,6 +255,6 @@ function history(u) {
 }
 
 module.exports = {
-  withdrawInfo, withdraw, exchange, buyTickets, shopView, shopBuy,
+  withdrawInfo, withdraw, giftOptions, exchange, buyTickets, shopView, shopBuy,
   topupInfo, invoiceLink, precheck, processPayment, history, depositBonus, parseAmount,
 };

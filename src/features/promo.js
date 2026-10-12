@@ -10,7 +10,8 @@ const hooks = { onAutowd: [] };
 function what(p) {
   const out = [];
   if (p.amount) out.push('+' + p.amount + '⭐');
-  if (p.tickets) out.push('+' + p.tickets + ' 🎫');
+  // Білети прибрано — нагорода білетами приходить як XP.
+  if (p.tickets) { const E = require('../economy'); out.push(E.TICKETS.enabled ? '+' + p.tickets + ' 🎫' : '+' + p.tickets * E.TICKETS.xpPerTicket + ' XP'); }
   if (p.spins) out.push('+' + p.spins + ' 🎰');
   if (p.autowd) out.push('🧸 Автовидача');
   return out.join(' · ');

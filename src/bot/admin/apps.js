@@ -32,6 +32,39 @@ function register(bot, hooks) {
     return true;
   });
 
+  // ✂️ Урізати виплату (вивід подарунком): на дешевший подарунок або до нуля, з причиною.
+  const CUT_HELP = 'Формат: <code>/cut N bear причина</code> — урізати до 🧸 Мішки\n<code>/cut N 0 причина</code> — скасувати виплату без повернення\nПодарунки: ' + E.WITHDRAW.gifts.join(', ');
+  function doCut(id, args) {
+    const [to, ...rest] = args;
+    const zero = /^(0|нуль|нічого|none)$/i.test(to || '');
+    if (!to || (!zero && !E.WITHDRAW.gifts.includes(to))) return { ok: false, error: 'format' };
+    const reason = rest.join(' ').trim();
+    if (!reason) return { ok: false, error: 'no_reason' };
+    return applications.cut(id, zero ? null : to, reason);
+  }
+  const cutReply = (id, r) => r.ok ? (r.zero ? `✂️ Заявку #${id} урізано до нуля — відхилено без повернення.` : `✂️ Заявку #${id} урізано: ${r.from} → ${r.to}. Тепер підтвердіть її, коли надішлете подарунок.`)
+    : r.error === 'format' ? CUT_HELP : r.error === 'no_reason' ? 'Додайте причину — гравець її побачить.' : r.error === 'not_cheaper' ? 'Можна урізати лише до дешевшого подарунка.'
+    : r.error === 'not_withdrawal' ? 'Урізати можна лише вивід.' : 'Заявка вже оброблена або не знайдена.';
+  bot.action(/^admin_cut_(\d+)$/, async (ctx) => {
+    if (!isAdminCtx(ctx)) return ctx.answerCbQuery().catch(() => {});
+    await ctx.answerCbQuery().catch(() => {});
+    const a = store.getApplication(ctx.match[1]);
+    if (!a || a.status !== 'pending') return ctx.reply('Заявка вже оброблена або не знайдена.').catch(() => {});
+    await ask(ctx, 'cut', { id: a.id }, `✂️ Урізати заявку #${a.id} (${applications.label(a, 'uk')}).\nНапишіть: подарунок і причину, напр. «bear зловживання рефералами», або «0 мультиакаунт» — скасувати без повернення.`);
+  });
+  hooks.onAdminText.push(async (ctx, text) => {
+    const p = takePending(ctx.from.id, 'cut');
+    if (!p) return false;
+    await ctx.reply(cutReply(p.data.id, doCut(p.data.id, text.trim().split(/\s+/))), { parse_mode: 'HTML' }).catch(() => {});
+    return true;
+  });
+  bot.command('cut', async (ctx) => {
+    if (!isAdminCtx(ctx)) return;
+    const [id, ...rest] = String(ctx.message.text).split(/\s+/).slice(1);
+    if (!/^\d+$/.test(id || '')) return ctx.reply(CUT_HELP, { parse_mode: 'HTML' }).catch(() => {});
+    await ctx.reply(cutReply(id, doCut(id, rest)), { parse_mode: 'HTML' }).catch(() => {});
+  });
+
   const ids = (ctx) => String(ctx.message.text).split(/[\s,#]+/).slice(1).map(x => parseInt(x, 10)).filter(n => !isNaN(n));
   bot.command('approve', async (ctx) => {
     if (!isAdminCtx(ctx)) return;

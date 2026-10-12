@@ -270,6 +270,32 @@ function register(bot, hooks) {
     ]);
   }
   // Джекпоти, які чекають, поки переможець забере.
+  // Правила чату й автобан прибрано. Розбанити тих, кого заблокувало старе правило.
+  async function chatUnban(telegram, uid) {
+    const rec = (((store.getFeatureFlags() || {}).chatRules || {}).strikes || {})[uid];
+    const chatId = (rec && rec.chat) || (chat() && chat().status && chat().status().chatId);
+    if (!chatId) return false;
+    await telegram.callApi('unbanChatMember', { chat_id: chatId, user_id: Number(uid), only_if_banned: true }).catch((e) => console.error('unban:', e.message));
+    return true;
+  }
+  bot.command('unban', async (ctx) => {
+    if (!isAdminCtx(ctx) || (ctx.chat && ctx.chat.type !== 'private')) return;
+    const arg = argsOf(ctx)[0];
+    const u = arg ? users.findByUsernameOrId(arg) : null;
+    const uid = u ? String(u.id) : (/^\d+$/.test(arg || '') ? arg : null);
+    if (!uid) return ctx.reply('Кого? /unban @нік або /unban id · усіх, кого банило старе правило чату, — /unban_all').catch(() => {});
+    return ctx.reply((await chatUnban(ctx.telegram, uid)) ? '↩️ Розбанено в чаті.' : 'Не знайшов чат — спершу /chat_here у групі.').catch(() => {});
+  });
+  bot.command('unban_all', async (ctx) => {
+    if (!isAdminCtx(ctx) || (ctx.chat && ctx.chat.type !== 'private')) return;
+    const strikes = ((store.getFeatureFlags() || {}).chatRules || {}).strikes || {};
+    const ids = Object.keys(strikes);
+    let n = 0;
+    for (const uid of ids) { if (await chatUnban(ctx.telegram, uid)) n++; await sleep(80); }
+    store.setFeatureFlags({ chatRules: { strikes: {} } });
+    return ctx.reply(`↩️ Розбанено в чаті: ${n} із ${ids.length}. Лічильник порушень очищено.`).catch(() => {});
+  });
+
   bot.command('jackpots', async (ctx) => {
     if (!isAdminCtx(ctx)) return;
     const [q, mode] = argsOf(ctx);

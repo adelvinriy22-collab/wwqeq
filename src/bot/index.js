@@ -71,6 +71,9 @@ function createBot(token) {
         if (!users.isAdmin(uid) && (!u.lastActiveAt || Date.now() - u.lastActiveAt > 60000)) p.lastActiveAt = Date.now();
         if (!!u.isPremium !== !!ctx.from.is_premium) p.isPremium = !!ctx.from.is_premium;
         if (u.remindersOff && ctx.chat && ctx.chat.type === 'private' && ctx.updateType === 'message') p.remindersOff = false;
+        // Дні в боті (приват) — для розблокування виводу (features/withdrawgate.js).
+        const inPrivate = ctx.chat ? ctx.chat.type === 'private' : !!(ctx.callbackQuery && ctx.callbackQuery.message && ctx.callbackQuery.message.chat && ctx.callbackQuery.message.chat.type === 'private');
+        if (inPrivate) Object.assign(p, require('../features/withdrawgate').touchPatch(u) || {});
         if (Object.keys(p).length) users.patch(uid, p);
       }
     }
@@ -98,9 +101,9 @@ function createBot(token) {
   require('./awdgiveaway').register(bot, hooks);
   require('./sponsor').register(bot);
   require('./betawd').register(bot, hooks);
+  require('./wdunlock').register(bot);
   require('./firstcomment').register(bot);
   require('./clans').register(bot, hooks);
-  require('../chat/rules').register(bot);
   campaigns.register(bot, hooks);
   apps.register(bot, hooks);
   ops.register(bot);
@@ -144,11 +147,12 @@ async function setupUi(bot) {
     await tg.setMyCommands([
       { command: 'admin', description: 'Адмін-команди' },
       { command: 'apps', description: 'Черга заявок' },
+      { command: 'wd_unlock', description: 'Розблокування виводу: /wd_unlock так — розсилка з кнопкою' },
+      { command: 'cut', description: 'Урізати виплату: /cut N bear причина' },
       { command: 'event_status', description: 'Що зараз запущено' },
       { command: 'maint', description: 'Техроботи' },
       { command: 'dbstats', description: 'Зріз бази' },
       { command: 'stars', description: 'Зірки гравцю: /stars @нік 10 або -10' },
-      { command: 'tickets', description: 'Білети гравцю: /tickets @нік 5 або -5' },
       { command: 'broadcast', description: 'Розсилка (відповіддю на повідомлення)' },
       { command: 'say', description: 'Пост у чат від імені бота: /say текст' },
       { command: 'autowd', description: 'Автовивід Мішки гравцю (один раз): /autowd @нік' },

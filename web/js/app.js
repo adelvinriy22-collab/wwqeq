@@ -73,7 +73,7 @@ function renderTop() {
         el('div', { class: 'me-text' }, topRefs.name, el('div', { class: 'me-level' }, topRefs.level, el('div', { class: 'lvlbar' }, topRefs.bar)))),
       el('div', { class: 'chips' },
         el('button', { class: 'chip', type: 'button', onclick: () => go('wallet') }, '⭐', topRefs.stars),
-        el('button', { class: 'chip', type: 'button', onclick: () => go('games', 'wheels') }, '🎫', topRefs.tickets)));
+        me.ticketsOff ? null : el('button', { class: 'chip', type: 'button', onclick: () => go('games', 'wheels') }, '🎫', topRefs.tickets)));
   }
   const R = topRefs;
   if (R.photo !== (me.user.photo || null)) {

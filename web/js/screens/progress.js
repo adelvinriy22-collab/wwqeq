@@ -56,7 +56,7 @@ function levelCard() {
 // Нагорода за рівень і що він відкриває — однаково в картці, сходинках і боті.
 export function rewardText(rw) {
   if (!rw) return '';
-  return [rw.tickets ? '+' + rw.tickets + '🎫' : null, rw.stars ? '+' + rw.stars + '⭐' : null].filter(Boolean).join(' ');
+  return [rw.tickets ? '+' + tix(rw.tickets) : null, rw.stars ? '+' + fmt(rw.stars) + '⭐' : null].filter(Boolean).join(' ');
 }
 function unlockText(u) {
   if (!u) return '';
@@ -202,7 +202,7 @@ function questsView(nav, body, d) {
   out.push(...section(t('quest.daily'), list(dq.items.map(q => row({
     icon: q.done ? '✅' : '🎯', iconClass: q.done ? 'c-green' : '',
     title: q.title, sub: q.need > 1 ? q.progress + '/' + q.need : null,
-    value: q.done ? '+' + dq.reward.tickets + '🎫' : null,
+    value: q.done ? '+' + dq.reward.xp + ' XP' : null,
     onClick: q.done ? null : () => goQuest(nav, q.go),
   }))), [t('quest.dailyFoot', { t: dq.allReward.tickets, x: dq.allReward.xp }), ' · ', t('quest.new') + ' ', countdown(dq.endsAt, left)]));
 
@@ -237,7 +237,7 @@ function questsView(nav, body, d) {
     out.push(...section(t('quest.secret'), el('div', { class: 'card pad' },
       el('div', { style: { fontWeight: 600 } }, '🔐 ' + P.name),
       el('div', { class: 'muted mt8' }, t('quest.secretText')),
-      el('div', { class: 'gap8 mt8' }, pill('+' + P.reward.stars + '⭐'), pill('+' + P.reward.tickets + '🎫'), pill('+' + P.reward.xp + ' XP'), P.early ? pill('🔥 ×2 · ' + t('quest.earlyLeft', { n: P.earlyLeft }), 'warn') : null),
+      el('div', { class: 'gap8 mt8' }, pill('+' + P.reward.stars + '⭐'), P.reward.tickets ? pill('+' + tix(P.reward.tickets)) : null, pill('+' + P.reward.xp + ' XP'), P.early ? pill('🔥 ×2 · ' + t('quest.earlyLeft', { n: P.earlyLeft }), 'warn') : null),
       st === 'done' ? el('div', { class: 'ok-text mt12' }, '✅ ' + t('quest.done'))
         : st === 'pending' ? el('div', { class: 'mt12 muted' }, '⏳ ' + t('quest.pending'))
           : el('div', { class: 'stack mt12' },
@@ -253,7 +253,7 @@ function questsView(nav, body, d) {
   if (sp) {
     out.push(...section(t('sp.section'), list([row({
       icon: sp.done ? '✅' : '📢', title: t('sp.title', { c: sp.channel }),
-      sub: sp.done ? t('quest.done') : '+' + sp.reward.tickets + '🎫 · +' + sp.reward.xp + ' XP', strong: !sp.done,
+      sub: sp.done ? t('quest.done') : (sp.reward.tickets ? '+' + tix(sp.reward.tickets) + ' · ' : '') + '+' + sp.reward.xp + ' XP', strong: !sp.done,
       onClick: sp.done ? null : () => sheet((s) => [
         el('h3', null, t('sp.title', { c: sp.channel })),
         el('p', null, t('sp.lead', { c: sp.channel })),

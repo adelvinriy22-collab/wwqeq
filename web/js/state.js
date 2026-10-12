@@ -1,5 +1,6 @@
 // Спільний стан застосунку.
 import * as api from './api.js';
+import { setTicketsMode } from './ui.js';
 
 export const S = {
   me: null,                    // відповідь /api/me
@@ -19,6 +20,7 @@ export async function refresh() {
   const prev = S.me;
   const me = await api.get('/me');
   S.me = me;
+  setTicketsMode(me.ticketsOff, me.xpPerTicket);
   if (prev && prev.progress && me.progress && me.progress.level.n > prev.progress.level.n) levelSubs.forEach(f => f(me.progress.level));
   emit('me');
   return me;

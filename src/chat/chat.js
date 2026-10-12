@@ -24,7 +24,6 @@ const time = require('../lib/time');
 const econ = require('../economy');
 const { EMOJI } = require('../emoji');
 const clans = require('../features/clans');
-const rules = require('./rules');
 
 const CFG = {
   dropMinGapMin: 70,          // між дропами — від 70 хв
@@ -55,14 +54,14 @@ const CFG = {
   bonusPts: 5,                // …і очки рівня
   bonusNeedMsgs: 3,           // …але лише тим, хто сьогодні написав у чаті хоча б 3 повідомлення
   bonusStreakEvery: 7,        // кожен 7-й день поспіль — ще +
-  bonusStreakExtra: 1,        // зірка — лише на кожен 7-й день поспіль
+  bonusStreakExtra: econ.earn(1),   // зірка ÷5 (нова економіка) — лише на кожен 7-й день поспіль
   activistHour: 22,           // о 22:00 — «Активіст дня»
   activistTeaserHour: 18,     // о 18:00 — «хто лідирує зараз»
   activistMinMsgs: 10,        // менше 10 повідомлень за день — не претендує
   // Нагорода активістам: зірки + XP ліги. Раніше було 10🎫 (≈2⭐) — нікому не цікаво.
   activistPrizes: [
-    { stars: 2, tickets: 0, xp: 40 },   // 🥇
-    { stars: 1, tickets: 0, xp: 20 },   // 🥈
+    { stars: econ.earn(2), tickets: 0, xp: 40 },   // 🥇 (зірки ÷5 — нова економіка)
+    { stars: econ.earn(1), tickets: 0, xp: 20 },   // 🥈
     { stars: 0, tickets: 5, xp: 10 },   // 🥉
   ],
   actMinLen: 3,               // для лічильника активності — від 3 символів
@@ -108,12 +107,10 @@ const CONTEST = {
 
 const QUIZ = [
   { q: 'Скільки секторів на щоденному колесі?', a: ['10', '12', '14'], ok: 2 },
-  { q: 'Скільки білетів дорівнюють 2⭐ в обміні?', a: ['5', '10', '20'], ok: 1 },
   { q: 'Який титул іде після «Активіста»?', a: ['Ветеран', 'Завсідник', 'Балакун'], ok: 1 },
   { q: 'Який найвищий титул у чаті?', a: ['Легенда', 'Міф', 'Майстер'], ok: 1 },
   { q: 'Скільки коштує спін колеса «За зірки»?', a: ['10⭐', '15⭐', '25⭐'], ok: 1 },
   { q: 'Який приз за 1 місце в лізі тижня?', a: ['Мішка', 'Ракета', 'Трофей'], ok: 2 },
-  { q: 'Що отримує кожен учасник банку, навіть програвши?', a: ['Нічого', 'Утішні білети', 'Зірку'], ok: 1 },
   { q: 'Яка найменша нагорода на щоденному колесі?', a: ['1⭐', '2⭐', '5⭐'], ok: 1 },
   { q: 'Скільки дає 7️⃣7️⃣7️⃣ у слоті?', a: ['×6', '×10', '×20'], ok: 2 },
   { q: 'Скільки планет у Сонячній системі?', a: ['7', '8', '9'], ok: 1 },
@@ -168,6 +165,11 @@ function createChat(bot, opts) {
   }
   const LINE = '━━━━━━━━━━━━━━';
   const TIX = '🎫';
+  // Білети прибрано: нагороди білетами приходять як XP (users.move) — у текстах теж XP.
+  const TIX_ON = econ.TICKETS.enabled;
+  const TXN = (n) => TIX_ON ? n + ' ' + TIX : n * econ.TICKETS.xpPerTicket + ' XP';
+  const TX = (n) => '+' + TXN(n);
+  const TXP = (t, xp) => TIX_ON ? TX(t) + ' +' + xp + ' XP' : '+' + ((t || 0) * econ.TICKETS.xpPerTicket + (xp || 0)) + ' XP';
   // Картка: заголовок, розділювач, рядки, підпис курсивом унизу.
   function card(icon, title, lines, foot) {
     return E(icon, icon) + ' <b>' + title + '</b>\n' + LINE + '\n' +
@@ -192,7 +194,7 @@ function createChat(bot, opts) {
   function prizeText(p, star) {
     const out = [];
     if (p.stars) out.push('+' + p.stars + (star ? ' ' + star : '⭐'));
-    if (p.tickets) out.push('+' + p.tickets + ' ' + TIX);
+    if (p.tickets) out.push(TX(p.tickets));
     if (p.xp) out.push('+' + p.xp + ' XP');
     return out.join('  ');
   }
@@ -706,12 +708,12 @@ function createChat(bot, opts) {
     if (!fromChat && info.n < 6) return;
     if (isAdminUid(uid)) return;
     if (fromChat && o.msgId) react(o.msgId, '🎉');
-    const prize = [rw.tickets ? '+' + rw.tickets + ' ' + TIX : null, rw.stars ? '+' + rw.stars + ' ' + E('starIcon', '⭐') : null].filter(Boolean).join(' ');
+    const prize = [rw.tickets ? TX(rw.tickets) : null, rw.stars ? '+' + rw.stars + ' ' + E('starIcon', '⭐') : null].filter(Boolean).join(' ');
     const un = {};
     for (let n = (o && o.from) || info.n; n <= info.n; n++) Object.assign(un, econ.perksUnlockedAt(n));
     const perk = un.withdrawFee != null ? 'комісія виводу тепер ' + un.withdrawFee + '%'
       : un.topupBonus != null ? '+' + un.topupBonus + '% до кожного поповнення'
-      : un.chatBonus != null ? '+' + un.chatBonus + ' ' + TIX + ' до щоденного бонусу' : '';
+      : un.chatBonus != null ? TX(un.chatBonus) + ' до щоденного бонусу' : '';
     const text = E('crown', '👑') + ' <b>' + whoName(uid) + '</b> тепер <b>' + info.e + ' ' + esc(info.t) + '</b> — рівень ' + info.n + '!' +
       (prize ? '\n' + E('giftBox', '🎁') + ' Нагорода: <b>' + prize + '</b>' : '') + (perk ? '\n' + E('starIcon', '✨') + ' Новий привілей: <b>' + perk + '</b>' : '');
     // Великий рівень — з картинкою рівня, щоб усі бачили, що він вартий.
@@ -751,7 +753,7 @@ function createChat(bot, opts) {
     { k: 'duel_win', need: 1,  t: 'Виграй дуель' },
     { k: 'slot',     need: 3,  t: 'Зіграй 3 гри (/games)' },
     { k: 'bonus',    need: 1,  t: 'Забери /bonus' },
-  ];
+  ].filter(q => TIX_ON || !['duel', 'duel_win', 'slot'].includes(q.k));   // ігор на білети більше немає
   const QREWARD = 15, QALL = 3, QALL_PTS = 30;   // квест: очки рівня; усі три: 3🎫 + 30 очок
   function questsToday(day) {
     let h = 0; for (const ch of day) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -785,7 +787,7 @@ function createChat(bot, opts) {
       addTickets(uid, QALL, 'усі квести дня в чаті');
       addChatPts(uid, QALL_PTS, null);
       if (msgId) react(msgId, '🏆');
-      send(E('trophy', '🏆') + ' <b>' + whoName(uid) + '</b> виконав <b>усі квести дня</b>!  +' + QALL + ' ' + TIX + ' +' + QALL_PTS + ' XP');
+      send(E('trophy', '🏆') + ' <b>' + whoName(uid) + '</b> виконав <b>усі квести дня</b>!  ' + TX(QALL) + ' +' + QALL_PTS + ' XP');
     }
   }
 
@@ -799,7 +801,7 @@ function createChat(bot, opts) {
         '  <i>+' + QREWARD + ' XP</i>';
     });
     lines.push('');
-    lines.push((s.all ? E('check', '✅') : E('trophy', '🏆')) + ' Усі три — ще <b>+' + QALL + ' ' + TIX + ' +' + QALL_PTS + ' XP</b>');
+    lines.push((s.all ? E('check', '✅') : E('trophy', '🏆')) + ' Усі три — ще <b>' + TX(QALL) + ' +' + QALL_PTS + ' XP</b>');
     await ctx.reply(card('statsIcon', 'КВЕСТИ ДНЯ', lines, 'Оновлюються щодня опівночі'),
       { parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id }).catch(() => {});
   }
@@ -848,6 +850,7 @@ function createChat(bot, opts) {
     const g = GAMES[key];
     const uid = String(ctx.from.id);
     const rid = { reply_to_message_id: ctx.message.message_id, parse_mode: 'HTML' };
+    if (!TIX_ON) return ticketGamesGone(ctx);
     if (!registered(uid)) {
       const link = botLink('chat');
       return ctx.reply(g.emoji + ' Ігри на білети — для тих, хто в боті. Запусти й повертайся 👇',
@@ -904,6 +907,15 @@ function createChat(bot, opts) {
       { parse_mode: 'HTML', ...rep2 }).catch(() => {});
   }
   async function onSlotCmd(ctx) { return onGameCmd(ctx, 'slot'); }
+  // Білетів більше немає — ігри на білети й дуелі в чаті прибрано.
+  function ticketGamesGone(ctx) {
+    const link = botLink('chat');
+    return ctx.reply(card('warn', 'ІГОР НА БІЛЕТИ БІЛЬШЕ НЕМАЄ', [
+      'Білети прибрано зі StarForge — дуелі й ігри на білети в чаті вимкнено.',
+      '🎲 Кубик, 🎯 дартс, 🎰 слот — <b>на зірки в боті</b>.',
+    ]), { reply_to_message_id: ctx.message.message_id, parse_mode: 'HTML',
+      ...(link ? { reply_markup: { inline_keyboard: [[ubtn('🎲 ГРАТИ В БОТІ', link, 'success', 'rocket')]] } } : {}) }).catch(() => {});
+  }
 
   // ─────────────────────── 📋 МЕНЮ КОМАНД ───────────────────────
   // Коли людина натискає «/» у чаті, Telegram показує цей список.
@@ -911,16 +923,12 @@ function createChat(bot, opts) {
     if (!chatId) return;
     await bot.telegram.setMyCommands([
       { command: 'help',    description: '📖 Як тут усе працює' },
-      { command: 'rules',   description: '📜 Правила чату' },
-      { command: 'bonus',   description: '⭐ Щоденна зірка (раз на 24 год)' },
-      { command: 'quests',  description: '📋 Квести дня — білети за активність' },
-      { command: 'games',   description: '🎮 Усі ігри: слот, кубик, баскет, футбол, дартс, боулінг' },
-      { command: 'slot',    description: '🎰 Слот на білети: /slot 5' },
+      { command: 'bonus',   description: '🎁 Щоденний бонус (раз на 24 год)' },
+      { command: 'quests',  description: '📋 Квести дня — XP за активність' },
       { command: 'rank',    description: '👑 Легенди чату — рівні й титули' },
-      { command: 'me',      description: '👤 Мій рівень, квести, білети' },
+      { command: 'me',      description: '👤 Мій рівень і квести' },
       { command: 'goal',    description: '🎯 Спільна ціль чату' },
       { command: 'contest', description: '🏅 Змагання чату' },
-      { command: 'duel',    description: '⚔️ Дуель на білети: /duel 5' },
       { command: 'clan',    description: '🏆 Кланова війна: призи, топ, мій клан' },
       { command: 'clans',   description: '🛡 Усі клани — вступити' },
     ], { scope: { type: 'chat', chat_id: chatId } });
@@ -970,8 +978,8 @@ function createChat(bot, opts) {
     const lv = progress.levelInfo(progress.xpOf(u).total);
     await ctx.reply(card('starIcon', 'БОНУС ЗАБРАНО', [
       E('crown', '👑') + ' <b>' + nameOf(ctx.from) + '</b>',
-      E('check', '✅') + ' Отримав: <b>+' + tix + ' ' + TIX + ' +' + CFG.bonusPts + ' XP</b>' + (give ? '  і <b>+' + give + ' ' + E('starIcon', '⭐') + '</b> за серію!' : ''),
-      lvBonus ? '🏅 З них <b>+' + lvBonus + ' ' + TIX + '</b> — привілей рівня ' + lv.e + ' ' + esc(lv.t) : '🏅 З 4-го рівня бонус більший — /level у боті',
+      E('check', '✅') + ' Отримав: <b>' + TX(tix) + ' +' + CFG.bonusPts + ' XP</b>' + (give ? '  і <b>+' + give + ' ' + E('starIcon', '⭐') + '</b> за серію!' : ''),
+      lvBonus ? '🏅 З них <b>' + TX(lvBonus) + '</b> — привілей рівня ' + lv.e + ' ' + esc(lv.t) : '🏅 З 4-го рівня бонус більший — /level у боті',
       E('almost', '🔥') + ' Серія: <b>' + streak + ' дн.</b>' + (extra ? '' : ' · до ⭐ за серію ще ' + nextBig + ' дн.'),
     ], 'Наступний — через 24 год. Не пропусти, щоб не збити серію!'), rid).catch(() => {});
   }
@@ -1082,7 +1090,7 @@ function createChat(bot, opts) {
       '',
       '<b>За що бали:</b>',
       '💬 повідомлення — <b>' + CONTEST.msg + '</b> (від 8 символів, раз на 30 с)',
-      '⚔️ дуель — <b>' + CONTEST.duel + '</b>, перемога — ще <b>+' + CONTEST.duelWin + '</b> (ставка від ' + CONTEST.duelMinStake + ' ' + TIX + ')',
+      TIX_ON ? '⚔️ дуель — <b>' + CONTEST.duel + '</b>, перемога — ще <b>+' + CONTEST.duelWin + '</b> (ставка від ' + CONTEST.duelMinStake + ' ' + TIX + ')' : null,
       E('giftBox', '🎁') + ' забраний дроп — <b>' + CONTEST.drop + '</b>',
       E('lightning', '⚡') + ' правильна вікторина — <b>' + CONTEST.quiz + '</b>',
       '',
@@ -1155,25 +1163,25 @@ function createChat(bot, opts) {
     const t =
       E('infoIcon', 'ℹ️') + ' <b>ЯК ТУТ УСЕ ПРАЦЮЄ</b>\n' + LINE + '\n' +
       (k ? E('almost', '🔥') + ' <b>Зараз іде змагання!</b> Лишилось ' + leftText(k.endsAt - Date.now()) + ' · /contest\n\n' : '') +
-      sec('giftBox', 'ДРОПИ', 'Кілька разів на день з\'являється кнопка. <b>Хто перший натиснув — той забрав.</b> Один дроп на людину за день.', '2–6 ' + TIX + ' або 3 ' + S) + '\n' +
-      sec('lightning', 'ВІКТОРИНИ', 'Питання з кнопками. <b>Перша правильна відповідь виграє.</b> Помилився — спроба згоріла.', '+' + CFG.quizPrize + ' ' + TIX) + '\n' +
-      sec('redCircle', 'ДУЕЛІ', '<code>/duel 5</code> — виклик будь-кому. Відповіддю на повідомлення — конкретній людині. Бот кидає 🎲 за кожного, <b>у кого більше — забирає банк</b>.', 'банк мінус ' + CFG.duelBurnPercent + '%') + '\n' +
-      sec('starIcon', 'ЩОДЕННИЙ БОНУС', '<code>/bonus</code> раз на 24 год. Відкривається після ' + CFG.bonusNeedMsgs + ' повідомлень у чаті за день. Кожен ' + CFG.bonusStreakEvery + '-й день поспіль — ще +' + CFG.bonusStreakExtra + S + '. З 4-го рівня бонус більший (до +5 ' + TIX + ').', prizeText({ tickets: CFG.bonusTickets, xp: CFG.bonusPts })) + '\n' +
+      sec('giftBox', 'ДРОПИ', 'Кілька разів на день з\'являється кнопка. <b>Хто перший натиснув — той забрав.</b> Один дроп на людину за день.', TXN(2) + '–' + TXN(5)) + '\n' +
+      sec('lightning', 'ВІКТОРИНИ', 'Питання з кнопками. <b>Перша правильна відповідь виграє.</b> Помилився — спроба згоріла.', TX(CFG.quizPrize)) + '\n' +
+      (!TIX_ON ? '' : sec('redCircle', 'ДУЕЛІ', '<code>/duel 5</code> — виклик будь-кому. Відповіддю на повідомлення — конкретній людині. Бот кидає 🎲 за кожного, <b>у кого більше — забирає банк</b>.', 'банк мінус ' + CFG.duelBurnPercent + '%') + '\n') +
+      sec('starIcon', 'ЩОДЕННИЙ БОНУС', '<code>/bonus</code> раз на 24 год. Відкривається після ' + CFG.bonusNeedMsgs + ' повідомлень у чаті за день. Кожен ' + CFG.bonusStreakEvery + '-й день поспіль — ще +' + CFG.bonusStreakExtra + S + '. З 4-го рівня бонус більший (до ' + TX(5) + ').', prizeText({ tickets: CFG.bonusTickets, xp: CFG.bonusPts })) + '\n' +
       sec('crown', 'АКТИВІСТИ ДНЯ', 'О ' + CFG.activistHour + ':00 <b>троє, хто написав найбільше</b> (від ' + CFG.activistMinMsgs + ' повідомл.). О ' + CFG.activistTeaserHour + ':00 бот показує, хто лідирує.',
         '🥇 ' + prizeText(p[0], S) + ' · 🥈 ' + prizeText(p[1], S) + ' · 🥉 ' + prizeText(p[2], S)) + '\n' +
       sec('statsIcon', 'СПІЛЬНА ЦІЛЬ', 'Чат разом пише ' + CFG.goalTarget + ' повідомлень за день. <b>Кожен, хто написав ' + CFG.goalMinPer + '+, отримує бонус.</b> <code>/goal</code> — прогрес.', goalText()) + '\n' +
-      sec('crown', 'РІВНІ Й ТИТУЛИ', 'За будь-яку активність — у чаті й у застосунку — копиться XP: від 🌱 Новачка до 🍀 Бога удачі. <b>XP не згорає.</b> <code>/rank</code> — топ.', 'новий титул і білети за кожен рівень') + '\n' +
-      sec('statsIcon', 'КВЕСТИ ДНЯ', 'Щодня три завдання для всіх: написати повідомлення, забрати дроп, виграти дуель тощо. <code>/quests</code> — прогрес.', '+' + QREWARD + ' XP за кожен, за всі три ще +' + QALL + ' ' + TIX + ' +' + QALL_PTS + ' XP') + '\n' +
-      sec('giftBox', 'СКРИНЬКИ', 'Кілька разів на день бот ставить 9 скриньок. <b>Кожен відкриває лише одну</b>: в одній — головний приз, у двох — по білету, решта порожні.', '5–10 ' + TIX + ' або 3 ' + S) + '\n' +
+      sec('crown', 'РІВНІ Й ТИТУЛИ', 'За будь-яку активність — у чаті й у застосунку — копиться XP: від 🌱 Новачка до 🍀 Бога удачі. <b>XP не згорає.</b> <code>/rank</code> — топ.', 'новий титул, а з 6-го — зірки за рівень') + '\n' +
+      sec('statsIcon', 'КВЕСТИ ДНЯ', 'Щодня три завдання для всіх: написати повідомлення, забрати дроп, відповісти на вікторину тощо. <code>/quests</code> — прогрес.', '+' + QREWARD + ' XP за кожен, за всі три ще ' + TX(QALL) + ' +' + QALL_PTS + ' XP') + '\n' +
+      sec('giftBox', 'СКРИНЬКИ', 'Кілька разів на день бот ставить 9 скриньок. <b>Кожен відкриває лише одну</b>: в одній — головний приз, у двох — дрібний бонус, решта порожні.', TXN(5) + '–' + TXN(10) + ' або ' + BOX.main[2].stars + S) + '\n' +
       sec('lightning', 'ХТО ШВИДШИЙ', 'Кілька разів на день бот публікує слово з переплутаними літерами. <b>Перший, хто напише правильне слово в чат, — виграє.</b>', prizeText({ tickets: CFG.raceTickets, xp: CFG.racePts })) + '\n' +
       sec('crown', 'ЩАСЛИВЕ ПОВІДОМЛЕННЯ', 'Бот випадково обирає повідомлення в чаті й дає бонус. <b>Кожне твоє повідомлення може стати щасливим.</b>', '+' + CFG.luckyPts + ' XP') + '\n' +
       sec('almost', 'СЕРІЯ В ЧАТІ', 'Пиши щодня хоча б ' + CFG.streakMinMsgs + ' повідомлень — і серія росте. На 3, 7, 14 і 30 днях — великі бонуси.', 'до +300 XP') + '\n' +
-      sec('almost', 'ІГРИ НА БІЛЕТИ', 'Слот, кубик, баскетбол, футбол, дартс, боулінг — просто в чаті. <code>/games</code> — усі правила й коефіцієнти.', 'до ×20 ставки') + '\n' +
-      sec('trophy', 'КЛАНОВА ВІЙНА', 'Вступи в клан за 1 клік (<b>+' + econ.CLANS.joinBonus.tickets + ' ' + TIX + ' +' + econ.CLANS.joinBonus.xp + ' XP одразу</b>) або створи свій (<b>+' + econ.CLANS.createBonus.tickets + ' ' + TIX + ' +' + econ.CLANS.createBonus.xp + ' XP</b>). XP учасників — очки клану: клан відкриває скрині з білетами для всіх, а у фіналі топ-3 отримують призи. <code>/clan</code> — усе про війну.',
-        'скрині кожному + у фіналі до ' + econ.CLANS.rewards[0].stars + S + ' ' + econ.CLANS.rewards[0].tickets + ' ' + TIX + ', лідеру 🎁 25' + S) + '\n' +
+      (TIX_ON ? sec('almost', 'ІГРИ НА БІЛЕТИ', 'Слот, кубик, баскетбол, футбол, дартс, боулінг — просто в чаті. <code>/games</code> — усі правила й коефіцієнти.', 'до ×20 ставки') + '\n' : '') +
+      sec('trophy', 'КЛАНОВА ВІЙНА', 'Вступи в клан за 1 клік (<b>' + TXP(econ.CLANS.joinBonus.tickets, econ.CLANS.joinBonus.xp) + ' одразу</b>) або створи свій (<b>' + TXP(econ.CLANS.createBonus.tickets, econ.CLANS.createBonus.xp) + '</b>). XP учасників — очки клану: клан відкриває скрині з нагородами для всіх, а у фіналі топ-3 отримують призи. <code>/clan</code> — усе про війну.',
+        'скрині кожному + у фіналі до ' + econ.CLANS.rewards[0].stars + S + ' ' + TX(econ.CLANS.rewards[0].tickets) + ', лідеру 🎁 25' + S) + '\n' +
       sec('almost', 'ГАРЯЧА ГОДИНА', 'Раз на день у випадковий момент між ' + CFG.hhFromHour + ':00 і ' + CFG.hhToHour + ':00 на ' + CFG.hhMinutes + ' хв.', 'XP ×2 — рівень росте удвічі швидше') + '\n' +
-      E('crown', '👑') + ' <b>ЗА ЩО XP У ЧАТІ</b>\n<blockquote expandable>• повідомлення — 1 (у гарячу годину 2), до ' + econ.XP.chat.dayCap + ' XP з чату на день (у клані під час війни — ×' + econ.CLANS.xpCapMult + ')\n• дроп, вікторина — 5\n• дуель — 3, перемога — ще 3\n• /bonus — 2 · квест дня — 10\n• активісти дня й спільна ціль — див. вище</blockquote>\n' +
-      '<b>Команди:</b> /quests · /bonus · /games · /rank · /me · /goal · /duel · /clan · /rules\n\n' +
+      E('crown', '👑') + ' <b>ЗА ЩО XP У ЧАТІ</b>\n<blockquote expandable>• повідомлення — 1 (у гарячу годину 2), до ' + econ.XP.chat.dayCap + ' XP з чату на день (у клані під час війни — ×' + econ.CLANS.xpCapMult + ')\n• дроп, вікторина — 5\n' + (TIX_ON ? '• дуель — 3, перемога — ще 3\n' : '') + '• /bonus — 2 · квест дня — 10\n• активісти дня й спільна ціль — див. вище</blockquote>\n' +
+      '<b>Команди:</b> /quests · /bonus · /rank · /me · /goal · /clan\n\n' +
       '<i>Брати участь можуть ті, хто запустив @' + (getBotUsername() || 'StarForgeX_bot') + '</i>';
     await ctx.reply(t, { parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id, disable_web_page_preview: true }).catch(() => {});
   }
@@ -1183,18 +1191,18 @@ function createChat(bot, opts) {
   // 9 закритих скриньок. Кожен відкриває лише ОДНУ. В одній — головний приз,
   // у двох — по білету, решта порожні. Хто знайшов приз — того чує весь чат.
   const BOX = {
-    main: [{ w: 70, tickets: 5 }, { w: 25, tickets: 10 }, { w: 5, stars: 3 }],
+    main: [{ w: 70, tickets: 5 }, { w: 25, tickets: 10 }, { w: 5, stars: econ.earn(3) }],
     smallTickets: 1, smallCount: 2, xp: 3, ttlMin: 20, gapFrom: 200, gapTo: 320,
   };
-  const boxPrizeLabel = (p) => p.stars ? p.stars + ' ' + E('starIcon', '⭐') : p.tickets + ' ' + TIX;
+  const boxPrizeLabel = (p) => p.stars ? p.stars + ' ' + E('starIcon', '⭐') : TXN(p.tickets);
   function boxKeyboard(bx) {
     const rows = [];
     for (let r = 0; r < 3; r++) {
       rows.push([0, 1, 2].map(c => {
         const i = r * 3 + c, o = bx.opened[i];
         let label = '❔';
-        if (o) label = o.kind === 'main' ? '🎁' : o.kind === 'small' ? '🎫' : '💨';
-        else if (bx.done) label = i === bx.mainIdx ? '🎁' : bx.small.includes(i) ? '🎫' : '▫️';
+        if (o) label = o.kind === 'main' ? '🎁' : o.kind === 'small' ? (TIX_ON ? '🎫' : '✨') : '💨';
+        else if (bx.done) label = i === bx.mainIdx ? '🎁' : bx.small.includes(i) ? (TIX_ON ? '🎫' : '✨') : '▫️';
         return btn(label, 'bx:' + bx.id + ':' + i, o && o.kind === 'main' ? 'success' : undefined);
       }));
     }
@@ -1210,7 +1218,7 @@ function createChat(bot, opts) {
       ], 'Наступні скриньки — несподівано. Будь у чаті 👀');
     }
     return card('giftBox', 'СКРИНЬКИ', [
-      'В одній — <b>' + boxPrizeLabel(bx.prize) + '</b>, у двох — по ' + BOX.smallTickets + ' ' + TIX + ', решта порожні',
+      'В одній — <b>' + boxPrizeLabel(bx.prize) + '</b>, у двох — по ' + TXN(BOX.smallTickets) + ', решта порожні',
       '',
       E('lightning', '⚡') + ' <b>Як грати:</b> відкрий <b>одну</b> скриньку ❔',
       'Відкрито: <b>' + n + '</b> з 9',
@@ -1257,14 +1265,14 @@ function createChat(bot, opts) {
     if (kind === 'main') {
       if (bx.prize.stars) addStars(uid, bx.prize.stars, 'скриньки в чаті'); else addTickets(uid, bx.prize.tickets, 'скриньки в чаті');
       addPts(uid, 'drop');
-      const plain = bx.prize.stars ? '+' + bx.prize.stars + '⭐' : '+' + bx.prize.tickets + '🎫';
+      const plain = bx.prize.stars ? '+' + bx.prize.stars + '⭐' : TX(bx.prize.tickets);
       await ctx.answerCbQuery('🎉 ПРИЗ! ' + plain + ' уже на балансі', { show_alert: true }).catch(() => {});
       redrawBoxes(true);
       return;
     }
     if (kind === 'small') {
       addTickets(uid, BOX.smallTickets, 'скриньки в чаті');
-      await ctx.answerCbQuery('🎫 +' + BOX.smallTickets + ' білет! Непогано 🙂', { show_alert: true }).catch(() => {});
+      await ctx.answerCbQuery((TIX_ON ? '🎫 +' + BOX.smallTickets + ' білет' : '✨ ' + TX(BOX.smallTickets)) + '! Непогано 🙂', { show_alert: true }).catch(() => {});
     } else {
       await ctx.answerCbQuery('💨 Порожньо… Пощастить наступного разу!').catch(() => {});
     }
@@ -1274,8 +1282,8 @@ function createChat(bot, opts) {
   async function postDrop(force) {
     const prize = pickWeighted(CFG.dropPrizes);
     const id = crypto.randomBytes(4).toString('hex');
-    const label = prize.stars ? prize.stars + ' ' + E('starIcon', '⭐') : prize.tickets + ' ' + TIX;
-    const btnLabel = prize.stars ? 'Забрати ' + prize.stars + '⭐' : 'Забрати ' + prize.tickets + TIX;
+    const label = prize.stars ? prize.stars + ' ' + E('starIcon', '⭐') : TXN(prize.tickets);
+    const btnLabel = prize.stars ? 'Забрати ' + prize.stars + '⭐' : 'Забрати ' + TXN(prize.tickets);
     const m = await send(card('giftBox', 'ДРОП', [
       'Приз: <b>' + label + '</b>',
       '',
@@ -1311,8 +1319,8 @@ function createChat(bot, opts) {
     addPts(uid, 'drop');
     addChatPts(uid, 5, null);
     questProg(uid, 'drop', 1, null);
-    const label = d.prize.stars ? '+' + d.prize.stars + ' ' + E('starIcon', '⭐') : '+' + d.prize.tickets + ' ' + TIX;
-    const plainLabel = d.prize.stars ? '+' + d.prize.stars + '⭐' : '+' + d.prize.tickets + '🎫';
+    const label = d.prize.stars ? '+' + d.prize.stars + ' ' + E('starIcon', '⭐') : TX(d.prize.tickets);
+    const plainLabel = d.prize.stars ? '+' + d.prize.stars + '⭐' : TX(d.prize.tickets);
     const secs = Math.max(1, Math.round((Date.now() - d.at) / 1000));
     await ctx.answerCbQuery('🎉 Твоє! ' + plainLabel + ' вже на балансі', { show_alert: true }).catch(() => {});
     await bot.telegram.editMessageText(chatId, d.msgId, undefined, card('giftBox', 'ДРОП ЗАБРАНО', [
@@ -1335,7 +1343,7 @@ function createChat(bot, opts) {
     const m = await send(card('lightning', 'ВІКТОРИНА', [
       '❓ <b>' + esc(q.q) + '</b>',
       '',
-      'Приз: <b>+' + CFG.quizPrize + ' ' + TIX + '</b>',
+      'Приз: <b>' + TX(CFG.quizPrize) + '</b>',
       E('crown', '👑') + ' <b>Як виграти:</b> першим натисни правильну відповідь',
     ], 'Одна спроба на людину — помилився, спроба згоріла'),
       { reply_markup: { inline_keyboard: [q.a.map((a, i) => btn(a, 'cq:' + id + ':' + i, 'primary'))] } });
@@ -1368,12 +1376,12 @@ function createChat(bot, opts) {
     addChatPts(uid, CFG.quizPts, null);
     questProg(uid, 'quiz', 1, null);
     const secs = Math.max(1, Math.round((Date.now() - z.at) / 1000));
-    await ctx.answerCbQuery('✅ Правильно! +' + CFG.quizPrize + '🎫 вже на балансі', { show_alert: true }).catch(() => {});
+    await ctx.answerCbQuery('✅ Правильно! ' + TX(CFG.quizPrize) + ' вже на балансі', { show_alert: true }).catch(() => {});
     await bot.telegram.editMessageText(chatId, z.msgId, undefined, card('lightning', 'ВІКТОРИНА — Є ПЕРЕМОЖЕЦЬ', [
       '❓ ' + esc(q.q),
       E('check', '✅') + ' Відповідь: <b>' + esc(q.a[q.ok]) + '</b>',
       '',
-      E('crown', '👑') + ' Переможець: <b>' + z.won.name + '</b> · +' + CFG.quizPrize + ' ' + TIX,
+      E('crown', '👑') + ' Переможець: <b>' + z.won.name + '</b> · ' + TX(CFG.quizPrize),
       E('clockIcon', '⏰') + ' Відповів за <b>' + secs + ' с</b>',
       (z.wrong || []).length ? E('redCircle', '🔴') + ' Помилились: ' + z.wrong.length : null,
     ], 'Наступна вікторина — скоро. Слідкуй за чатом!'),
@@ -1383,6 +1391,7 @@ function createChat(bot, opts) {
   // ─────────────────────── ⚔️ ДУЕЛІ ───────────────────────
   // /duel 5 — відкритий виклик; у відповідь на повідомлення — виклик конкретній людині.
   async function onDuelCmd(ctx) {
+    if (!TIX_ON) return ticketGamesGone(ctx);
     const uid = String(ctx.from.id);
     const args = (ctx.message.text || '').split(/\s+/).slice(1);
     const stake = Math.floor(Number(args[0]) || 0);
@@ -1669,10 +1678,10 @@ function createChat(bot, opts) {
       cs ? E('trophy', '🏆') + ' Змагання: <b>' + cs.pts + '</b> балів' : null,
       (function () {
         const cl = clans.summaryOf(uid);
-        return cl ? cl.emoji + ' Клан: <b>' + esc(cl.name) + '</b> [' + esc(cl.tag) + '] · /clan' : '⚔️ Без клану · /clan — вступ за 1 клік, +' + econ.CLANS.joinBonus.tickets + ' ' + TIX + ' одразу';
+        return cl ? cl.emoji + ' Клан: <b>' + esc(cl.name) + '</b> [' + esc(cl.tag) + '] · /clan' : '⚔️ Без клану · /clan — вступ за 1 клік, ' + TX(econ.CLANS.joinBonus.tickets) + ' одразу';
       })(),
       '',
-      TIX + ' Білетів: <b>' + ticketsOf(u) + '</b>',
+      TIX_ON ? TIX + ' Білетів: <b>' + ticketsOf(u) + '</b>' : null,
       E('starIcon', '⭐') + ' Зірок: <b>' + users.stars(u) + '</b>',
       isHappy() ? '\n' + E('almost', '🔥') + ' <b>Зараз ГАРЯЧА ГОДИНА — XP ×2!</b>' : null,
     ];
@@ -1805,11 +1814,8 @@ function createChat(bot, opts) {
         if (ctx.updateType === 'message' && ctx.message) {
           rememberAuthor(ctx);
           if (ctx.message.new_chat_members) return onNewMembers(ctx);
-          // Правила чату: скарги на заявки — видалення й бан (див. chat/rules.js).
-          if (await rules.enforce(ctx, chatId)) return;
           const text = ctx.message.text || '';
           const cmd = text.startsWith('/') ? text.split(/\s|@/)[0].toLowerCase() : null;
-          if (cmd === '/rules') return ctx.reply(rules.rulesText(), { parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id, disable_web_page_preview: true }).catch(() => {});
           if (cmd === '/duel') return onDuelCmd(ctx);
           if (cmd && clans.isClanCommand(cmd)) return clans.command(ctx, cmd);
           if (cmd === '/top') return onRankCmd(ctx);   // ліга вимкнена — показуємо легенд чату
@@ -1823,6 +1829,7 @@ function createChat(bot, opts) {
           if (cmd === '/football' || cmd === '/soccer') return onGameCmd(ctx, 'football');
           if (cmd === '/darts') return onGameCmd(ctx, 'darts');
           if (cmd === '/bowling') return onGameCmd(ctx, 'bowling');
+          if (cmd === '/games' && !TIX_ON) return ticketGamesGone(ctx);
           if (cmd === '/games') return ctx.reply(card('almost', 'ІГРИ НА БІЛЕТИ', gamesHelpLines().concat(['', 'Ставка від ' + SLOT.min + ' до ' + SLOT.max + ' ' + TIX])), { parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id }).catch(() => {});
           if (cmd === '/autowithdraw') return ctx.reply(autowdCard(), { parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id }).catch(() => {});
           if (cmd === '/quests' || cmd === '/q') return onQuestsCmd(ctx);

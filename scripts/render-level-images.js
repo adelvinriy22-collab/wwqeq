@@ -62,7 +62,7 @@ function levelHtml(n) {
   const perks = [
     chip(`<span class="emo">💸</span> ${p.withdrawFee}%`, un.withdrawFee != null),
     p.topupBonus ? chip(`<span class="emo">⭐</span> +${p.topupBonus}%`, un.topupBonus != null) : '',
-    p.chatBonus ? chip(`<span class="emo">💬</span> +${p.chatBonus}<span class="emo">🎫</span>`, un.chatBonus != null) : '',
+    p.chatBonus ? chip(E.TICKETS.enabled ? `<span class="emo">💬</span> +${p.chatBonus}<span class="emo">🎫</span>` : `<span class="emo">💬</span> +${p.chatBonus * E.TICKETS.xpPerTicket} XP`, un.chatBonus != null) : '',
   ].join('');
   return `<!doctype html><html><head><meta charset="utf-8"><style>${BASE_CSS}
     body { background: radial-gradient(circle at 26% 50%, ${t.a}cc 0%, ${t.b} 55%, #07060d 100%); position: relative; }

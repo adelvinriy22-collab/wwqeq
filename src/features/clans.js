@@ -48,7 +48,7 @@ function migrate(d) {
       const back = Math.max(0, (c.cost == null ? 100 : c.cost) - C.createCost) + (c.treasury || 0);
       if (back > 0) {
         users.move(c.owner, { tickets: back }, 'clan_refund', { clan: c.id });
-        notify.dm(c.owner, withEmoji(`{:giftBox} Створення клану тепер коштує лише ${C.createCost}🎫 — повертаємо тобі різницю: <b>+${back}🎫</b>. Клан ${clanTitle(c)} лишається твоїм!`));
+        notify.dm(c.owner, withEmoji(`{:giftBox} Створення клану тепер коштує лише ${C.createCost}🎫 — повертаємо тобі різницю: <b>${TX(back)}</b>. Клан ${clanTitle(c)} лишається твоїм!`));
       }
       c.cost = C.createCost;
       changed = true;
@@ -115,7 +115,12 @@ function removeMember(c, uid) {
 
 // Бонус одразу — за вступ (C.joinBonus) або за створення клану (C.createBonus),
 // раз за війну на гравця; лідеру — +🎫 за кожного нового учасника.
-const bonusText = (b) => '+' + b.tickets + '🎫' + (b.xp ? ' +' + b.xp + ' XP' : '');
+// Білети прибрано: нагороди білетами приходять як XP (users.move) — у текстах теж XP.
+const TX = (n) => E.TICKETS.enabled ? '+' + n + '🎫' : '+' + n * E.TICKETS.xpPerTicket + ' XP';
+const costText = () => C.createCost ? (E.TICKETS.enabled ? C.createCost + '🎫' : 'безкоштовно') : 'безкоштовно';
+// Білети + XP одним числом, коли білетів немає (+75 XP +50 XP → +125 XP).
+const TXP = (t, xp) => E.TICKETS.enabled ? TX(t) + (xp ? ' +' + xp + ' XP' : '') : '+' + ((t || 0) * E.TICKETS.xpPerTicket + (xp || 0)) + ' XP';
+const bonusText = (b) => TXP(b.tickets, b.xp);
 function grantBonus(d, c, uid, b, reason) {
   if (!running(d)) return null;
   const u = users.get(uid) || {};
@@ -141,8 +146,8 @@ function joinRewards(d, c, uid) {
 // ─── Скрині клану ───────────────────────────────────────────────────────
 let lastChestSayAt = 0;
 const chestCount = (pts) => { let n = 0; while (n < C.chests.length && pts >= C.chests[n].at) n++; return n; };
-const chestPrize = (ch) => '+' + ch.tickets + '🎫' + (ch.stars ? ' +' + ch.stars + '⭐' : '');
-const chestSum = () => { const t = C.chests.reduce((a, ch) => a + (ch.tickets || 0), 0), s = C.chests.reduce((a, ch) => a + (ch.stars || 0), 0); return '+' + t + '🎫' + (s ? ' +' + s + '⭐' : ''); };
+const chestPrize = (ch) => '' + TX(ch.tickets) + (ch.stars ? ' +' + ch.stars + '⭐' : '');
+const chestSum = () => { const t = C.chests.reduce((a, ch) => a + (ch.tickets || 0), 0), s = C.chests.reduce((a, ch) => a + (ch.stars || 0), 0); return '' + TX(t) + (s ? ' +' + s + '⭐' : ''); };
 // Видати відкриті скрині тим, хто приніс від chestMin очок. Лічильник — у гравця,
 // тож перехід в інший клан не дає отримати ті самі скрині вдруге.
 function payChests(d, c) {
@@ -184,7 +189,7 @@ function startEvent(d, days) {
   save(d);
   return d.event;
 }
-const joinKb = () => ({ inline_keyboard: [[btn('ВСТУПИТИ · +' + C.joinBonus.tickets + '🎫', 'cl:q', 'success', 'lightning'), btn('КЛАНОВА ВІЙНА', 'cl:h', 'danger', 'trophy')]] });
+const joinKb = () => ({ inline_keyboard: [[btn('ВСТУПИТИ · ' + TXP(C.joinBonus.tickets, C.joinBonus.xp), 'cl:q', 'success', 'lightning'), btn('КЛАНОВА ВІЙНА', 'cl:h', 'danger', 'trophy')]] });
 // Перша війна стартує сама (після оновлення бота).
 function ensureEvent(d) {
   if (d.event) return false;
@@ -214,7 +219,7 @@ async function finish() {
         if (rw.xp) progress.addXp(uid, 'clan', rw.xp, { silent: true });
         const u = users.get(uid) || {};
         notify.dm(uid, withEmoji(`{:trophy} <b>КЛАНОВА ВІЙНА — ${rw.place} МІСЦЕ!</b>\n${LINE}\nТвій клан ${clanTitle(c)} — <b>${Math.floor(pts)}</b> ${ptsWord(pts)}.\n\n` +
-          `{:giftBox} Твій приз: <b>+${rw.stars}⭐ +${rw.tickets}🎫 +${rw.xp} XP</b> — уже на балансі` +
+          `{:giftBox} Твій приз: <b>+${rw.stars}⭐ ${TXP(rw.tickets, rw.xp)}</b> — уже на балансі` +
           (uid === c.owner && rw.ownerGift ? `\n{:crown} А як лідеру — ще й ${giftName(u.lang)} справжнім подарунком Telegram!` : '')));
       }
       let gift = null;
@@ -229,7 +234,7 @@ async function finish() {
         if (!act.includes(c.owner)) {
           const ou = users.get(c.owner) || {};
           notify.dm(c.owner, withEmoji(`{:trophy} <b>КЛАНОВА ВІЙНА — ${rw.place} МІСЦЕ!</b>\n${LINE}\nТвій клан ${clanTitle(c)} на п’єдесталі. {:crown} Як лідеру — ${giftName(ou.lang)}!\n\n` +
-            `<i>Особисті призи (+${rw.stars}⭐ +${rw.tickets}🎫) — тим, хто приніс від ${C.activeMin} очок.</i>`));
+            `<i>Особисті призи (+${rw.stars}⭐ ${TX(rw.tickets)}) — тим, хто приніс від ${C.activeMin} очок.</i>`));
         }
       }
       if (i === 0) c.wins = (c.wins || 0) + 1;
@@ -413,7 +418,7 @@ const B = C.battles;
 const SOLO = '_solo';
 const fmtN = (n) => String(Math.round(n * 10) / 10);
 const teamName = (d, t) => t === SOLO ? '👤 <b>Одинаки</b> (без клану)' : d.list[t] ? clanTitle(d.list[t]) : '—';
-const prizeOf = (p) => [p.stars ? '+' + p.stars + '⭐' : null, p.tickets ? '+' + p.tickets + '🎫' : null].filter(Boolean).join(' ');
+const prizeOf = (p) => [p.stars ? '+' + p.stars + '⭐' : null, p.tickets ? '' + TX(p.tickets) : null].filter(Boolean).join(' ');
 function battleScore(d, uid, src, raw, opts) {
   const b = d.battle;
   if (!b || b.status !== 'active' || Date.now() >= b.endsAt || users.isAdmin(uid)) return false;
@@ -440,9 +445,9 @@ function battleText(d, b, phase) {
   if (phase === 'end') {
     const r = b.result || {};
     if (r.winClan) lines.push(`{:trophy} <b>Перемога: ${teamName(d, r.winClan)}</b> — ${fmtN(b.teams[r.winClan])} ${K.unit}!`,
-      `+${B.win.points} очок у війні і <b>+${B.win.tickets}🎫</b> кожному з ${r.fighters} бійців`);
+      `+${B.win.points} очок у війні і <b>${TX(B.win.tickets)}</b> кожному з ${r.fighters} бійців`);
     else if (teams[0] && teams[0][0] === SOLO) lines.push(`{:warn} <b>Перемогли Одинаки</b> — ${fmtN(teams[0][1])} ${K.unit}. Бонус команди згорів!`,
-      `Були б у клані — забрали б +${B.win.points} очок і +${B.win.tickets}🎫 кожному. Вступай 👇`);
+      `Були б у клані — забрали б +${B.win.points} очок і ${TX(B.win.tickets)} кожному. Вступай 👇`);
     else lines.push(`Ніхто не набрав ${K.min} ${K.unit} — бонус команди згорів.`);
     lines.push('', '{:almost} <b>Призи гравцям:</b> ' + (r.winners && r.winners.length
       ? r.winners.map((w, i) => `${MEDAL[i]} ${whoOf(w.uid)} ${prizeOf(w.prize)}`).join(' · ') : `ніхто не набрав ${K.min} ${K.unit}`));
@@ -455,12 +460,12 @@ function battleText(d, b, phase) {
   else lines.push('Поки порожньо — перший удар за тобою!');
   if (players.length) lines.push('{:almost} <b>Гравці:</b> ' + players.map(([uid, n], i) => `${MEDAL[i]} ${whoOf(uid)} ${fmtN(n)}`).join(' · '));
   lines.push('', `{:giftBox} <b>Призи:</b> топ-3 гравцям — ${prizes} (від ${K.min} ${K.unit}), навіть без клану`,
-    `{:trophy} Клан-переможець — <b>+${B.win.points} очок</b> у війні і <b>+${B.win.tickets}🎫</b> кожному, хто бився`);
+    `{:trophy} Клан-переможець — <b>+${B.win.points} очок</b> у війні і <b>${TX(B.win.tickets)}</b> кожному, хто бився`);
   return card('{:lightning}', 'БИТВА: ' + K.title, lines, 'Одинаки теж б’ються, але бонус команди — лише клану');
 }
 function battleKb(b) {
   const bot = notify.tg.botUsername;
-  const rows = [[btn('ТАБЛО', 'cl:b', 'primary', 'statsIcon'), btn('ВСТУПИТИ · +' + C.joinBonus.tickets + '🎫', 'cl:q', 'success', 'lightning')]];
+  const rows = [[btn('ТАБЛО', 'cl:b', 'primary', 'statsIcon'), btn('ВСТУПИТИ · ' + TXP(C.joinBonus.tickets, C.joinBonus.xp), 'cl:q', 'success', 'lightning')]];
   if (bot && b && b.kind === 'paid') rows.push([{ text: '🎡 КРУТИТИ КОЛЕСО', url: `https://t.me/${bot}?start=battle` }]);
   if (bot && b && b.kind === 'games') rows.push([{ text: '🎲 ГРАТИ НА ЗІРКИ', url: `https://t.me/${bot}?start=games` }]);
   return { inline_keyboard: rows };
@@ -494,7 +499,7 @@ async function endBattle(d) {
   for (const [i, w] of winners.entries()) {
     users.move(w.uid, { stars: w.prize.stars || 0, tickets: w.prize.tickets || 0 }, 'clan_battle', { battle: b.id, place: i + 1 });
     notify.dm(w.uid, withEmoji(`{:trophy} <b>Битва «${K.title.toLowerCase()}» — ${i + 1} місце!</b>\nТвій приз: <b>${prizeOf(w.prize)}</b> — уже на балансі` +
-      (clanOfUser(d, w.uid) ? '' : `\n\n<i>Був би в клані — міг би забрати ще й бонус команди +${B.win.tickets}🎫. /clan</i>`)));
+      (clanOfUser(d, w.uid) ? '' : `\n\n<i>Був би в клані — міг би забрати ще й бонус команди ${TX(B.win.tickets)}. /clan</i>`)));
   }
   const top = sortDesc(b.teams)[0];
   let winClan = null, fighters = 0;
@@ -555,7 +560,7 @@ function onChatMessage(ctx) {
     `{:giftBox} <b>${bonusText(C.joinBonus)} одразу</b> за вступ\n{:rocket} ліміт XP у клані <b>×${C.xpCapMult}</b>\n{:trophy} скрині й призи фіналу` +
     (freePlaces(d) ? `\n{:crown} призових місць вільно: <b>${freePlaces(d)}</b>` : '')), {
     parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id, allow_sending_without_reply: true,
-    reply_markup: { inline_keyboard: [[btn('ВСТУПИТИ · +' + C.joinBonus.tickets + '🎫', 'cl:q', 'success', 'lightning'), btn('СВІЙ КЛАН · +' + C.createBonus.tickets + '🎫', 'cl:new', null, 'crown')]] },
+    reply_markup: { inline_keyboard: [[btn('ВСТУПИТИ · ' + TXP(C.joinBonus.tickets, C.joinBonus.xp), 'cl:q', 'success', 'lightning'), btn('СВІЙ КЛАН · ' + TXP(C.createBonus.tickets, C.createBonus.xp), 'cl:new', null, 'crown')]] },
   }).catch(() => {});
 }
 // Скільки призових місць фіналу ще ніхто не займає (мало кланів — шанс для нових).
@@ -580,9 +585,9 @@ const perks = () => [
   `{:lightning} <b>${bonusText(C.joinBonus)} одразу</b> за вступ, <b>${bonusText(C.createBonus)}</b> — за свій клан`,
   `{:rocket} у клані ліміт XP <b>×${C.xpCapMult}</b>, а очки клану йдуть навіть понад ліміт`,
   `{:giftBox} скрині клану — до <b>${chestSum()}</b> кожному`,
-  `{:trophy} фінал, топ-3 — до <b>+${best.stars}⭐ +${best.tickets}🎫</b> кожному, лідеру ${giftOf(best)}`,
+  `{:trophy} фінал, топ-3 — до <b>+${best.stars}⭐ ${TX(best.tickets)}</b> кожному, лідеру ${giftOf(best)}`,
 ];
-const finalLines = () => C.rewards.map((rw, i) => `${MEDAL[i]} кожному <b>+${rw.stars}⭐ +${rw.tickets}🎫</b>` + (rw.ownerGift ? ` · лідеру ${giftOf(rw)}` : ''));
+const finalLines = () => C.rewards.map((rw, i) => `${MEDAL[i]} кожному <b>+${rw.stars}⭐ ${TX(rw.tickets)}</b>` + (rw.ownerGift ? ` · лідеру ${giftOf(rw)}` : ''));
 function topLine(d) {
   const top = ranked(d).filter(r => r.pts > 0).slice(0, 3);
   return top.length ? '{:almost} Лідирують: ' + top.map((r, i) => `${MEDAL[i]} ${r.c.emoji} ${esc(r.c.name)} <b>${Math.floor(r.pts)}</b>`).join(' · ')
@@ -605,7 +610,7 @@ function startText(ev) {
     ...perks(),
     '',
     `{:clockIcon} Фінал: <b>${whenText(ev.endsAt)}</b> (Київ)`,
-  ], `Свій клан — лише ${C.createCost}🎫 · /clan`);
+  ], `Свій клан — ${costText()} · /clan`);
 }
 const freeLine = (d) => freePlaces(d) ? `{:crown} Призових місць вільно: <b>${freePlaces(d)}</b> — створи клан, і приз уже майже твій!` : null;
 function statusText(icon, title) {
@@ -656,7 +661,7 @@ function hubText(uid) {
     ...finalLines(),
     '',
     topLine(d),
-  ], `Клич друзів: /clan_join ${esc(mine.tag)}` + (mine.owner === String(uid) ? ` — тобі +${C.recruitBonus}🎫 за кожного` : ' — більше людей, більше очок'));
+  ], `Клич друзів: /clan_join ${esc(mine.tag)}` + (mine.owner === String(uid) ? ` — тобі ${TX(C.recruitBonus)} за кожного` : ' — більше людей, більше очок'));
 }
 function hubKb(uid, priv) {
   const d = data();
@@ -664,8 +669,8 @@ function hubKb(uid, priv) {
   const rows = [];
   if (mine) rows.push([btn('МІЙ КЛАН', 'cl:my', 'success', 'crown'), btn('УСІ КЛАНИ', 'cl:l', 'primary', 'statsIcon')]);
   else {
-    rows.push([quickPick(d) ? btn('ВСТУПИТИ ЗА 1 КЛІК · +' + C.joinBonus.tickets + '🎫', 'cl:q', 'success', 'lightning') : btn('СТВОРИТИ ПЕРШИЙ КЛАН · +' + C.createBonus.tickets + '🎫', 'cl:new', 'success', 'lightning')]);
-    rows.push([btn('УСІ КЛАНИ', 'cl:l', 'primary', 'statsIcon'), btn('СВІЙ КЛАН · +' + C.createBonus.tickets + '🎫', 'cl:new', null, 'crown')]);
+    rows.push([quickPick(d) ? btn('ВСТУПИТИ ЗА 1 КЛІК · ' + TXP(C.joinBonus.tickets, C.joinBonus.xp), 'cl:q', 'success', 'lightning') : btn('СТВОРИТИ ПЕРШИЙ КЛАН · ' + TXP(C.createBonus.tickets, C.createBonus.xp), 'cl:new', 'success', 'lightning')]);
+    rows.push([btn('УСІ КЛАНИ', 'cl:l', 'primary', 'statsIcon'), btn('СВІЙ КЛАН · ' + TXP(C.createBonus.tickets, C.createBonus.xp), 'cl:new', null, 'crown')]);
   }
   rows.push(battleLive(d) ? [btn('БИТВА — ТАБЛО', 'cl:b', 'danger', 'lightning'), btn('ЯК ЦЕ ПРАЦЮЄ', 'cl:help', null, 'infoIcon')] : [btn('ЯК ЦЕ ПРАЦЮЄ', 'cl:help', null, 'infoIcon')]);
   if (priv) rows.push([btn('НАЗАД', 'back_to_menu', null, 'back')]);
@@ -688,14 +693,14 @@ function clanText(c) {
 }
 function clanKb(c, uid) {
   const rows = [];
-  if (!c.members.includes(String(uid))) rows.push([btn(c.open ? 'ВСТУПИТИ · +' + C.joinBonus.tickets + '🎫' : 'ПОДАТИ ЗАЯВКУ', 'cl:j:' + c.id, 'success', 'lightning')]);
+  if (!c.members.includes(String(uid))) rows.push([btn(c.open ? 'ВСТУПИТИ · ' + TXP(C.joinBonus.tickets, C.joinBonus.xp) : 'ПОДАТИ ЗАЯВКУ', 'cl:j:' + c.id, 'success', 'lightning')]);
   rows.push([btn('ДО ВІЙНИ', 'cl:h', null, 'back'), btn('УСІ КЛАНИ', 'cl:l', 'primary', 'statsIcon')]);
   return { inline_keyboard: rows };
 }
 
 function listText() {
   const all = standings(data());
-  if (!all.length) return card('{:statsIcon}', 'УСІ КЛАНИ', ['Поки жодного клану — стань першим!', '', `Свій клан — лише ${C.createCost}🎫: кнопка нижче або <code>/clan_create Назва</code>`]);
+  if (!all.length) return card('{:statsIcon}', 'УСІ КЛАНИ', ['Поки жодного клану — стань першим!', '', `Свій клан — ${costText()}: кнопка нижче або <code>/clan_create Назва</code>`]);
   const lines = all.slice(0, 15).map(({ c, pts }, i) => `${i + 1}. ${clanTitle(c)} — <b>${Math.floor(pts)}</b> · 👥 ${c.members.length}/${C.cap} ` + (c.open ? '{:greenCircle}' : '{:lockIcon}'));
   if (all.length > 15) lines.push(`…і ще ${all.length - 15}`);
   return card('{:statsIcon}', 'УСІ КЛАНИ · ' + all.length, lines, '{:greenCircle} вступ вільний · {:lockIcon} за заявкою. Обери клан кнопкою 👇');
@@ -704,7 +709,7 @@ function listKb() {
   const b = standings(data()).slice(0, 8).map(({ c }) => btn(`${c.emoji} ${c.name}`, 'cl:v:' + c.id));
   const rows = [];
   for (let i = 0; i < b.length; i += 2) rows.push(b.slice(i, i + 2));
-  rows.push([btn('ДО ВІЙНИ', 'cl:h', null, 'back'), btn('СВІЙ КЛАН · +' + C.createBonus.tickets + '🎫', 'cl:new', null, 'crown')]);
+  rows.push([btn('ДО ВІЙНИ', 'cl:h', null, 'back'), btn('СВІЙ КЛАН · ' + TXP(C.createBonus.tickets, C.createBonus.xp), 'cl:new', null, 'crown')]);
   return { inline_keyboard: rows };
 }
 
@@ -712,16 +717,16 @@ function helpText() {
   const d = data();
   return card('{:infoIcon}', 'ЯК ПРАЦЮЄ КЛАНОВА ВІЙНА', [
     `1️⃣ Вступи в клан за 1 клік — <b>${bonusText(C.joinBonus)} одразу</b>`,
-    `2️⃣ Або створи свій за ${C.createCost}🎫 — і отримай <b>${bonusText(C.createBonus)}</b>`,
+    `2️⃣ Або створи свій (${costText()}) — і отримай <b>${bonusText(C.createBonus)}</b>`,
     '3️⃣ Кожен твій XP — очко для клану: пиши в чаті, грай, крути колесо',
     '4️⃣ Клан набирає очки — відкриває скрині, приз кожному:',
     C.chests.map(ch => `${ch.at} → ${chestPrize(ch)}`).join(' · '),
     `5️⃣ ${running(d) ? 'Фінал через <b>' + time.humanLeft(d.event.endsAt - Date.now()) + '</b>' : 'Фінал'} — призи топ-3 кланам:`,
-    ...C.rewards.map((rw, i) => `${MEDAL[i]} кожному +${rw.stars}⭐ +${rw.tickets}🎫 +${rw.xp} XP` + (rw.ownerGift ? ` · лідеру ${giftOf(rw)}` : '')),
+    ...C.rewards.map((rw, i) => `${MEDAL[i]} кожному +${rw.stars}⭐ ${TXP(rw.tickets, rw.xp)}` + (rw.ownerGift ? ` · лідеру ${giftOf(rw)}` : '')),
     '',
-    `{:lightning} <b>Битви</b> кожні ${B.everyHours} год: година з завданням (чат, платні колеса, XP, ігри). Топ-3 гравці — приз, клан-переможець — +${B.win.points} очок і +${B.win.tickets}🎫 кожному, хто бився. Без клану ти в команді «Одинаки» — без бонусу команди.`,
+    `{:lightning} <b>Битви</b> кожні ${B.everyHours} год: година з завданням (чат, платні колеса, XP, ігри). Топ-3 гравці — приз, клан-переможець — +${B.win.points} очок і ${TX(B.win.tickets)} кожному, хто бився. Без клану ти в команді «Одинаки» — без бонусу команди.`,
     `Скрині — тим, хто приніс клану від ${C.chestMin} очок; призи фіналу — від ${C.activeMin}.`,
-    `Бонус за вступ чи створення — раз за війну. Лідеру: +${C.recruitBonus}🎫 за кожного нового учасника · <code>/clan_close</code> — вступ за заявкою · <code>/clan_kick @нік</code>`,
+    `Бонус за вступ чи створення — раз за війну. Лідеру: ${TX(C.recruitBonus)} за кожного нового учасника · <code>/clan_close</code> — вступ за заявкою · <code>/clan_kick @нік</code>`,
     'Вийти з клану: <code>/clan_leave</code>',
   ]);
 }
@@ -739,7 +744,7 @@ function joinedText(uid, r) {
 function createdText(c, bonus) {
   return withEmoji(`{:check} Клан ${clanTitle(c)} створено! Ти — лідер {:crown}\n` +
     (bonus ? `{:giftBox} Бонус лідеру: <b>${bonusText(bonus)}</b> — уже на балансі\n` : '') +
-    `Клич друзів: <code>/clan_join ${esc(c.tag)}</code> — тобі <b>+${C.recruitBonus}🎫</b> за кожного` +
+    `Клич друзів: <code>/clan_join ${esc(c.tag)}</code> — тобі <b>${TX(C.recruitBonus)}</b> за кожного` +
     (C.minMembers > 1 ? `\n<i>Ще ${C.minMembers - 1} учасн. — і відкриються скрині та фінал.</i>` : ''));
 }
 
@@ -751,7 +756,7 @@ const ERR = {
   full: `У клані вже ${C.cap}/${C.cap} — місць немає.`, already_requested: 'Заявку вже надіслано — чекай рішення лідера.',
   owner_only: 'Це може лише лідер клану.', no_request: 'Такої заявки вже немає.', in_other_clan: 'Гравець уже в іншому клані.',
   no_clan_member: 'Ти не в клані. /clan — вступ за 1 клік', not_member: 'Цей гравець не в твоєму клані.', self: 'Себе вигнати не можна 🙂 /clan_leave',
-  no_target: 'Кого? Вкажи @нік або відповідай на повідомлення людини.', no_open: `Поки немає відкритих кланів — створи перший і забери +${C.createBonus.tickets}🎫!`,
+  no_target: 'Кого? Вкажи @нік або відповідай на повідомлення людини.', no_open: `Поки немає відкритих кланів — створи перший і забери ${TXP(C.createBonus.tickets, C.createBonus.xp)}!`,
 };
 function errText(r) {
   let t = ERR[r.error] || 'Не вийшло 🤔';
@@ -766,7 +771,7 @@ const pendingGroup = new Map();   // `${chatId}:${msgId}` → { uid, until }
 const pendingPriv = new Map();    // uid → until
 async function askName(ctx, uid, priv) {
   const txt = withEmoji(`{:crown} ${priv ? '' : whoOf(uid) + ', '}напиши назву свого клану${priv ? '' : ' у відповідь на це повідомлення'}.\n` +
-    `Можна з емодзі на початку: <code>🐺 Вовки</code> · ціна — ${C.createCost}🎫, бонус лідеру — <b>${bonusText(C.createBonus)}</b>`);
+    `Можна з емодзі на початку: <code>🐺 Вовки</code> · ціна — ${costText()}, бонус лідеру — <b>${bonusText(C.createBonus)}</b>`);
   const m = await ctx.reply(txt, { parse_mode: 'HTML', reply_markup: { force_reply: true, selective: true, input_field_placeholder: '🐺 Назва клану' } }).catch(() => null);
   if (priv) pendingPriv.set(uid, Date.now() + 10 * 60e3);
   else if (m) pendingGroup.set(`${ctx.chat.id}:${m.message_id}`, { uid, until: Date.now() + 10 * 60e3 });
@@ -900,7 +905,7 @@ async function afterJoin(uid, r, reply, inGroup) {
   const c = r.clan;
   if (r.request) {
     const lv = progress.levelInfo(progress.xpOf(users.get(uid)).total);
-    notify.dm(c.owner, withEmoji(`{:applicationsIcon} <b>Заявка в клан</b> ${clanTitle(c)}\nВід ${whoOf(uid)} · ${lv.e} ${esc(lv.t)}, рівень ${lv.n}\n<i>Прийнятий гравець принесе тобі +${C.recruitBonus}🎫</i>`),
+    notify.dm(c.owner, withEmoji(`{:applicationsIcon} <b>Заявка в клан</b> ${clanTitle(c)}\nВід ${whoOf(uid)} · ${lv.e} ${esc(lv.t)}, рівень ${lv.n}\n<i>Прийнятий гравець принесе тобі ${TX(C.recruitBonus)}</i>`),
       { reply_markup: { inline_keyboard: [[btn('ПРИЙНЯТИ', `cl:a:${c.id}:${uid}`, 'success', 'check'), btn('ВІДХИЛИТИ', `cl:r:${c.id}:${uid}`, 'danger', 'redCircle')]] } });
     return reply(withEmoji(`{:pendingIcon} Заявку в клан ${clanTitle(c)} надіслано — лідер вирішить найближчим часом.`));
   }

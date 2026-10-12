@@ -38,7 +38,7 @@ function prizeText(p) {
   if (p.gift) out.push('<b>' + GIFT_NAME[p.gift] + '</b>');
   if (p.gift2) out.push('<b>' + GIFT_NAME[p.gift2] + '</b>');
   if (p.stars) out.push('<b>' + p.stars + '⭐</b>');
-  if (p.tickets) out.push(p.tickets + '🎫');
+  if (p.tickets) out.push(E.TICKETS.enabled ? p.tickets + '🎫' : p.tickets * E.TICKETS.xpPerTicket + ' XP');
   if (p.xp) out.push(p.xp + ' XP');
   return out.join(' + ');
 }

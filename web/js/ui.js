@@ -8,7 +8,10 @@ export const fmt = (n) => {
   return v.toLocaleString(lang() === 'en' ? 'en-US' : 'uk-UA', { maximumFractionDigits: 2 });
 };
 export const stars = (n) => fmt(n) + '⭐';
-export const tix = (n) => fmt(n) + '🎫';
+// Білети прибрано: нагороди білетами тепер приходять як XP — і показуємо XP.
+let tixOff = null;
+export function setTicketsMode(off, per) { tixOff = off ? (per || 5) : null; }
+export const tix = (n) => tixOff ? fmt(n * tixOff) + ' XP' : fmt(n) + '🎫';
 
 export function left(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));

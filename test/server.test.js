@@ -15,6 +15,7 @@ const ADMIN = '999';
 const ROOT = path.join(__dirname, '..');
 let tg, proc, base, dataDir;
 
+const kday = (ts) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date(ts));
 const SEASON_IDX = Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / (30 * 86400000));
 const U = (id, extra) => ({
   id, name: 'User' + id, username: 'user' + id, lang: 'uk', subscribed: true,
@@ -55,6 +56,18 @@ function seedV2() {
       // Клани: лідер (3-й рівень, 150🎫), учасники, заявка в закритий клан.
       990: U('990', { tickets: 150, ticketsUsed: 0, starBalance: 100, chatPts: 100 }), 991: U('991', { starBalance: 100 }),
       992: U('992', { starBalance: 100 }), 993: U('993', {}),
+      // Колесо за зірки (багато спінів).
+      1001: U('1001', { starBalance: 1000 }),
+      // Вивід подарунками: давній гравець із 3 справжніми друзями й 3 днями активності.
+      1002: U('1002', { starBalance: 300, joinedAt: Date.now() - 10 * 86400e3, invitedIds: ['1003', '1004', '1005'], activeDays: [kday(Date.now() - 2 * 86400e3), kday(Date.now() - 86400e3), kday(Date.now())] }),
+      1003: U('1003', { joinedAt: Date.now() - 5 * 86400e3 }), 1004: U('1004', { joinedAt: Date.now() - 5 * 86400e3 }), 1005: U('1005', { joinedAt: Date.now() - 5 * 86400e3 }),
+      // Давно не заходив — розблокувати не зможе.
+      1006: U('1006', { joinedAt: Date.now() - 30 * 86400e3, lastActiveAt: Date.now() - 20 * 86400e3 }),
+      // Новий акаунт і «фейкові» друзі.
+      1007: U('1007', { starBalance: 100, invitedIds: ['1003', '1004', '1005'], wdUnlockGranted: 1 }),
+      1008: U('1008', { starBalance: 100, joinedAt: Date.now() - 10 * 86400e3, invitedIds: ['x1', 'x2', 'x3'], wdUnlockGranted: 1 }),
+      // Паралельні виводи.
+      1009: U('1009', { starBalance: 60, joinedAt: Date.now() - 10 * 86400e3, invitedIds: ['1003', '1004', '1005'], wdUnlockGranted: 1 }),
       // Розіграш автовидачі.
       995: U('995', {}), 996: U('996', {}), 997: U('997', {}),
     },
@@ -200,66 +213,95 @@ test('initData: підробка й прострочення відхиляют�
   assert.strictEqual((await api('GET', '/me', null, null, '')).status, 401);
 });
 
-test('150 спінів: жодної помилки, стрілка на своєму секторі, баланс = журнал', async () => {
-  const me = (await api('GET', '/me')).d;
-  const segs = me.wheels.wheels.daily.segments;
-  const s0 = me.balance.stars, t0 = me.balance.tickets;
-  const l0 = ledger('100').length;
+test('40 спінів колеса за зірки: жодної помилки, стрілка на своєму секторі, баланс = журнал', async () => {
+  const me = (await api('GET', '/me', null, '1001')).d;
+  assert.ok(!me.wheels.wheels.daily && !me.wheels.wheels.referral, 'щоденного колеса й колеса білетів немає');
+  assert.strictEqual(me.ticketsOff, true);
+  const segs = me.wheels.wheels.paid.segments;
+  const s0 = me.balance.stars;
+  const l0 = ledger('1001').length;
   let errors = 0, last = null;
-  for (let i = 0; i < 150; i++) {
-    const r = await api('POST', '/spin', { wheel: 'daily' });
+  for (let i = 0; i < 40; i++) {
+    const r = await api('POST', '/spin', { wheel: 'paid' }, '1001');
     if (r.status !== 200) { errors++; continue; }
     last = r.d;
     const seg = segs[r.d.segment];
     assert.ok(seg, 'сектор існує');
     assert.strictEqual(seg.kind, r.d.kind, 'сектор того ж типу, що й результат');
-    if (r.d.kind !== 'prize') assert.strictEqual(seg.id, r.d.outcome, 'точний сектор для зірок і білетів');
+    if (r.d.kind !== 'prize') assert.strictEqual(seg.id, r.d.outcome, 'точний сектор для зірок');
   }
   assert.strictEqual(errors, 0);
   await sleep(700);
-  const moves = ledger('100').slice(l0);
+  const moves = ledger('1001').slice(l0);
   const ds = round2(moves.reduce((a, e) => a + (e.s || 0), 0));
-  const dt = moves.reduce((a, e) => a + (e.t || 0), 0);
-  const u = readDb().users['100'];
+  const u = readDb().users['1001'];
   assert.strictEqual(round2(u.starBalance), round2(s0 + ds), 'зірки: баланс = сума журналу');
-  assert.strictEqual(u.tickets, t0 + dt, 'білети: баланс = сума журналу');
   assert.strictEqual(last.balance, u.starBalance);
   assert.strictEqual(moves[moves.length - 1].bs, u.starBalance, 'останній запис журналу = поточний баланс');
-  assert.ok(u.xp.total > 310, 'спіни дають XP');
+  assert.ok(u.xp.total > 0, 'спіни дають XP');
 });
 
-test('кулдаун щоденного колеса', async () => {
-  const r = await api('POST', '/spin', { wheel: 'daily' }, '200');
-  assert.strictEqual(r.status, 429);
-  assert.strictEqual(r.d.error, 'daily_cooldown');
-});
-
-test('колесо білетів списує 5🎫; преміум-колесо вимкнене', async () => {
-  const t0 = (await api('GET', '/me', null, '400')).d.balance.tickets;
-  const r = await api('POST', '/spin', { wheel: 'referral' }, '400');
-  assert.strictEqual(r.status, 200, JSON.stringify(r.d));
-  assert.ok(r.d.tickets <= t0 - 5 + (r.d.kind === 'tickets' ? r.d.amount : 0) + 10);
-  assert.strictEqual((await api('POST', '/spin', { wheel: 'premium' }, '400')).status, 410);
+test('щоденне колесо й колесо білетів прибрано; преміум вимкнене', async () => {
+  for (const w of ['daily', 'referral', 'premium']) assert.strictEqual((await api('POST', '/spin', { wheel: w }, '400')).status, 410, w);
   assert.strictEqual((await api('POST', '/spin', { wheel: '__proto__' }, '400')).status, 400);
 });
 
-test('вивід: умови, комісія, заявка', async () => {
-  assert.strictEqual((await api('POST', '/wallet/withdraw', { amount: 20 }, '300')).d.error, 'need_referrals');
-  assert.strictEqual((await api('POST', '/wallet/withdraw', { amount: 14 })).d.error, 'bad_amount');
-  const ok = await api('POST', '/wallet/withdraw', { amount: 20 });
+test('вивід подарунками: розблокування з розсилки, умови, одна заявка, урізання, денний ліміт 75⭐', async () => {
+  const waitFor = async (pred) => { for (let i = 0; i < 60; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  const W = (id, gift) => api('POST', '/wallet/withdraw', { gift }, id);
+  assert.strictEqual((await W('1002', 'bear')).d.error, 'wd_locked', 'до розблокування — закрито');
+  assert.strictEqual((await W('1002', 'trophy')).d.error, 'bad_gift', 'будь-яку суму чи 🏆 не вивести');
+  const info = (await api('GET', '/wallet', null, '1002')).d.withdraw;
+  assert.deepStrictEqual(info.gifts.map(g => g.id), ['bear', 'gift', 'rocket']);
+  assert.strictEqual(info.dayCap, 75);
+  // Розсилка «оновлення» з кнопкою.
+  const n0 = tg.calls.length;
+  adminCmd('/wd_unlock так');
+  const post = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === '1002' && /wdu:go/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  assert.ok(post, 'розсилка з кнопкою');
+  assert.match(post.payload.text, /ОНОВЛЕННЯ/);
+  assert.match(post.payload.text, /24 год/);
+  assert.match(post.payload.text, /хоча б 3 дні/);
+  const tap = (id) => tg.push({ callback_query: { id: 'u' + Math.random(), from: { id: Number(id), is_bot: false, first_name: 'P' + id, username: 'user' + id }, chat_instance: 'w', data: 'wdu:go', message: { message_id: 1, date: 0, chat: { id: Number(id), type: 'private' } } } });
+  tap('1006');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === '1006' && /Не вийшло розблокувати/.test(c.payload.text || ''))), 'неактивний — відмова');
+  tap('1002');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === '1002' && /ВИВІД РОЗБЛОКОВАНО/.test(c.payload.text || ''))), 'активний — розблоковано');
+  assert.ok(await waitFor(() => readDb().users['1002'].wdUnlockedAt));
+  // Інші умови.
+  assert.strictEqual((await W('1007', 'bear')).d.error, 'too_new', 'новий акаунт');
+  assert.strictEqual((await W('1008', 'bear')).d.error, 'need_referrals', 'друзі мають бути справжніми');
+  // Вивід 🚀: 50 + 5% = 53⭐, потім — одна заявка в черзі.
+  const ok = await W('1002', 'rocket');
   assert.strictEqual(ok.status, 200, JSON.stringify(ok.d));
-  assert.strictEqual(ok.d.cost, 21);
-  await sleep(600);
-  const app = readDb().applications.find(a => a.id === ok.d.applicationId);
-  assert.strictEqual(app.spentStars, 21);
-  assert.strictEqual(app.status, 'pending');
+  assert.strictEqual(ok.d.cost, 53);
+  assert.strictEqual((await W('1002', 'bear')).d.error, 'pending_exists');
+  const risk = await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === ADMIN && /Вивід подарунком/.test(c.payload.text || '') && /admin_cut_/.test(JSON.stringify(c.payload.reply_markup || {}))));
+  assert.ok(risk, 'адміну — заявка з ризик-карткою й кнопкою «Урізати»');
+  assert.match(risk.payload.text, /справжніх/);
+  // Урізання: 🚀 → 🧸 з причиною, різниця не повертається.
+  const id = ok.d.applicationId;
+  adminCmd('/cut ' + id + ' bear підозра на мультиакаунт');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === '1002' && /урізано/.test(c.payload.text || '') && /мультиакаунт/.test(c.payload.text || ''))), 'гравцю — причина');
+  await waitFor(() => (readDb().applications.find(a => a.id === id) || {}).tierId === 'bear');
+  const app = readDb().applications.find(a => a.id === id);
+  assert.strictEqual(app.payoutStars, 15);
+  assert.strictEqual(app.cutFrom, 'rocket');
+  adminCmd('/approve ' + id);
+  await waitFor(() => (readDb().applications.find(a => a.id === id) || {}).status === 'approved');
+  // Денний ліміт: сьогодні вже 15⭐; 🎁 25 → 40; ще 🚀 50 → 90 > 75.
+  const g2 = await W('1002', 'gift');
+  assert.strictEqual(g2.status, 200, JSON.stringify(g2.d));
+  adminCmd('/approve ' + g2.d.applicationId);
+  await waitFor(() => (readDb().applications.find(a => a.id === g2.d.applicationId) || {}).status === 'approved');
+  assert.strictEqual((await W('1002', 'rocket')).d.error, 'day_cap');
 });
 
 test('паралельні виводи: проходить рівно один (блокування на гравця)', async () => {
-  const rs = await Promise.all([1, 2, 3, 4, 5].map(() => api('POST', '/wallet/withdraw', { amount: 20 }, '600')));
+  const rs = await Promise.all([1, 2, 3, 4, 5].map(() => api('POST', '/wallet/withdraw', { gift: 'bear' }, '1009')));
   assert.strictEqual(rs.filter(r => r.status === 200).length, 1, JSON.stringify(rs.map(r => r.d.error || 'ok')));
   await sleep(600);
-  assert.strictEqual(readDb().users['600'].starBalance, 4);
+  assert.strictEqual(readDb().users['1009'].starBalance, 44);
 });
 
 test('ризик ×2: не можна ризикнути витраченим, баланс не йде в мінус', async () => {
@@ -271,11 +313,9 @@ test('ризик ×2: не можна ризикнути витраченим, �
   assert.strictEqual(ok.d.balance, ok.d.won ? 40 : 20);
 });
 
-test('обмін білетів і ігри на зірки', async () => {
-  const ex = await api('POST', '/wallet/exchange', { tickets: 10 });
-  assert.strictEqual(ex.status, 200, JSON.stringify(ex.d));
-  assert.strictEqual(ex.d.stars, 1, 'курс: 10🎫 = 1⭐');
-  assert.strictEqual((await api('POST', '/wallet/exchange', { tickets: 7 })).d.error, 'bad_amount');
+test('обміну білетів більше немає; ігри на зірки', async () => {
+  assert.strictEqual((await api('POST', '/wallet/exchange', { tickets: 10 })).status, 410, 'білети → зірки');
+  assert.strictEqual((await api('POST', '/wallet/buy-tickets', { stars: 3 }, '970')).status, 410, 'зірки → білети');
   const bad = await api('POST', '/games/play', { game: 'dice', bet: 'even', stake: 0 }, '700');
   assert.strictEqual(bad.d.error, 'bad_bet');
   const g = await api('POST', '/games/play', { game: 'dice', bet: 'even', stake: 10 }, '700');
@@ -313,17 +353,19 @@ test('банк: адмін відкриває, гравець ставить, ч
   assert.strictEqual(cancel.status, 200);
 });
 
-test('адмін: /stars і /tickets нараховують і забирають', async () => {
+test('адмін: /stars нараховує й забирає, /tickets — білетів більше немає', async () => {
   const bal = () => readDb().users['960'];
   const wait = async (pred) => { for (let i = 0; i < 30; i++) { await sleep(150); if (pred()) return true; } return false; };
   adminCmd('/stars user960 -2 помилкове нарахування');
   assert.ok(await wait(() => bal().starBalance === 4), 'забрано 2⭐');
+  const n0 = tg.calls.length;
   adminCmd('/tickets 960 5');
-  assert.ok(await wait(() => bal().tickets === 7), 'нараховано 5🎫');
+  assert.ok(await wait(() => tg.calls.slice(n0).some(c => String(c.payload.chat_id) === ADMIN && /Білети прибрано/.test(c.payload.text || ''))), '/tickets пояснює, що білетів немає');
+  assert.strictEqual(bal().tickets, 2, 'білети не змінились');
   adminCmd('/stars @user960 -100');
   assert.ok(await wait(() => bal().starBalance === 0), 'забрати більше, ніж є, — забирається все');
-  const tx = bal().tx.slice(-3);
-  assert.deepStrictEqual(tx.map(x => [x.s || 0, x.t || 0, x.r]), [[-2, 0, 'admin'], [0, 5, 'admin'], [-4, 0, 'admin']]);
+  const tx = bal().tx.slice(-2);
+  assert.deepStrictEqual(tx.slice(-2).map(x => [x.s || 0, x.t || 0, x.r]), [[-2, 0, 'admin'], [-4, 0, 'admin']]);
   assert.strictEqual(tx[0].m.note, 'помилкове нарахування');
   // Не адмін — команда ігнорується.
   tg.push({ message: { message_id: 991, date: Math.floor(Date.now() / 1000), chat: { id: 700, type: 'private' }, from: { id: 700, is_bot: false, first_name: 'U' }, text: '/stars 700 1000', entities: [{ type: 'bot_command', offset: 0, length: 6 }] } });
@@ -421,9 +463,11 @@ test('скриньки в чаті: одна спроба на людину, г�
   click(981, 'bx:' + id + ':' + bx.mainIdx);
   assert.ok(await wait(() => answers(981).length === 1));
   assert.match(answers(981)[0].payload.text, /ПРИЗ/);
-  const bal = (uid) => { const u = readDb().users[uid]; return (u.tickets || 0) + ':' + (u.starBalance || 0); };
-  assert.ok(await wait(() => bal('981') === (bx.prize.tickets || 0) + ':' + (bx.prize.stars || 0)), 'головний приз нараховано');
-  assert.strictEqual(bal('980'), '0:0', 'за порожню нічого');
+  // Білетів немає: приз білетами приходить як XP (1🎫 = 5 XP), зірками — зірками.
+  const got = (uid) => { const u = readDb().users[uid]; return { s: u.starBalance || 0, t: u.tickets || 0, xp: (u.xp || {}).total || 0 }; };
+  assert.ok(await wait(() => bx.prize.stars ? got('981').s === bx.prize.stars : got('981').xp >= bx.prize.tickets * 5), 'головний приз нараховано');
+  assert.strictEqual(got('981').t, 0, 'білети не нараховуються');
+  assert.strictEqual(got('980').s, 0, 'за порожню нічого');
   assert.ok(await wait(() => tg.calls.some(c => c.method === 'editMessageText' && /ВІДКРИТО/.test(c.payload.text || ''))), 'повідомлення оновлено');
 });
 
@@ -575,16 +619,6 @@ test('джекпот 3⭐ на канал: анонс у чаті одразу, 
   assert.strictEqual(readDb().users['600'].jpClaims['557'].link, 'https://t.me/mychan/8');
 });
 
-test('обмін зірок на білети: 3⭐ → 30🎫, без зірок — помилка', async () => {
-  const post = (id, stars) => fetch(base + '/api/wallet/buy-tickets', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Init-Data': init(id) }, body: JSON.stringify({ stars }) }).then(r => r.json());
-  const r = await post('970', 3);
-  assert.strictEqual(r.ok, true);
-  assert.strictEqual(r.tickets, 30);
-  const bad = await post('901', 5);
-  assert.strictEqual(bad.ok, false);
-  assert.strictEqual((await post('970', 0)).ok, false);
-});
-
 test('перший коментар у каналі: бот ловить першого, кнопки лише для нього, подарунок одразу', async () => {
   const G = -2002;
   const waitFor = async (pred) => { for (let i = 0; i < 30; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
@@ -623,7 +657,7 @@ test('перший коментар у каналі: бот ловить пер�
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'editMessageText' && c.payload.chat_id === '@starforge_news' && /Забрав/.test(c.payload.text || '')), 'у пості каналу — хто забрав');
 });
 
-test('клани: війна сама стартує, створення кнопкою за 3🎫, вступ в 1 клік із бонусом, скрині, фінал із призами', async () => {
+test('клани: війна сама стартує, створення кнопкою безкоштовно, вступ в 1 клік із бонусом XP, скрині, фінал із призами', async () => {
   const GROUP = -1001;
   const waitFor = async (pred) => { for (let i = 0; i < 40; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
   const who = (id) => ({ id, is_bot: false, first_name: 'U' + id, username: 'user' + id });
@@ -639,10 +673,9 @@ test('клани: війна сама стартує, створення кно�
   let n0 = tg.calls.length;
   tg.push({ message: { message_id: 1, date: Math.floor(Date.now() / 1000), chat: { id: GROUP, type: 'supergroup', title: 'G' }, from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, text: '/chat_here', entities: [{ type: 'bot_command', offset: 0, length: 10 }] } });
   await waitFor(() => sent(n0, GROUP, /прив/));
-  // Без білетів клан не створити (ціна — 3🎫, рівень не потрібен).
-  gmsg(992, '/clan_create Слабаки');
-  assert.ok(await waitFor(() => sent(n0, GROUP, /коштує 3🎫 \(у тебе 0\)/)), 'без білетів — відмова');
-  assert.ok(sent(n0, GROUP, /КЛАНОВА ВІЙНА — 3 ДНІ/), 'перша війна стартувала сама, на 3 дні');
+  // Білетів немає — створення клану безкоштовне. Перша кланова команда в чаті запускає війну.
+  gmsg(992, '/clan');
+  assert.ok(await waitFor(() => sent(n0, GROUP, /КЛАНОВА ВІЙНА — 3 ДНІ/)), 'перша війна стартувала сама, на 3 дні');
   const ev = await waitFor(() => (readDb().featureFlags.clans || {}).event);
   assert.ok(ev.endsAt - Date.now() > 71 * 3600e3 && ev.endsAt - Date.now() <= 73 * 3600e3, 'фінал через 3 дні');
 
@@ -660,16 +693,15 @@ test('клани: війна сама стартує, створення кно�
   assert.strictEqual(c.owner, '990');
   await sleep(300);
   const led = (uid, r) => ledger(uid).filter(e => e.r === r).map(e => e.t);
-  assert.deepStrictEqual(led('990', 'clan_create'), [-3], 'створення коштує 3🎫');
-  assert.deepStrictEqual(led('990', 'clan_bonus'), [25], 'лідеру одразу +25🎫');
-  assert.ok(sent(n0, GROUP, /Бонус лідеру: <b>\+25🎫 \+100 XP<\/b>/), 'про бонус сказано');
+  assert.deepStrictEqual(led('990', 'clan_create'), [], 'створення безкоштовне');
+  assert.ok(sent(n0, GROUP, /Бонус лідеру: <b>\+225 XP<\/b>/), 'бонус лідеру — XP (25🎫 → 125 XP + 100 XP)');
   // Хто не запускав бота — кнопка відкриває бота, вступ після /start.
   click(12345, 'cl:q', GROUP);
   assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'answerCallbackQuery' && /\?start=clan_q$/.test(c.payload.url || ''))), 'незареєстрованому — посилання на бота');
 
   // Відкритий клан — одразу; закритий — заявка лідеру з кнопками.
   gmsg(991, '/clan_join ВОВК');
-  assert.ok(await waitFor(() => sent(n0, GROUP, /user991 вступив у клан[\s\S]*\+15🎫 \+50 XP/)), '991 у клані, +15🎫 +50 XP одразу');
+  assert.ok(await waitFor(() => sent(n0, GROUP, /user991 вступив у клан[\s\S]*\+125 XP/)), '991 у клані, +125 XP одразу');
   gmsg(990, '/clan_close');
   assert.ok(await waitFor(() => sent(n0, GROUP, /лише за заявкою/)));
   gmsg(993, '/clan_join вовки');
@@ -688,8 +720,7 @@ test('клани: війна сама стартує, створення кно�
   await sleep(300);
   c = clan();
   assert.deepStrictEqual(c.members.slice().sort(), ['990', '991', '992', '993']);
-  for (const id of ['991', '992', '993']) assert.deepStrictEqual(led(id, 'clan_join'), [15], id + ': бонус за вступ');
-  assert.deepStrictEqual(led('990', 'clan_recruit'), [2, 2, 2], 'лідеру +2🎫 за кожного нового учасника');
+  for (const id of ['991', '992', '993']) assert.deepStrictEqual(led(id, 'clan_join'), [], id + ': бонус за вступ — XP, не білети');
 
   // Очки клану — XP учасників (ігри на зірки: 2 XP за ⭐).
   for (const id of ['990', '991', '992']) {
@@ -703,8 +734,9 @@ test('клани: війна сама стартує, створення кно�
   // Скриня 1 (50 очок): +2🎫 кожному, хто приніс від 5 очок.
   assert.ok(await waitFor(() => sent(n0, GROUP, /відкрив[\s\S]*скриню 1\/4/)), 'у чаті — скриню відкрито');
   const chest = (uid) => ledger(uid).filter(e => e.r === 'clan_chest');
-  for (const id of ['990', '991', '992']) assert.deepStrictEqual(chest(id).map(e => e.t), [2], id + ' отримав скриню');
-  assert.strictEqual(chest('993').length, 0, 'без внеску — без скрині');
+  await sleep(300);
+  for (const id of ['990', '991', '992']) assert.strictEqual((readDb().users[id].clanChests || {}).n, 1, id + ' отримав скриню');
+  assert.ok(!(readDb().users['993'].clanChests || {}).n, 'без внеску — без скрині');
 
   // Один вхід /clan — далі кнопки, повідомлення редагується на місці.
   gmsg(991, '/clan');
@@ -733,10 +765,8 @@ test('клани: війна сама стартує, створення кно�
   assert.ok(await waitFor(() => sent(b0, GROUP, /ПІДСУМОК БИТВИ[\s\S]*Перемога[\s\S]*Вовки/)), 'підсумок: переміг клан');
   await sleep(300);
   const bl = (uid, r) => ledger(uid).filter(e => e.r === r);
-  assert.deepStrictEqual(bl('991', 'clan_battle').map(e => e.s), [3], 'топ-1 гравець: +3⭐');
-  assert.deepStrictEqual(bl('700', 'clan_battle').map(e => e.s), [2], 'топ-2, навіть без клану: +2⭐');
-  assert.deepStrictEqual(bl('991', 'clan_battle_win').map(e => e.t), [5], 'бійцю клану-переможця: +5🎫');
-  assert.strictEqual(bl('990', 'clan_battle_win').length, 0, 'хто не бився — без бонусу команди');
+  assert.deepStrictEqual(bl('991', 'clan_battle').map(e => e.s), [0.6], 'топ-1 гравець: 3⭐ ÷ 5 = +0.6⭐');
+  assert.deepStrictEqual(bl('700', 'clan_battle').map(e => e.s), [0.4], 'топ-2, навіть без клану: +0.4⭐');
   assert.strictEqual(clan().ev.pts, ptsBefore + 100, 'клану +100 очок у війні');
   const warPts = clan().ev.pts;
 
@@ -753,8 +783,7 @@ test('клани: війна сама стартує, створення кно�
   const war = (uid) => ledger(uid).filter(e => e.r === 'clan_war');
   for (const id of ['990', '991', '992']) {
     assert.strictEqual(war(id).length, 1, id + ' нагороджено');
-    assert.strictEqual(war(id)[0].s, 7);
-    assert.strictEqual(war(id)[0].t, 30);
+    assert.strictEqual(war(id)[0].s, 1.4, '7⭐ ÷ 5');
   }
   assert.strictEqual(war('993').length, 0, 'неактивний без призу');
   c = clan();
@@ -778,47 +807,6 @@ test('клани: війна сама стартує, створення кно�
   assert.ok(await waitFor(() => sent(n0, 993, /Ти вийшов із клану/)), 'вийшов (у приваті з ботом)');
   pmsg(993, '/clan_join ВОВК');
   assert.ok(await waitFor(() => sent(n0, 993, /через 6 год/)), 'повернення — через 6 год');
-});
-
-test('правила чату: /rules; скарга на заявку — видалення й бан на 7 днів, з 3-го разу — назавжди; розбан адміном', async () => {
-  const GROUP = -1001;
-  const waitFor = async (pred) => { for (let i = 0; i < 40; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
-  const now = () => Math.floor(Date.now() / 1000);
-  const gmsg = (id, text, mid) => tg.push({ message: { message_id: mid || Math.floor(Math.random() * 1e6), date: now(), chat: { id: GROUP, type: 'supergroup', title: 'G' }, from: { id, is_bot: false, first_name: 'U' + id, username: 'user' + id }, text,
-    entities: text.startsWith('/') ? [{ type: 'bot_command', offset: 0, length: text.split(' ')[0].length }] : undefined } });
-  await waitFor(() => tg.calls.some(c => c.method === 'getChat'));
-  let n0 = tg.calls.length;
-  tg.push({ message: { message_id: 2, date: now(), chat: { id: GROUP, type: 'supergroup', title: 'G' }, from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, text: '/chat_here', entities: [{ type: 'bot_command', offset: 0, length: 10 }] } });
-  await waitFor(() => tg.calls.slice(n0).some(c => c.method === 'sendMessage' && /прив/.test(c.payload.text || '')));
-  const calls = (m) => tg.calls.slice(n0).filter(c => c.method === m);
-
-  n0 = tg.calls.length;
-  gmsg(987, '/rules');
-  assert.ok(await waitFor(() => calls('sendMessage').find(c => /ПРАВИЛА ЧАТУ[\s\S]*заявки[\s\S]*бан на <b>7 днів/.test(c.payload.text || ''))), '/rules показує правило');
-  gmsg(987, 'як зробити заявку на вивід?');
-  await sleep(700);
-  assert.strictEqual(calls('banChatMember').length, 0, 'звичайне питання — без бану');
-
-  gmsg(987, 'заявку вже 3 дні не виплачують', 9001);
-  const ban = await waitFor(() => calls('banChatMember')[0]);
-  assert.ok(ban, 'бан');
-  assert.strictEqual(ban.payload.user_id, 987);
-  const days = (ban.payload.until_date - now()) / 86400;
-  assert.ok(days > 6.9 && days <= 7.01, 'на 7 днів');
-  assert.ok(calls('deleteMessage').some(c => c.payload.message_id === 9001), 'повідомлення видалено');
-  assert.ok(await waitFor(() => calls('sendMessage').find(c => String(c.payload.chat_id) === String(GROUP) && /бан на 7 днів за правило чату/.test(c.payload.text || ''))), 'у чаті — пояснення');
-  const toAdmin = await waitFor(() => calls('sendMessage').find(c => String(c.payload.chat_id) === ADMIN && /rules_unban_987/.test(JSON.stringify(c.payload.reply_markup || {}))));
-  assert.ok(toAdmin, 'адміну — сповіщення з кнопкою «Розбанити»');
-
-  gmsg(987, 'вивід не приходить, довго');
-  gmsg(987, 'де мої зірки з заявки?');
-  assert.ok(await waitFor(() => calls('banChatMember').length === 3), 'кожне порушення — бан');
-  assert.strictEqual(calls('banChatMember')[2].payload.until_date, undefined, 'третій раз — назавжди');
-  assert.ok(await waitFor(() => calls('sendMessage').find(c => /бан назавжди/.test(c.payload.text || ''))));
-
-  tg.push({ callback_query: { id: 'rb' + Math.random(), from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, chat_instance: 'a', data: 'rules_unban_987', message: { message_id: 3, date: 0, chat: { id: Number(ADMIN), type: 'private' } } } });
-  const un = await waitFor(() => calls('unbanChatMember')[0]);
-  assert.ok(un && un.payload.user_id === 987, 'адмін розбанив');
 });
 
 test('секретне завдання сховане: ні на головній, ні в завданнях, заявку не подати', async () => {
@@ -953,7 +941,7 @@ test('місія «підпишись на канал-спонсора»: бот
   const n0 = tg.calls.length;
   const r = await call('993');
   assert.strictEqual(r.ok, true);
-  assert.strictEqual(r.tickets, 10);
+  assert.strictEqual(r.xp, 100, 'нагорода — XP (білетів немає)');
   assert.ok(tg.calls.slice(n0).some(c => c.method === 'getChatMember' && c.payload.chat_id === '@Sanichkap'), 'перевірка в @Sanichkap');
   assert.strictEqual((await call('993')).error, 'already_done', 'нагорода один раз');
   const q = await (await fetch(base + '/api/progress', { headers: { 'X-Init-Data': init('993') } })).json();

@@ -5,11 +5,13 @@ const notify = require('../core/notify');
 const i18n = require('../i18n');
 const time = require('../lib/time');
 
+const E = require('../economy');
 const ACTIVE_WINDOW = 14 * time.DAY_MS;
 let running = false;
 
 async function run() {
-  if (running || !notify.tg.telegram) return 0;
+  // Щоденне колесо прибрано — нагадувати про безкоштовний спін нема про що.
+  if (running || !notify.tg.telegram || E.WHEELS.daily.disabled) return 0;
   running = true;
   let sent = 0;
   try {

@@ -15,7 +15,7 @@ let wheelId = 'daily';
 
 export function render(nav, v) {
   // Банк прибрано з застосунку: старі посилання на нього ведуть до коліс.
-  if (wheelId === 'bank') wheelId = 'daily';
+  if (wheelId === 'bank' || !S.me.wheels.wheels[wheelId]) wheelId = Object.keys(S.me.wheels.wheels)[0] || 'paid';
   return [el('div', { class: 'h1' }, t('games.title')), wheels(nav), diceCard()];
 }
 
@@ -46,7 +46,8 @@ function tierImg(id) { const x = (S.me.tiers || []).find(q => q.id === id); retu
 
 function wheels(nav) {
   const W = S.me.wheels.wheels;
-  if (wheelId !== 'bank' && !W[wheelId]) wheelId = 'daily';
+  if (!W[wheelId]) wheelId = Object.keys(W)[0];
+  if (!wheelId) return [empty(t('common.loading'))];
   const ids = ['daily', 'referral', 'paid'].filter(id => W[id]);
   const bk = S.me.bank || {};
   const tabs = el('div', { class: 'wheel-tabs' }, ids.map(id => {

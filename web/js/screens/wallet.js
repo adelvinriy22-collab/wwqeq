@@ -18,11 +18,11 @@ export function render(nav, v) {
   return [
     el('div', { class: 'h1' }, t('wallet.title')),
     el('div', { class: 'card' },
-      el('div', { class: 'hero' }, el('div', { class: 'sub' }, t('wallet.balance')), el('div', { class: 'big' }, stars(b.stars)), el('div', { class: 'sub' }, tix(b.tickets))),
+      el('div', { class: 'hero' }, el('div', { class: 'sub' }, t('wallet.balance')), el('div', { class: 'big' }, stars(b.stars)), S.me.ticketsOff ? null : el('div', { class: 'sub' }, tix(b.tickets))),
       el('div', { class: 'actions' },
         action('＋', t('wallet.topup'), () => topup(nav)),
         action('↑', t('wallet.withdraw'), () => withdraw(nav, body)),
-        action('⇄', t('wallet.exchange'), () => exchange(nav, body)))),
+        S.me.exchangeOn ? action('⇄', t('wallet.exchange'), () => exchange(nav, body)) : null)),
     body,
   ];
 }
@@ -118,40 +118,38 @@ function topup(nav) {
 }
 
 // ─── Вивід ──────────────────────────────────────────────────────────────
+// Лише подарунками (🧸 / 🎁 / 🚀), без «будь-якої суми». Умови й ліміт — з сервера.
 function withdraw(nav, body) {
   const w = (data && data.withdraw) || S.me.withdraw;
+  if (!w || !w.gifts) return;
   sheet((s) => {
-    const input = el('input', { type: 'number', inputmode: 'numeric', min: w.min, value: String(Math.max(w.min, w.maxPayout || 0)) });
-    const calc = el('div', { class: 'kv' });
-    const upd = () => {
-      const p = Math.floor(Number(input.value) || 0);
-      const cost = Math.ceil(p * (1 + w.feePercent / 100));
-      calc.textContent = '';
-      calc.append(el('span', null, t('wd.cost', { c: fmt(cost), f: fmt(cost - p) })), el('span', null, t('wd.max', { m: w.maxPayout })));
-    };
-    input.addEventListener('input', upd);
-    upd();
+    const ok = (v) => v ? '✅' : '▫️';
     const reqs = list(
-      row({ icon: w.haveRefs >= w.needRefs ? '✅' : '▫️', title: t('wd.reqRefs', { n: w.needRefs }), value: w.haveRefs + '/' + w.needRefs }),
-      row({ icon: w.hasUsername ? '✅' : '▫️', title: t('wd.reqUser'), sub: w.hasUsername ? null : t('wd.reqUserS') }),
-      w.needSub ? row({ icon: w.hasSub ? '✅' : '▫️', title: t('wd.reqSub', { c: w.needSub }) }) : null,
-      row({ icon: w.maxPayout >= w.min ? '✅' : '▫️', title: t('wd.reqMin', { n: w.min }) }));
+      w.needUnlock ? row({ icon: ok(w.unlocked), title: t('wd.reqUnlock'), sub: w.unlocked ? null : t('wd.reqUnlockS') }) : null,
+      row({ icon: ok(w.ageOk), title: t('wd.reqAge', { n: w.minAgeDays }), value: w.ageDays + '/' + w.minAgeDays }),
+      row({ icon: ok(w.haveRefs >= w.needRefs), title: t('wd.reqRefsReal', { n: w.needRefs }), sub: t('wd.reqRefsRealS'), value: w.haveRefs + '/' + w.needRefs }),
+      row({ icon: ok(w.hasUsername), title: t('wd.reqUser'), sub: w.hasUsername ? null : t('wd.reqUserS') }),
+      w.needSub ? row({ icon: ok(w.hasSub), title: t('wd.reqSub', { c: w.needSub }) }) : null,
+      row({ icon: ok(w.pending < w.maxPending), title: t('wd.reqPending'), value: w.pending + '/' + w.maxPending }),
+      row({ icon: ok(w.leftToday > 0), title: t('wd.reqDay', { n: w.dayCap }), value: fmt(w.usedToday) + '/' + w.dayCap + '⭐' }));
+    const tiles = el('div', { class: 'grid2' }, w.gifts.map(g => {
+      const can = !w.blocked && !w.banned && g.payout <= w.leftToday && S.me.balance.stars >= g.cost;
+      return el('button', { class: 'tile', type: 'button', disabled: !can, onclick: async () => {
+        if (!(await confirm(t('wd.confirmGift', { g: g.emoji + ' ' + (g.name[S.me.user.lang] || g.name.uk), c: g.cost })))) return;
+        try { const r = await api.post('/wallet/withdraw', { gift: g.id }); setBalance(r.balance); s.close(); toast(t('wd.done', { id: r.applicationId }), 'success'); refreshSoon(); nav.rerender(); }
+        catch (e) { fail(e); }
+      } }, img(g.img) || el('div', { class: 'em' }, g.emoji), el('div', { class: 'tt' }, g.name[S.me.user.lang] || g.name.uk),
+        el('div', { class: 'ts' }, t('wd.giftCost', { c: g.cost, f: g.fee })));
+    }));
     return [
       el('h3', null, t('wd.title')),
       w.blocked ? el('div', { class: 'banner red' }, el('div', { class: 'bi' }, '🛠'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wd.blocked')))) : null,
-      el('p', null, t('wd.lead', { f: w.feePercent })),
-      el('div', { class: 'banner green' }, el('div', { class: 'bi' }, '⚡'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wd.auto')), el('div', { class: 'bs' }, t('wd.autoS')))),
+      w.banned ? el('div', { class: 'banner red' }, el('div', { class: 'bi' }, '🚫'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wd.banned')))) : null,
+      el('p', null, t('wd.leadGift', { f: w.feePercent, d: w.dayCap })),
       w.baseFeePercent != null && w.feePercent < w.baseFeePercent ? el('div', { class: 'banner green' }, el('div', { class: 'bi' }, '🏅'), el('div', { class: 'bm' }, el('div', { class: 'bt' }, t('wd.levelFee', { f: w.feePercent, b: w.baseFeePercent })))) : null,
+      tiles,
+      el('div', { class: 'label mt12' }, t('wd.reqTitle')),
       reqs,
-      el('div', { class: 'label' }, t('wd.amount')),
-      el('div', { class: 'field' }, input, el('span', { class: 'unit' }, '⭐')),
-      calc,
-      el('div', { class: 'mt12' }, button(t('wd.send'), async () => {
-        const p = Math.floor(Number(input.value) || 0);
-        if (!(await confirm(t('wd.confirm', { p, c: Math.ceil(p * (1 + w.feePercent / 100)) })))) return;
-        try { const r = await api.post('/wallet/withdraw', { amount: p }); setBalance(r.balance); s.close(); toast(t('wd.done', { id: r.applicationId }), 'success'); refreshSoon(); nav.rerender(); }
-        catch (e) { fail(e); }
-      })),
     ];
   });
 }

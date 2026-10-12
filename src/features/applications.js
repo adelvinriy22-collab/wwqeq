@@ -57,11 +57,12 @@ function label(a, lang) {
   return t.emoji + ' ' + (t.name[lang] || t.name.uk);
 }
 
-function adminKeyboard(id) {
+function adminKeyboard(id, withCut) {
   return { reply_markup: { inline_keyboard: [[
     { text: '✅ Підтвердити', callback_data: `admin_approve_${id}`, style: 'success' },
+    withCut ? { text: '✂️ Урізати', callback_data: `admin_cut_${id}`, style: 'primary' } : null,
     { text: '❌ Відхилити', callback_data: `admin_reject_${id}`, style: 'danger' },
-  ]] } };
+  ].filter(Boolean)] } };
 }
 
 // Нова заявка. opts.silent — без сповіщення адміну; opts.adminText — власний текст.
@@ -70,10 +71,14 @@ function create(uid, tierId, source, extra, opts) {
   if (!(opts && opts.silent)) {
     const u = users.get(uid) || {};
     const who = `${esc(u.name || '—')} ${u.username ? '@' + u.username : ''} · id <code>${uid}</code>`;
+    const wd = source === 'app_withdrawal';
     const head = tierId === 'stars_payout'
       ? `💸 <b>Вивід зірок</b> #${a.id}\nНАДІСЛАТИ: <b>${a.payoutStars}⭐</b>\nСписано: ${a.spentStars}⭐ (комісія ${a.fee || 0}⭐)`
+      : wd ? `💸 <b>Вивід подарунком</b> #${a.id}\nНАДІСЛАТИ: <b>${esc(label(a, 'uk'))}</b> (${a.payoutStars}⭐)\nСписано: ${a.spentStars}⭐ (комісія ${a.fee || 0}⭐)`
       : `📥 <b>Заявка #${a.id}</b> · ${esc(label(a, 'uk'))}\nДжерело: ${sourceLabel(source, 'uk')}` + (a.spentStars ? `\nОплачено: ${a.spentStars}⭐` : '');
-    notify.admin((opts && opts.adminText) || head + '\n' + who, adminKeyboard(a.id));
+    // На вивід — ризик-картка й кнопка «Урізати».
+    const riskLine = wd ? '\n\n' + require('./withdrawgate').riskText(uid) : '';
+    notify.admin((opts && opts.adminText) || head + '\n' + who + riskLine, adminKeyboard(a.id, wd));
   }
   return a;
 }
@@ -112,6 +117,38 @@ function reject(id, reason, opts) {
   return { ok: true, app: a, refunded: back };
 }
 
+// Урізання виплати (вивід подарунком) з причиною. toTier — дешевший подарунок із
+// E.WITHDRAW.gifts або null (нічого не видаємо). Списане НЕ повертається — це
+// санкція; гравець бачить причину. Урізана заявка лишається в черзі (потім —
+// «Підтвердити»); урізана до нуля — одразу відхилена без повернення.
+function cut(id, toTier, reason) {
+  const a = store.getApplication(id);
+  if (!a) return { ok: false, error: 'not_found' };
+  if (a.status !== 'pending') return { ok: false, error: 'not_pending', status: a.status };
+  if (a.source !== 'app_withdrawal') return { ok: false, error: 'not_withdrawal' };
+  const from = label(a, 'uk');
+  const was = a.payoutStars || 0;
+  if (toTier) {
+    const t = E.getTier(toTier);
+    if (!E.WITHDRAW.gifts.includes(toTier) || t.price >= was) return { ok: false, error: 'not_cheaper' };
+    a.cutFrom = a.cutFrom || a.tierId;
+    a.tierId = toTier;
+    a.payoutStars = t.price;
+  }
+  a.cutReason = reason || null;
+  a.cutAt = Date.now();
+  store.save();
+  const u = users.get(a.uid) || {};
+  const lg = u.lang || 'uk';
+  if (!toTier) {
+    const r = reject(id, reason, { noRefund: true, silent: true });
+    notify.dm(a.uid, i18n.t(lg, 'app.cutZero', { id: a.id, what: esc(from), reason: esc(reason || '—') }));
+    return { ok: r.ok, app: a, zero: true };
+  }
+  notify.dm(a.uid, i18n.t(lg, 'app.cut', { id: a.id, from: esc(from), to: esc(label(a, lg)), reason: esc(reason || '—') }));
+  return { ok: true, app: a, from, to: label(a, 'uk') };
+}
+
 function cancel(id, reason) {
   const a = store.getApplication(id);
   if (!a || a.status !== 'pending') return { ok: false };
@@ -136,4 +173,4 @@ function publicView(a, lang) {
   };
 }
 
-module.exports = { create, approve, reject, cancel, refund, refundable, listFor, publicView, label, sourceLabel, adminKeyboard };
+module.exports = { create, approve, reject, cut, cancel, refund, refundable, listFor, publicView, label, sourceLabel, adminKeyboard };

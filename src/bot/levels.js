@@ -17,7 +17,7 @@ const progress = require('../core/progress');
 const notify = require('../core/notify');
 const i18n = require('../i18n');
 const ui = require('./ui');
-const { esc } = require('../lib/util');
+const { esc, fmtStars } = require('../lib/util');
 const { withEmoji } = require('../emoji');
 
 const T = {
@@ -37,7 +37,7 @@ const T = {
     games: 'ІГРИ', wheels: 'КОЛЕСА', bank: 'БАНК', friends: 'ДРУЗІ',
     pTitle: 'МОЇ ПРИВІЛЕЇ', pNow: '<b>Діють зараз</b> ({e} {t}):', fee: '{:commission} Комісія виводу: <b>{f}%</b>', feeBase: ' (звичайна {b}%)',
     topupOn: '{:starIcon} Бонус до кожного поповнення: <b>+{p}%</b>', topupOff: '{:lockIcon} Бонус до кожного поповнення — з рівня {n}',
-    chatOn: '{:giftBox} Щоденний бонус у чаті: <b>+{n}🎫</b>', chatOff: '{:lockIcon} Більший бонус у чаті — з рівня {n}',
+    chatOn: '{:giftBox} Щоденний бонус у чаті: <b>+{n} XP</b>', chatOff: '{:lockIcon} Більший бонус у чаті — з рівня {n}',
     pNext: '<b>Що відкриється далі:</b>', pNextLine: '{:lightning} {e} <b>{t}</b> (рівень {n}, ще {left} XP) — {list}', pAll: '{:trophy} Усі привілеї вже твої!',
     aTitle: 'УСІ РІВНІ', aLine: '{mark} <b>{n}. {e} {t}</b> · {at} XP', aSub: '      {list}', aFoot: 'Нагорода за рівень видається один раз, привілеї діють назавжди.',
   },
@@ -57,7 +57,7 @@ const T = {
     games: 'GAMES', wheels: 'WHEELS', bank: 'BANK', friends: 'FRIENDS',
     pTitle: 'MY PERKS', pNow: '<b>Active now</b> ({e} {t}):', fee: '{:commission} Withdrawal fee: <b>{f}%</b>', feeBase: ' (normally {b}%)',
     topupOn: '{:starIcon} Bonus on every top-up: <b>+{p}%</b>', topupOff: '{:lockIcon} Bonus on every top-up — from level {n}',
-    chatOn: '{:giftBox} Daily chat bonus: <b>+{n}🎫</b>', chatOff: '{:lockIcon} Bigger chat bonus — from level {n}',
+    chatOn: '{:giftBox} Daily chat bonus: <b>+{n} XP</b>', chatOff: '{:lockIcon} Bigger chat bonus — from level {n}',
     pNext: '<b>Unlocking next:</b>', pNextLine: '{:lightning} {e} <b>{t}</b> (level {n}, {left} XP to go) — {list}', pAll: '{:trophy} Every perk is already yours!',
     aTitle: 'ALL LEVELS', aLine: '{mark} <b>{n}. {e} {t}</b> · {at} XP', aSub: '      {list}', aFoot: 'The level reward is paid once, perks stay forever.',
   },
@@ -77,7 +77,7 @@ const T = {
     games: 'ИГРЫ', wheels: 'КОЛЁСА', bank: 'БАНК', friends: 'ДРУЗЬЯ',
     pTitle: 'МОИ ПРИВИЛЕГИИ', pNow: '<b>Действуют сейчас</b> ({e} {t}):', fee: '{:commission} Комиссия вывода: <b>{f}%</b>', feeBase: ' (обычная {b}%)',
     topupOn: '{:starIcon} Бонус к каждому пополнению: <b>+{p}%</b>', topupOff: '{:lockIcon} Бонус к каждому пополнению — с уровня {n}',
-    chatOn: '{:giftBox} Ежедневный бонус в чате: <b>+{n}🎫</b>', chatOff: '{:lockIcon} Больше бонус в чате — с уровня {n}',
+    chatOn: '{:giftBox} Ежедневный бонус в чате: <b>+{n} XP</b>', chatOff: '{:lockIcon} Больше бонус в чате — с уровня {n}',
     pNext: '<b>Что откроется дальше:</b>', pNextLine: '{:lightning} {e} <b>{t}</b> (уровень {n}, ещё {left} XP) — {list}', pAll: '{:trophy} Все привилегии уже твои!',
     aTitle: 'ВСЕ УРОВНИ', aLine: '{mark} <b>{n}. {e} {t}</b> · {at} XP', aSub: '      {list}', aFoot: 'Награда за уровень выдаётся один раз, привилегии действуют навсегда.',
   },
@@ -88,14 +88,14 @@ const tt = (lang, k, p) => withEmoji(fill(lang, k, p));     // текст пов
 const bt = fill;                                           // підпис кнопки
 
 function rewardText(rw) {
-  return [rw && rw.tickets ? '+' + rw.tickets + '🎫' : null, rw && rw.stars ? '+' + rw.stars + '⭐' : null].filter(Boolean).join(' ');
+  return [rw && rw.tickets ? '+' + rw.tickets + '🎫' : null, rw && rw.stars ? '+' + fmtStars(rw.stars) + '⭐' : null].filter(Boolean).join(' ');
 }
 // Що відкриває рівень: «комісія виводу 3% · +2% до кожного поповнення».
 function unlockText(lang, un) {
   const out = [];
   if (un.withdrawFee != null) out.push(i18n.t(lang, 'perk.fee', { f: un.withdrawFee }));
   if (un.topupBonus != null) out.push(i18n.t(lang, 'perk.topup', { p: un.topupBonus }));
-  if (un.chatBonus != null) out.push(i18n.t(lang, 'perk.chat', { n: un.chatBonus }));
+  if (un.chatBonus != null) out.push(i18n.t(lang, 'perk.chat', { n: un.chatBonus * E.TICKETS.xpPerTicket }));
   return out.join(' · ');
 }
 const firstLevelWith = (key) => { const x = E.LEVEL_PERKS[key].find(([, v]) => v > 0); return x ? x[0] : null; };
@@ -179,10 +179,12 @@ function howPage(uid) {
   const d = todayLeft(u, uid);
   const X = E.XP;
   const cap = (k) => progress.dayCapOf(uid, k);
+  const freeWheel = !E.WHEELS.daily.disabled;
+  const spinLeft = freeWheel ? d.spin : 0;
   const lines = [tt(lang, 'hLead'), '',
-    tt(lang, 'hSpin', { per: X.spin.per, left: d.spin, cap: cap('spin') }),
+    // Безкоштовних коліс і банку більше немає — їх рядків теж.
+    freeWheel ? tt(lang, 'hSpin', { per: X.spin.per, left: d.spin, cap: cap('spin') }) : null,
     tt(lang, 'hWager', { g: E.XP_RATES.gamePerStar, left: d.wager, cap: cap('wager') }),
-    tt(lang, 'hBank', { per: X.bank.per }),
     tt(lang, 'hChat', { left: d.chat, cap: cap('chat') }),
     tt(lang, 'hFriend', { per: X.friend.per, left: d.friend, cap: cap('friend') }),
     tt(lang, 'hDeposit', { per: X.deposit.per }),
@@ -192,8 +194,8 @@ function howPage(uid) {
     const need = Math.ceil(lv.next.left);
     const spinsNeed = Math.ceil(need / X.spin.per);
     let tip;
-    if (need <= d.spin) tip = bt(lang, 'tipSpins', { k: spinsNeed });
-    else if (need <= d.spin + d.wager) tip = bt(lang, 'tipMix', { k: Math.floor(d.spin / X.spin.per), s: Math.ceil((need - d.spin) / E.XP_RATES.gamePerStar) });
+    if (freeWheel && need <= spinLeft) tip = bt(lang, 'tipSpins', { k: spinsNeed });
+    else if (freeWheel && need <= spinLeft + d.wager) tip = bt(lang, 'tipMix', { k: Math.floor(spinLeft / X.spin.per), s: Math.ceil((need - spinLeft) / E.XP_RATES.gamePerStar) });
     else tip = bt(lang, 'tipLong');
     lines.push('', tt(lang, 'tip', { text: tip }));
   }
@@ -202,7 +204,7 @@ function howPage(uid) {
     caption: ui.card('lightning', tt(lang, 'hTitle'), lines, bt(lang, 'xpFoot')),
     rows: [
       [ui.cb('🎲 ' + bt(lang, 'games'), 'dice_menu', 'success'), ui.app(bt(lang, 'wheels'), 'wheel', 'success', 'rocket')],
-      [ui.cb(bt(lang, 'bank'), 'bank_show', 'primary', 'almost'), ui.cb(bt(lang, 'friends'), 'rewards', 'primary', 'giftBox')],
+      [ui.cb(bt(lang, 'friends'), 'rewards', 'primary', 'giftBox')],
       toLevelRow(lang),
     ],
   };
@@ -216,7 +218,7 @@ function perksPage(uid) {
   const lines = [tt(lang, 'pNow', { e: lv.e, t: esc(lv.t) }),
     tt(lang, 'fee', { f: p.withdrawFee }) + (p.withdrawFee < E.WITHDRAW.feePercent ? tt(lang, 'feeBase', { b: E.WITHDRAW.feePercent }) : ''),
     p.topupBonus ? tt(lang, 'topupOn', { p: p.topupBonus }) : tt(lang, 'topupOff', { n: firstLevelWith('topupBonus') }),
-    p.chatBonus ? tt(lang, 'chatOn', { n: p.chatBonus }) : tt(lang, 'chatOff', { n: firstLevelWith('chatBonus') }),
+    p.chatBonus ? tt(lang, 'chatOn', { n: p.chatBonus * E.TICKETS.xpPerTicket }) : tt(lang, 'chatOff', { n: firstLevelWith('chatBonus') }),
     '',
   ];
   // Найближчі три рівні, що відкривають щось нове.
