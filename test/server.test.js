@@ -70,6 +70,8 @@ function seedV2() {
       1010: U('1010', { starBalance: 30 }),
       // Паралельні виводи.
       1009: U('1009', { starBalance: 60, joinedAt: Date.now() - 10 * 86400e3, invitedIds: ['1003', '1004', '1005'], wdUnlockGranted: 1 }),
+      // Покарання за абуз.
+      1011: U('1011', { starBalance: 77, chatPts: 600 }),
       // Розіграш автовидачі.
       995: U('995', {}), 996: U('996', {}), 997: U('997', {}),
     },
@@ -79,6 +81,7 @@ function seedV2() {
       { id: 9001, uid: '1003', tierId: 'bear', status: 'pending', createdAt: Date.now() - 3 * 3600e3, source: 'shop', spentStars: 15 },
       { id: 9002, uid: '1004', tierId: 'stars_payout', payoutStars: 40, spentStars: 42, fee: 2, status: 'pending', createdAt: Date.now() - 2 * 3600e3, source: 'app_withdrawal' },
       { id: 9003, uid: '1005', tierId: 'wheel_snake', status: 'pending', createdAt: Date.now() - 3600e3, source: 'wheel_paid' },
+      { id: 9005, uid: '1011', tierId: 'bear', status: 'pending', createdAt: Date.now() - 6 * 3600e3, source: 'shop', spentStars: 15 },
       { id: 9004, uid: '1003', tierId: 'gift', status: 'pending', createdAt: Date.now() - 5 * 3600e3, source: 'shop', spentStars: 25 },
     ],
     nextApplicationId: 1,
@@ -890,6 +893,39 @@ test('автовиплата: бот надсилає подарунок і од
   adminCmd('/pay 9001');
   assert.ok(await waitFor(() => tg.calls.slice(n1).find(c => String(c.payload.chat_id) === ADMIN && /уже оброблена/.test(c.payload.text || ''))));
   assert.ok(!tg.calls.slice(n1).some(c => c.method === 'sendGift'));
+});
+
+test('/abuse: перегляд → «Покарати»: заявки без повернення, зірки й XP → 0, попередження; /unabuse повертає', async () => {
+  const waitFor = async (pred) => { for (let i = 0; i < 60; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  const press = (data) => tg.push({ callback_query: { id: 'x' + Math.random(), from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, chat_instance: 'a', data, message: { message_id: 6, date: 0, chat: { id: Number(ADMIN), type: 'private' } } } });
+  const toUser = (n0) => tg.calls.slice(n0).filter(c => String(c.payload.chat_id) === '1011' && /АБУЗ/.test(c.payload.text || ''));
+  const xp0 = readDb().users['1011'].xp.total;
+  assert.ok(xp0 > 0);
+  let n0 = tg.calls.length;
+  adminCmd('/abuse @user1011 накрутка рефералів');
+  const pv = await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === ADMIN && /СКАСУВАТИ ВСЕ/.test(c.payload.text || '')));
+  assert.ok(pv, 'перегляд');
+  assert.match(pv.payload.text, /77⭐/);
+  assert.match(pv.payload.text, /#9005/);
+  assert.match(JSON.stringify(pv.payload.reply_markup), /abuse_go_1011/);
+  await sleep(400);
+  assert.strictEqual(readDb().users['1011'].starBalance, 77, 'до кнопки нічого не змінено');
+  n0 = tg.calls.length;
+  press('abuse_go_1011');
+  press('abuse_go_1011');
+  const warn = await waitFor(() => toUser(n0)[0]);
+  assert.ok(warn, 'попередження гравцю');
+  assert.match(warn.payload.text, /накрутка рефералів/);
+  assert.match(warn.payload.text, /−77⭐/);
+  assert.ok(await waitFor(() => { const d = readDb(); const u = d.users['1011']; return u.starBalance === 0 && u.xp.total === 0 && d.applications.find(a => a.id === 9005).status === 'rejected'; }), 'скасовано все');
+  assert.ok(!(readDb().applications.find(a => a.id === 9005).refunded > 0), 'без повернення');
+  await sleep(400);
+  assert.strictEqual(toUser(n0).length, 1, 'подвійне натискання — одне покарання');
+  n0 = tg.calls.length;
+  adminCmd('/unabuse @user1011');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === ADMIN && /Покарання знято/.test(c.payload.text || ''))));
+  assert.ok(await waitFor(() => { const u = readDb().users['1011']; return u.starBalance === 77 && u.xp.total === xp0 && !u.abuse; }), 'зірки й XP повернено');
+  assert.strictEqual(readDb().applications.find(a => a.id === 9005).status, 'rejected', 'заявки не відновлюються');
 });
 
 test('автовиплата: кнопка → вибір балансу (бот / акаунт) із сумами → надіслати з обраного й підтвердити', async () => {

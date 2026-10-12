@@ -103,8 +103,11 @@ function addXp(uid, src, amount, opts) {
   if (after > before) {
     // Нагорода — за КОЖЕН пройдений рівень, а сповіщення одне: про останній,
     // із сумою всіх нагород (інакше стрибок на кілька рівнів — це кілька повідомлень).
+    // Після скидання XP (resetXp) нагороди за вже пройдені колись рівні вдруге не видаються.
     const total = { tickets: 0, stars: 0 };
+    const paidTo = u.lvlPaidTo != null ? u.lvlPaidTo : -1;
     for (let i = before + 1; i <= after; i++) {
+      if (i <= paidTo) continue;
       const rw = E.levelReward(i);
       if (rw.tickets || rw.stars) users.move(uid, { tickets: rw.tickets || 0, stars: rw.stars || 0 }, 'level', { level: i + 1 });
       total.tickets += rw.tickets || 0;
@@ -118,6 +121,33 @@ function addXp(uid, src, amount, opts) {
     }
   }
   return gain;
+}
+
+// Скинути XP гравця (покарання за абуз): рівень, пас і ліга — з нуля.
+// → скільки знято { total, season: {id, xp}, week: {id, xp} } — для restoreXp.
+function resetXp(uid) {
+  const u = users.get(uid);
+  if (!u) return null;
+  const x = xpOf(u);
+  const taken = { total: x.total, season: { id: x.season.id, xp: x.season.xp }, week: { id: x.week.id, xp: x.week.xp } };
+  // day лишаємо — денні стелі вже використані сьогодні.
+  users.patch(uid, {
+    xp: { total: 0, season: { id: x.season.id, xp: 0 }, week: { id: x.week.id, xp: 0, lastAt: 0 }, day: x.day },
+    lvlPaidTo: Math.max(u.lvlPaidTo != null ? u.lvlPaidTo : -1, levelIndex(x.total)),
+  });
+  return taken;
+}
+// Повернути зняте resetXp (сезон і тиждень — лише якщо ще ті самі).
+function restoreXp(uid, taken) {
+  const u = users.get(uid);
+  if (!u || !taken) return 0;
+  const x = xpOf(u);
+  const r2 = (n) => Math.round(n * 100) / 100;
+  x.total = r2(x.total + (taken.total || 0));
+  if (taken.season && taken.season.id === x.season.id) x.season = { ...x.season, xp: r2(x.season.xp + taken.season.xp) };
+  if (taken.week && taken.week.id === x.week.id) x.week = { ...x.week, xp: r2(x.week.xp + taken.week.xp) };
+  users.patch(uid, { xp: x });
+  return taken.total || 0;
 }
 
 // Стан для застосунку.
@@ -159,6 +189,6 @@ function ladder(u, lang) {
 }
 
 module.exports = {
-  hooks, addXp, dayCapOf, view, levelInfo, levelIndex, xpOf, perksOf, ladder,
+  hooks, addXp, resetXp, restoreXp, dayCapOf, view, levelInfo, levelIndex, xpOf, perksOf, ladder,
   seasonId, seasonEndsAt, weekXp, seasonXp,
 };

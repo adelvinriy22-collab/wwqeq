@@ -102,6 +102,7 @@ function createBot(token) {
   require('./sponsor').register(bot);
   require('./betawd').register(bot, hooks);
   require('./wdunlock').register(bot);
+  require('./abuse').register(bot);
   require('./firstcomment').register(bot);
   require('./clans').register(bot, hooks);
   campaigns.register(bot, hooks);
@@ -150,6 +151,7 @@ async function setupUi(bot) {
       { command: 'wd_unlock', description: 'Розблокування виводу: /wd_unlock так — розсилка з кнопкою' },
       { command: 'cut', description: 'Урізати виплату: /cut N bear причина' },
       { command: 'pay_new', description: 'Виплатити найновіші заявки: /pay_new 8 так бот|акаунт' },
+      { command: 'abuse', description: 'Покарати за абуз: /abuse @нік причина' },
       { command: 'event_status', description: 'Що зараз запущено' },
       { command: 'maint', description: 'Техроботи' },
       { command: 'dbstats', description: 'Зріз бази' },
