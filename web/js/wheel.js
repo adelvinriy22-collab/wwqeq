@@ -12,6 +12,7 @@ const XLINK = 'http://www.w3.org/1999/xlink';
 const PAL = {
   stars: ['var(--w-star-a)', 'var(--w-star-b)'],
   tickets: ['var(--w-tix-a)', 'var(--w-tix-b)'],
+  xp: ['var(--w-tix-a)', 'var(--w-tix-b)'],
   prize: ['var(--w-prize-a)', 'var(--w-prize-b)'],
 };
 const lastRot = {};          // ключ колеса -> кут, на якому воно зупинилось
@@ -53,7 +54,7 @@ export function createWheel(segments, key) {
       inner.appendChild(im);
     } else {
       const light = s.kind === 'stars' && i % 2 === 0;
-      const label = s.kind === 'tickets' ? '🎫' : '⭐';
+      const label = s.kind === 'tickets' ? '🎫' : s.kind === 'xp' ? 'XP' : '⭐';
       inner.appendChild(svg('text', {
         x: C, y: 30, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': 15 * fx, 'font-weight': 800,
         style: 'fill: ' + (light ? 'var(--btn-text)' : 'var(--text)') + '; font-family: inherit',

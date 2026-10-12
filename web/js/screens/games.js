@@ -85,7 +85,7 @@ function spinButton(nav, id, wheel, redraw) {
       return button(bonus ? t('wheel.bonusSpin', { n: w.freeSpins }) : t('wheel.spinFree'), go, '', bonus ? null : t('wheel.everyDay'));
     }
     const b = el('button', { class: 'btn tinted', type: 'button', disabled: true }, el('span', null, t('wheel.next') + ' '), countdown(w.nextAt, (ms) => clock(ms), () => refresh().then(redraw).catch(() => {})));
-    return el('div', { class: 'stack' }, b, S.me.balance.tickets >= 5 ? button(t('wheel.tryTickets'), () => { wheelId = 'referral'; nav.go('games', 'wheels'); }, 'plain') : null);
+    return el('div', { class: 'stack' }, b, S.me.wheels.wheels.referral && S.me.balance.tickets >= 5 ? button(t('wheel.tryTickets'), () => { wheelId = 'referral'; nav.go('games', 'wheels'); }, 'plain') : null);
   }
   if (id === 'referral') {
     if (w.ready) return button(t('wheel.spinFor', { cost: w.cost.tickets + '🎫' }), go, '', t('wheel.youHave', { v: tix(bal.tickets) }));
@@ -134,6 +134,8 @@ function showResult(nav, r) {
     if (r.kind === 'prize') {
       parts.push(el('div', { class: 'result' }, img(tierImg(r.outcome)), el('div', { class: 't' }, t('res.prize', { name: tierName(r.outcome) })),
         el('div', { class: 's' }, t('res.app', { id: r.applicationId }))));
+    } else if (r.kind === 'xp') {
+      parts.push(el('div', { class: 'result' }, el('div', { class: 'big' }, '+' + r.amount + ' XP'), el('div', { class: 's' }, t('res.xp'))));
     } else if (r.kind === 'tickets') {
       parts.push(el('div', { class: 'result' }, el('div', { class: 'big' }, '+' + r.amount + '🎫'), el('div', { class: 's' }, t('res.tickets'))));
     } else {

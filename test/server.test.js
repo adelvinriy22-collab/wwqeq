@@ -215,7 +215,7 @@ test('initData: підробка й прострочення відхиляют�
 
 test('40 спінів колеса за зірки: жодної помилки, стрілка на своєму секторі, баланс = журнал', async () => {
   const me = (await api('GET', '/me', null, '1001')).d;
-  assert.ok(!me.wheels.wheels.daily && !me.wheels.wheels.referral, 'щоденного колеса й колеса білетів немає');
+  assert.ok(me.wheels.wheels.daily && !me.wheels.wheels.referral, 'щоденне колесо є, колеса білетів немає');
   assert.strictEqual(me.ticketsOff, true);
   const segs = me.wheels.wheels.paid.segments;
   const s0 = me.balance.stars;
@@ -241,8 +241,22 @@ test('40 спінів колеса за зірки: жодної помилки,
   assert.ok(u.xp.total > 0, 'спіни дають XP');
 });
 
-test('щоденне колесо й колесо білетів прибрано; преміум вимкнене', async () => {
-  for (const w of ['daily', 'referral', 'premium']) assert.strictEqual((await api('POST', '/spin', { wheel: w }, '400')).status, 410, w);
+test('щоденне безкоштовне колесо: зірки або XP (без білетів), кулдаун; колесо білетів і преміум вимкнені', async () => {
+  const me = (await api('GET', '/me', null, '400')).d;
+  assert.ok(me.wheels.wheels.daily, 'щоденне колесо є');
+  assert.ok(!me.wheels.wheels.daily.segments.some(x => x.kind === 'tickets'), 'секторів із білетами немає');
+  assert.ok(me.wheels.wheels.daily.segments.some(x => x.kind === 'xp'), 'є сектори XP');
+  const t0 = readDb().users['400'].tickets;
+  const r = await api('POST', '/spin', { wheel: 'daily' }, '400');
+  assert.strictEqual(r.status, 200, JSON.stringify(r.d));
+  assert.ok(['stars', 'xp', 'prize'].includes(r.d.kind), r.d.kind);
+  assert.strictEqual(me.wheels.wheels.daily.segments[r.d.segment].kind, r.d.kind, 'стрілка на секторі того ж типу');
+  const again = await api('POST', '/spin', { wheel: 'daily' }, '400');
+  assert.strictEqual(again.status, 429);
+  assert.strictEqual(again.d.error, 'daily_cooldown');
+  await sleep(500);
+  assert.strictEqual(readDb().users['400'].tickets, t0, 'білети не нараховуються');
+  for (const w of ['referral', 'premium']) assert.strictEqual((await api('POST', '/spin', { wheel: w }, '400')).status, 410, w);
   assert.strictEqual((await api('POST', '/spin', { wheel: '__proto__' }, '400')).status, 400);
 });
 

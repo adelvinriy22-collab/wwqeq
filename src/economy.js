@@ -57,18 +57,21 @@ function tierName(id, lang) { const t = getTier(id); return t.name[lang] || t.na
 // weights — справжні шанси (вирішує сервер). segments — як колесо виглядає
 // (однаково на сервері й у застосунку, щоб стрілка завжди падала на свій сектор).
 const WHEELS = {
-  // Щоденне колесо й колесо білетів прибрано (нова економіка). Конфіг — для історії.
+  // Щоденне безкоштовне колесо. Нова економіка: сектори з білетами стали XP
+  // (xp5/xp15/xp25), а зірки випадають у EARN_DIVISOR разів рідше (ті самі
+  // номінали, ваги ÷5 — решта ваги пішла в XP). Подарунки й NFT — як були.
   daily: {
-    disabled: true,
     title: { uk: 'Щоденне', en: 'Daily', ru: 'Ежедневное' },
     cost: { stars: 0, tickets: 0 },
     weights: {
-      star2: 300, star3: 300, star5: 90, star8: 22, star12: 6, star25: 1.5,
-      tix1: 180, tix3: 75, tix5: 20,
+      star2: 60, star3: 60, star5: 18, star8: 4.4, star12: 1.2, star25: 0.3,
+      xp5: 580, xp15: 225, xp25: 45,
       gift: 0.8, rocket: 0.4, trophy: 0.15, wheel_stocking: 0.2, wheel_snake: 0.2, wheel_lolpop: 0.12, wheel_eye: 0.06, premium3m: 0.02,
     },
-    segments: ['star2', 'gift', 'star3', 'rocket', 'tix1', 'nft', 'star5', 'trophy', 'tix3', 'star8', 'tix5', 'star12', 'tix1', 'star25'],
+    segments: ['star2', 'gift', 'star3', 'rocket', 'xp5', 'nft', 'star5', 'trophy', 'xp15', 'star8', 'xp25', 'star12', 'xp5', 'star25'],
   },
+  // Колесо білетів прибрано (білетів немає). Конфіг — для історії.
+
   referral: {   // історична назва: колесо білетів
     disabled: true,
     title: { uk: 'За білети', en: 'Tickets', ru: 'За билеты' },
@@ -111,12 +114,13 @@ const PRIZE_IDS = GIFT_IDS.concat(NFT_IDS, ['premium3m']);
 // Щаслива година: щодня одна випадкова година (9:00–21:00 Київ) — шанси NFT ×2.
 const HAPPY_HOUR = { fromHour: 9, toHour: 21, nftMult: 2 };
 
-// Серія щоденних спінів: бонус зірками на віхах.
+// Серія щоденних спінів: бонус зірками на віхах (÷ EARN_DIVISOR — нова економіка;
+// функція викликається під час гри, коли earn() уже визначено).
 function streakBonus(streak) {
-  if (streak % 30 === 0) return 10;
-  if (streak % 14 === 0) return 5;
-  if (streak % 7 === 0) return 3;
-  if (streak % 3 === 0) return 1;
+  if (streak % 30 === 0) return earn(10);
+  if (streak % 14 === 0) return earn(5);
+  if (streak % 7 === 0) return earn(3);
+  if (streak % 3 === 0) return earn(1);
   return 0;
 }
 

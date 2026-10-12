@@ -1,5 +1,6 @@
 // ==========================================================================
-// КОЛЕСА: щоденне (безкоштовне), за білети, за зірки.
+// КОЛЕСА: щоденне (безкоштовне), за зірки (колесо білетів прибрано).
+// Сектори: зірки (starN), XP (xpN), подарунки/NFT; старі білетні (tixN) — для історії.
 //
 // Результат вирішує сервер через перевірюваний генератор (core/rng):
 // гравець бачить відбиток seed заздалегідь і може перевірити кожен спін.
@@ -43,11 +44,13 @@ function weightsFor(wheel, now) {
 function outcomeKind(id) {
   if (E.PRIZE_IDS.includes(id)) return 'prize';
   if (String(id).startsWith('tix')) return 'tickets';
+  if (String(id).startsWith('xp')) return 'xp';
   return 'stars';
 }
 function outcomeAmount(id) {
   const k = outcomeKind(id);
   if (k === 'tickets') return parseInt(String(id).slice(3), 10) || 0;
+  if (k === 'xp') return parseInt(String(id).slice(2), 10) || 0;
   if (k === 'stars') return parseInt(String(id).slice(4), 10) || 0;
   return 0;
 }
@@ -196,7 +199,7 @@ async function spin(uid, wheel) {
       firstSeenAt: u.firstSeenAt || now,
       spinHistory: (u.spinHistory || []).concat([{
         id: outcome, sp: kind === 'prize' ? 1 : 0, am: kind === 'stars' ? amount : 0,
-        tk: kind === 'tickets' ? amount : undefined, w: wheel, at: now, n: roll.nonce,
+        tk: kind === 'tickets' ? amount : undefined, xp: kind === 'xp' ? amount : undefined, w: wheel, at: now, n: roll.nonce,
       }]).slice(-30),
     });
     users.patch(uid, patch);
@@ -205,6 +208,7 @@ async function spin(uid, wheel) {
     let appId = null;
     if (kind === 'stars' && amount) users.move(uid, { stars: amount }, 'spin_win', { wheel, id: outcome });
     if (kind === 'tickets' && amount) users.move(uid, { tickets: amount }, 'spin_win', { wheel, id: outcome });
+    if (kind === 'xp' && amount) progress.addXp(uid, 'reward', amount, { why: 'spin_win', wheel });
     if (streakStars) users.move(uid, { stars: streakStars }, 'streak', { streak });
     if (kind === 'prize') {
       const a = applications.create(uid, outcome, 'wheel_' + wheel);
@@ -225,7 +229,7 @@ async function spin(uid, wheel) {
       setTimeout(() => {
         const uNow = users.get(uid) || {};
         const rr = uNow.lastRiskResult;
-        const what = kind === 'tickets' ? `+${amount}🎫` : `+${amount}⭐`;
+        const what = kind === 'tickets' ? `+${amount}🎫` : kind === 'xp' ? `+${amount} XP` : `+${amount}⭐`;
         const riskTxt = rr && rr.spinAt === now ? (rr.won ? ` → ризик ×2 виграв → +${rr.finalAmount}⭐` : ' → ризик ×2 злив → 0⭐') : '';
         notify.admin(`🎰 Спін (${w.title.uk}): ${what}${riskTxt}${streakStars ? ` (+${streakStars}⭐ за серію)` : ''}\n` +
           `Баланс: ${fmtStars(users.stars(uNow))}⭐ · ${esc(u.name || '—')} ${u.username ? '@' + u.username : ''} · id ${uid}`);
