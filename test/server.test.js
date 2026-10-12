@@ -66,6 +66,8 @@ function seedV2() {
       // Новий акаунт і «фейкові» друзі.
       1007: U('1007', { starBalance: 100, invitedIds: ['1003', '1004', '1005'], wdUnlockGranted: 1 }),
       1008: U('1008', { starBalance: 100, joinedAt: Date.now() - 10 * 86400e3, invitedIds: ['x1', 'x2', 'x3'], wdUnlockGranted: 1 }),
+      // Міні-ігри на зірки в груповому чаті.
+      1010: U('1010', { starBalance: 30 }),
       // Паралельні виводи.
       1009: U('1009', { starBalance: 60, joinedAt: Date.now() - 10 * 86400e3, invitedIds: ['1003', '1004', '1005'], wdUnlockGranted: 1 }),
       // Розіграш автовидачі.
@@ -821,6 +823,28 @@ test('клани: війна сама стартує, створення кно�
   assert.ok(await waitFor(() => sent(n0, 993, /Ти вийшов із клану/)), 'вийшов (у приваті з ботом)');
   pmsg(993, '/clan_join ВОВК');
   assert.ok(await waitFor(() => sent(n0, 993, /через 6 год/)), 'повернення — через 6 год');
+});
+
+test('міні-ігри на зірки в чаті: /dice списує ставку, Telegram кидає кубик, виграш ×1.85 на баланс', async () => {
+  const GROUP = -1001;
+  const waitFor = async (pred, n) => { for (let i = 0; i < (n || 60); i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  const gmsg = (id, text) => tg.push({ message: { message_id: Math.floor(Math.random() * 1e6), date: Math.floor(Date.now() / 1000), chat: { id: GROUP, type: 'supergroup', title: 'G' }, from: { id, is_bot: false, first_name: 'U' + id, username: 'user' + id }, text, entities: [{ type: 'bot_command', offset: 0, length: text.split(' ')[0].length }] } });
+  let n0 = tg.calls.length;
+  gmsg(1010, '/dice 100');
+  const help = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && String(c.payload.chat_id) === String(GROUP) && /МІНІ-ІГРИ НА ЗІРКИ/.test(c.payload.text || '')));
+  assert.ok(help, 'ставка понад ліміт — правила');
+  assert.match(help.payload.text, /Ставка від 1 до 50 ⭐/);
+  n0 = tg.calls.length;
+  gmsg(1010, '/dice 10');
+  const dice = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendDice' && String(c.payload.chat_id) === String(GROUP)));
+  assert.ok(dice, 'Telegram кидає кубик у чаті');
+  const win = await waitFor(() => tg.calls.slice(n0).find(c => c.method === 'sendMessage' && /\+18\.5 ⭐/.test(c.payload.text || '')), 80);
+  assert.ok(win, 'виграш: 6 на кубику → 10 × 1.85 = 18.5⭐');
+  assert.ok(await waitFor(() => readDb().users['1010'].starBalance === 38.5), 'баланс: 30 − 10 + 18.5');
+  const moves = () => ledger('1010').map(e => [e.r, e.s]).filter(m => /^chat_game/.test(m[0]));
+  await waitFor(() => moves().length === 2);
+  assert.deepStrictEqual(moves(), [['chat_game', -10], ['chat_game_win', 18.5]], 'усе — через журнал');
+  assert.ok((readDb().users['1010'].xp || {}).total >= 20, 'XP за ставку — 2 за ⭐');
 });
 
 test('секретне завдання сховане: ні на головній, ні в завданнях, заявку не подати', async () => {

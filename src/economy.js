@@ -175,6 +175,8 @@ function slotResult(v) {
   return { reels: r, k };
 }
 const GAME_BET = { min: 1, max: 1000, presets: [1, 5, 10, 25, 50, 100] };
+// Міні-ігри на зірки в груповому чаті (/dice 5, /slot 5…): ставка ⭐.
+const CHAT_GAMES = { min: 1, max: 50 };
 
 // ─── Білети, обмін, вивід, поповнення ───────────────────────────────────
 // Білети вимкнено: обмін в обидва боки закрито, нарахування білетів → XP.
@@ -420,7 +422,7 @@ const GOAL = { target: 100, prize: 'gift' };
 module.exports = { EARN_DIVISOR, earn, BETA_WD, JACKPOT, AWD_GIVEAWAY, SPONSOR,
   TIERS, getTier, tierName,
   WHEELS, PITY, GIFT_IDS, NFT_IDS, PRIZE_IDS, HAPPY_HOUR, streakBonus,
-  RISK, GAMES, SLOT_SYMBOLS, slotResult, GAME_BET,
+  RISK, GAMES, SLOT_SYMBOLS, slotResult, GAME_BET, CHAT_GAMES,
   TICKETS, WITHDRAW, withdrawCost, DEPOSIT, SHOP, shopPrice,
   XP, XP_RATES, CLANS, LEVELS, levelReward, LEVEL_PERKS, levelPerks, perksUnlockedAt, PASS, LEAGUE, leagueRewardFor, GOAL,
 };
