@@ -90,13 +90,15 @@ function create(uid, tierId, source, extra, opts) {
   return a;
 }
 
-function approve(id) {
+// opts.silent — без повідомлення гравцю (автовивід шле своє).
+function approve(id, opts) {
   const a = store.getApplication(id);
   if (!a) return { ok: false, error: 'not_found' };
   if (a.status !== 'pending') return { ok: false, error: 'not_pending', status: a.status };
   a.status = 'approved';
   a.decidedAt = Date.now();
   store.save();
+  if (opts && opts.silent) return { ok: true, app: a };
   const u = users.get(a.uid) || {};
   const lg = u.lang || 'uk';
   notify.dm(a.uid, i18n.t(lg, 'app.approved', { id: a.id, what: esc(label(a, lg)) }), notify.appKeyboard(i18n.t(lg, 'btn.open'), 'profile'));

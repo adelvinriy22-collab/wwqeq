@@ -11,7 +11,7 @@ const i18n = require('../i18n');
 const applications = require('./applications');
 const passSvc = require('./pass');
 const maintenance = require('./maintenance');
-const { round2, fmtStars } = require('../lib/util');
+const { round2, fmtStars, esc } = require('../lib/util');
 
 // ─── Вивід ──────────────────────────────────────────────────────────────
 // Комісія виводу залежить від рівня гравця: що вищий рівень — то менша.
@@ -44,17 +44,26 @@ function withdrawInfo(u) {
     dayCap: E.WITHDRAW.dayCap, usedToday, leftToday: E.WITHDRAW.dayCap ? Math.max(0, E.WITHDRAW.dayCap - usedToday) : null,
     pending: gate.pendingCount(u.id), maxPending: E.WITHDRAW.maxPending, banned: !!u.wdBan,
     maxPayout: Math.floor(users.stars(u)), blocked: maintenance.state().mode !== 'off',
+    auto: autoOn(),
   };
 }
 
-async function withdraw(uid, giftId) {
+// ⚡ Автовивід (E.WITHDRAW.auto, вимикач — /autowd_all off).
+const autoOn = () => !!E.WITHDRAW.auto && !(store.getFeatureFlags() || {}).autoWdOff;
+
+// opts.auto — автовивід: подарунок одразу, залишок балансу згорає; opts.agree — гравець
+// погодився з цим (дисклеймер). Без auto — звичайна заявка в черзі адміну.
+async function withdraw(uid, giftId, opts) {
+  const auto = !!(opts && opts.auto);
+  if (auto && !autoOn()) return { ok: false, status: 403, error: 'autowd_off' };
+  if (auto && !(opts && opts.agree === true)) return { ok: false, status: 400, error: 'need_agree' };
   const m = maintenance.state();
   if (m.mode !== 'off' && !users.isAdmin(uid)) return { ok: false, status: 503, error: 'maintenance', message: m.text };
   if (!E.WITHDRAW.gifts.includes(String(giftId))) return { ok: false, status: 400, error: 'bad_gift' };
   // Обов'язкова підписка на канал-спонсора — перевіряємо до блокування.
   if (!(await require('./sponsor').okForWithdraw(uid))) return { ok: false, status: 400, error: 'need_sub', channel: require('./sponsor').channel() };
   const gate = require('./withdrawgate');
-  return users.withLock(uid, () => {
+  const res = await users.withLock(uid, () => {
     const u = users.get(uid);
     if (!u) return { ok: false, status: 400, error: 'no_user' };
     const admin = users.isAdmin(uid);
@@ -70,12 +79,46 @@ async function withdraw(uid, giftId) {
     const used = gate.payoutToday(uid);
     if (E.WITHDRAW.dayCap && used + t.price > E.WITHDRAW.dayCap) return { ok: false, status: 429, error: 'day_cap', max: E.WITHDRAW.dayCap, have: used };
     const w = E.withdrawCost(t.price, feeOf(u));
-    const r = users.move(uid, { stars: -w.cost }, 'withdraw', { payout: w.payout, gift: giftId });
+    const r = users.move(uid, { stars: -w.cost }, 'withdraw', { payout: w.payout, gift: giftId, auto: auto || undefined });
     if (!r.ok) return { ok: false, status: 402, error: 'not_enough', balance: users.stars(u), cost: w.cost, payout: w.payout };
+    if (auto) {
+      // Умова автовиводу: залишок балансу згорає (у тому ж блокуванні — не встигне витратити).
+      const burned = Math.max(0, users.stars(users.get(uid)));
+      if (burned > 0) users.move(uid, { stars: -burned }, 'autowd_burn', { gift: giftId });
+      const a = applications.create(uid, giftId, 'app_withdrawal', { payoutStars: w.payout, spentStars: w.cost, fee: w.fee, auto: true, burned }, { silent: true });
+      return { ok: true, auto: true, applicationId: a.id, gift: giftId, payout: w.payout, cost: w.cost, fee: w.fee, burned, balance: users.stars(users.get(uid)) };
+    }
     const a = applications.create(uid, giftId, 'app_withdrawal', { payoutStars: w.payout, spentStars: w.cost, fee: w.fee }, { withdrawal: true });
     notify.dm(uid, i18n.t(u.lang, 'wd.createdGift', { id: a.id, gift: t.emoji + ' ' + (t.name[u.lang] || t.name.uk), cost: w.cost, fee: w.fee }));
     return { ok: true, applicationId: a.id, gift: giftId, payout: w.payout, cost: w.cost, fee: w.fee, balance: r.stars };
   });
+  if (!res.ok || !res.auto) return res;
+  return { ...res, sent: await autoSend(uid, res) };
+}
+
+// Автовивід: надіслати з балансу бота й одразу підтвердити. Не вийшло — заявка в черзі
+// адміну з кнопками (там можна обрати баланс). → чи надіслано.
+async function autoSend(uid, res) {
+  const payouts = require('./payouts');
+  const u = users.get(uid) || {};
+  const t = E.getTier(res.gift);
+  const gift = t.emoji + ' ' + (t.name[u.lang] || t.name.uk);
+  const p = await payouts.pay(res.applicationId, 'bot', { silent: true });
+  const burn = res.burned > 0 ? i18n.t(u.lang, 'wd.autoBurn', { burn: fmtStars(res.burned) }) : '';
+  const who = `${esc(u.name || '—')} ${u.username ? '@' + u.username : ''} · id <code>${uid}</code>`;
+  const head = `#${res.applicationId}: ${esc(t.emoji + ' ' + t.name.uk)} (${res.payout}⭐) → ${who}\n` +
+    `Списано: ${res.cost}⭐ (комісія ${res.fee}⭐) · згоріло: ${fmtStars(res.burned)}⭐`;
+  if (p.ok) {
+    notify.dm(uid, i18n.t(u.lang, 'wd.autoDone', { id: res.applicationId, gift, cost: res.cost, fee: res.fee, burn }));
+    notify.admin('⚡ <b>Автовивід</b> ' + head + '\n✅ Надіслано з балансу бота');
+    return true;
+  }
+  notify.dm(uid, i18n.t(u.lang, 'wd.autoQueued', { id: res.applicationId, gift, cost: res.cost, fee: res.fee, burn }));
+  const a = store.getApplication(res.applicationId);
+  notify.admin('⚡ <b>Автовивід не надіслано — заявка в черзі</b>\n' + head +
+    '\n❌ ' + esc(p.detail || p.error || '') + (p.lowBalance ? ' — замало зірок на балансі бота' : '') +
+    '\n\n' + require('./withdrawgate').riskText(uid), a && a.status === 'pending' ? applications.adminKeyboardFor(a) : undefined);
+  return false;
 }
 
 // ─── Обмін білетів ──────────────────────────────────────────────────────
@@ -255,6 +298,6 @@ function history(u) {
 }
 
 module.exports = {
-  withdrawInfo, withdraw, giftOptions, exchange, buyTickets, shopView, shopBuy,
+  withdrawInfo, withdraw, autoOn, giftOptions, exchange, buyTickets, shopView, shopBuy,
   topupInfo, invoiceLink, precheck, processPayment, history, depositBonus, parseAmount,
 };

@@ -79,8 +79,8 @@ async function sendOne(a, g, text, from) {
 const inFlight = new Set();   // id заявок, що зараз виплачуються (подвійне натискання)
 
 // Надіслати подарунок(и) і підтвердити заявку. from — 'bot' | 'account' | без вибору.
-// → { ok, sent, via, from, error, partial }
-async function pay(id, from) {
+// opts.silent — підтвердити без повідомлення гравцю. → { ok, sent, via, from, error, partial }
+async function pay(id, from, opts) {
   const a = store.getApplication(id);
   if (!a) return { ok: false, error: 'not_found' };
   if (a.status !== 'pending') return { ok: false, error: 'not_pending', status: a.status };
@@ -106,7 +106,7 @@ async function pay(id, from) {
     a.autoSent = true;
     a.paidVia = via.includes('account') ? (via.includes('bot') ? 'mixed' : 'account') : 'bot';
     delete a.payError;
-    const r = applications.approve(a.id);
+    const r = applications.approve(a.id, opts);
     return { ok: r.ok, sent: done, via: a.paidVia, app: a };
   } finally {
     inFlight.delete(a.id);
