@@ -87,8 +87,9 @@ function createBot(token) {
   notify.tg.chat = chat;
   bot.use(chat.middleware());
 
-  // 3. Техроботи.
+  // 3. Техроботи. Переїзд на новий бот (/moved) — /start веде туди.
   bot.use(start.maintenanceGate());
+  bot.use(require('./moved').middleware());
 
   // 4. Модулі.
   start.register(bot, hooks);
@@ -103,6 +104,7 @@ function createBot(token) {
   require('./betawd').register(bot, hooks);
   require('./wdunlock').register(bot);
   require('./abuse').register(bot);
+  require('./moved').register(bot);
   require('./firstcomment').register(bot);
   require('./clans').register(bot, hooks);
   campaigns.register(bot, hooks);
@@ -152,6 +154,7 @@ async function setupUi(bot) {
       { command: 'cut', description: 'Урізати виплату: /cut N bear причина' },
       { command: 'pay_new', description: 'Виплатити найновіші заявки: /pay_new 8 так бот|акаунт' },
       { command: 'abuse', description: 'Покарати за абуз: /abuse @нік причина' },
+      { command: 'moved', description: 'Переїзд: /start веде в новий бот — /moved @бот | off' },
       { command: 'event_status', description: 'Що зараз запущено' },
       { command: 'maint', description: 'Техроботи' },
       { command: 'dbstats', description: 'Зріз бази' },

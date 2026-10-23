@@ -895,6 +895,35 @@ test('автовиплата: бот надсилає подарунок і од
   assert.ok(!tg.calls.slice(n1).some(c => c.method === 'sendGift'));
 });
 
+test('/moved: /start гравця веде в новий бот; адмін бачить звичайний; /moved off вимикає', async () => {
+  const waitFor = async (pred) => { for (let i = 0; i < 60; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
+  const startAs = (id, text) => tg.push({ message: {
+    message_id: Math.floor(Math.random() * 1e6), date: Math.floor(Date.now() / 1000), chat: { id, type: 'private' },
+    from: { id, is_bot: false, first_name: 'P' + id, username: 'user' + id, language_code: 'uk' }, text, entities: [{ type: 'bot_command', offset: 0, length: 6 }],
+  } });
+  const movedTo = (n0, id) => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === String(id) && /ми переїхали/.test(c.payload.text || ''));
+  let n0 = tg.calls.length;
+  adminCmd('/moved @wintopsbot');
+  assert.ok(await waitFor(() => movedTo(n0, ADMIN)), 'адміну — приклад відповіді');
+  n0 = tg.calls.length;
+  startAs(700, '/start ref_100');
+  const m = await waitFor(() => movedTo(n0, 700));
+  assert.ok(m, 'гравцю — «ми переїхали»');
+  assert.match(m.payload.text, /новий бот: @wintopsbot/);
+  assert.match(m.payload.text, /заходь, підписуйся на канал і грай/);
+  assert.match(JSON.stringify(m.payload.reply_markup), /https:\/\/t\.me\/wintopsbot/);
+  await sleep(500);
+  assert.strictEqual(tg.calls.slice(n0).filter(c => String(c.payload.chat_id) === '700' && /^send/.test(c.method)).length, 1, 'лише повідомлення про переїзд');
+  n0 = tg.calls.length;
+  adminCmd('/moved off');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === ADMIN && /Переїзд вимкнено/.test(c.payload.text || ''))));
+  n0 = tg.calls.length;
+  startAs(700, '/start');
+  assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => String(c.payload.chat_id) === '700' && /^send/.test(c.method))), 'звичайний /start');
+  await sleep(300);
+  assert.ok(!movedTo(n0, 700), 'після off — без переїзду');
+});
+
 test('/abuse: перегляд → «Покарати»: заявки без повернення, зірки й XP → 0, попередження; /unabuse повертає', async () => {
   const waitFor = async (pred) => { for (let i = 0; i < 60; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
   const press = (data) => tg.push({ callback_query: { id: 'x' + Math.random(), from: { id: Number(ADMIN), is_bot: false, first_name: 'Admin' }, chat_instance: 'a', data, message: { message_id: 6, date: 0, chat: { id: Number(ADMIN), type: 'private' } } } });
