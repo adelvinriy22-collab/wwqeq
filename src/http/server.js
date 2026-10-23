@@ -61,6 +61,14 @@ function createApp() {
   // Сторінка застосунку: кеш лише з перевіркою (незмінена — 304 без тіла).
   let indexHtml = null;
   const sendIndex = (req, res) => {
+    // Переїзд (/moved): замість застосунку — сторінка з кнопкою на новий бот.
+    const to = require('../features/moved').to();
+    if (to) {
+      const tag = '"' + app.locals.build + '-moved-' + to + '"';
+      res.set({ 'Cache-Control': 'no-cache, must-revalidate', 'Content-Type': 'text/html; charset=utf-8', ETag: tag });
+      if (req.get('if-none-match') === tag) return res.status(304).end();
+      return res.send(fs.readFileSync(path.join(WEB, 'moved.html'), 'utf8').replace(/%TO%/g, to));
+    }
     if (!indexHtml || process.env.NODE_ENV === 'development') {
       indexHtml = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8').replace(/%BUILD%/g, app.locals.build);
     }

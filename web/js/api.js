@@ -19,6 +19,8 @@ async function call(method, path, body) {
   }
   let data = null;
   try { data = await res.json(); } catch (e) { data = null; }
+  // Бот переїхав (/moved): сторінка застосунку тепер — переїзд; перезавантажуємо.
+  if (res.status === 410 && data && data.error === 'moved') { location.reload(); throw new ApiError('moved', data, 410); }
   if (!res.ok || !data || data.ok === false) {
     throw new ApiError((data && data.error) || (res.status === 401 ? 'unauthorized' : 'server_error'), data, res.status);
   }

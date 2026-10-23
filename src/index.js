@@ -67,7 +67,7 @@ const timers = [];
 function every(ms, name, fn) {
   let busy = false;
   const t = setInterval(async () => {
-    if (busy) return;
+    if (busy || require('./features/moved').to()) return;   // переїзд (/moved) — бот стоїть
     busy = true;
     try { await fn(); } catch (e) { console.error(name + ':', e && e.message); } finally { busy = false; }
   }, ms);

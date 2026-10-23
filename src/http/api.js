@@ -144,6 +144,12 @@ function bootstrap(req) {
 
 // ─── Маршрути ───────────────────────────────────────────────────────────
 router.use(withUser);
+// Переїзд (/moved): для гравців застосунок лише показує «ми переїхали» (web/moved.html).
+router.use((req, res, next) => {
+  const to = require('../features/moved').to();
+  if (to && !users.isAdmin(req.uid)) return res.status(410).json({ ok: false, error: 'moved', to });
+  next();
+});
 
 router.get('/me', h(async (req) => {
   const out = bootstrap(req);

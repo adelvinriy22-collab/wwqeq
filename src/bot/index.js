@@ -80,6 +80,10 @@ function createBot(token) {
     return next();
   });
 
+  // Переїзд на новий бот (/moved): гравцям — лише «ми переїхали» з кнопкою, і в
+  // приваті, і в групах (тому — раніше за модуль чату).
+  bot.use(require('./moved').middleware());
+
   // 2. Групи. «Перший коментар» у групі обговорення каналу — раніше за модуль
   // чату (той ігнорує чужі групи).
   bot.use(require('./firstcomment').middleware());
@@ -87,9 +91,8 @@ function createBot(token) {
   notify.tg.chat = chat;
   bot.use(chat.middleware());
 
-  // 3. Техроботи. Переїзд на новий бот (/moved) — /start веде туди.
+  // 3. Техроботи.
   bot.use(start.maintenanceGate());
-  bot.use(require('./moved').middleware());
 
   // 4. Модулі.
   start.register(bot, hooks);
@@ -154,7 +157,7 @@ async function setupUi(bot) {
       { command: 'cut', description: 'Урізати виплату: /cut N bear причина' },
       { command: 'pay_new', description: 'Виплатити найновіші заявки: /pay_new 8 так бот|акаунт' },
       { command: 'abuse', description: 'Покарати за абуз: /abuse @нік причина' },
-      { command: 'moved', description: 'Переїзд: /start веде в новий бот — /moved @бот | off' },
+      { command: 'moved', description: 'Переїзд: увесь бот веде в новий — /moved @бот | off' },
       { command: 'event_status', description: 'Що зараз запущено' },
       { command: 'maint', description: 'Техроботи' },
       { command: 'dbstats', description: 'Зріз бази' },

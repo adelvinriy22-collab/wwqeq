@@ -88,8 +88,9 @@
   `balances()` — обидва баланси; кнопка під заявкою → вибір балансу; `/pay`, `/pay_new N так бот|акаунт`).
 - **Абуз** — `src/features/abuse.js` (`punish`: заявки без повернення, зірки → 0, `progress.resetXp`; `undo` повертає
   зірки й XP із `u.abuse`); команди `/abuse @нік причина` (перегляд → кнопка) і `/unabuse` — `src/bot/abuse.js`.
-- **Переїзд** — `src/bot/moved.js`: `featureFlags.moved = { to }` (адмін `/moved @бот` | `off`), middleware після
-  техробіт перехоплює `/start` у приваті (крім адмінів) і відповідає «ми переїхали» з кнопкою на новий бот.
+- **Переїзд** — `featureFlags.moved = { to }` (адмін `/moved @бот` | `off`, `features/moved.js` → `to()`): middleware
+  `src/bot/moved.js` одразу після обліку активності — гравцям (не адмінам) на все «ми переїхали» з кнопкою; застосунок
+  віддає `web/moved.html`, API — 410 `moved`, `every()` у `src/index.js` пропускає планувальники.
 
 ## Тести й перевірка
 

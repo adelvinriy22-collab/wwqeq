@@ -895,33 +895,51 @@ test('автовиплата: бот надсилає подарунок і од
   assert.ok(!tg.calls.slice(n1).some(c => c.method === 'sendGift'));
 });
 
-test('/moved: /start гравця веде в новий бот; адмін бачить звичайний; /moved off вимикає', async () => {
+test('/moved: увесь бот і застосунок ведуть у новий бот; адмін — звичайний; /moved off вимикає', async () => {
   const waitFor = async (pred) => { for (let i = 0; i < 60; i++) { await sleep(150); const r = pred(); if (r) return r; } return null; };
-  const startAs = (id, text) => tg.push({ message: {
+  const say = (id, text) => tg.push({ message: {
     message_id: Math.floor(Math.random() * 1e6), date: Math.floor(Date.now() / 1000), chat: { id, type: 'private' },
-    from: { id, is_bot: false, first_name: 'P' + id, username: 'user' + id, language_code: 'uk' }, text, entities: [{ type: 'bot_command', offset: 0, length: 6 }],
+    from: { id, is_bot: false, first_name: 'P' + id, username: 'user' + id, language_code: 'uk' }, text,
+    ...(text[0] === '/' ? { entities: [{ type: 'bot_command', offset: 0, length: text.split(' ')[0].length }] } : {}),
   } });
-  const movedTo = (n0, id) => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === String(id) && /ми переїхали/.test(c.payload.text || ''));
+  const tap = (id, data) => tg.push({ callback_query: { id: 'mv' + Math.random(), from: { id, is_bot: false, first_name: 'P' + id }, chat_instance: 'm', data, message: { message_id: 3, date: 0, chat: { id, type: 'private' } } } });
+  const movedTo = (n0, id) => tg.calls.slice(n0).filter(c => String(c.payload.chat_id) === String(id) && /ми переїхали/.test(c.payload.text || ''));
   let n0 = tg.calls.length;
   adminCmd('/moved @wintopsbot');
-  assert.ok(await waitFor(() => movedTo(n0, ADMIN)), 'адміну — приклад відповіді');
+  assert.ok(await waitFor(() => movedTo(n0, ADMIN)[0]), 'адміну — приклад відповіді');
+  // /start, будь-яка команда, текст і стара кнопка — те саме повідомлення з кнопкою.
   n0 = tg.calls.length;
-  startAs(700, '/start ref_100');
-  const m = await waitFor(() => movedTo(n0, 700));
+  say(700, '/start ref_100');
+  const m = await waitFor(() => movedTo(n0, 700)[0]);
   assert.ok(m, 'гравцю — «ми переїхали»');
   assert.match(m.payload.text, /новий бот: @wintopsbot/);
   assert.match(m.payload.text, /заходь, підписуйся на канал і грай/);
   assert.match(JSON.stringify(m.payload.reply_markup), /https:\/\/t\.me\/wintopsbot/);
-  await sleep(500);
-  assert.strictEqual(tg.calls.slice(n0).filter(c => String(c.payload.chat_id) === '700' && /^send/.test(c.method)).length, 1, 'лише повідомлення про переїзд');
+  say(700, '/stars');
+  say(700, 'привіт');
+  tap(700, 'menu_wallet');
+  assert.ok(await waitFor(() => movedTo(n0, 700).length >= 4), 'на кожну команду, текст і кнопку');
+  await sleep(400);
+  assert.strictEqual(tg.calls.slice(n0).filter(c => String(c.payload.chat_id) === '700' && /^send/.test(c.method)).length, 4, 'лише повідомлення про переїзд');
+  // Застосунок: сторінка переїзду, API — 410.
+  const page = await (await fetch(base + '/')).text();
+  assert.match(page, /Ми переїхали/);
+  assert.match(page, /https:\/\/t\.me\/wintopsbot/);
+  const me = await api('GET', '/me', null, '700');
+  assert.strictEqual(me.status, 410);
+  assert.strictEqual(me.d.to, 'wintopsbot');
+  assert.strictEqual((await api('GET', '/me', null, ADMIN)).status, 200, 'адмін — звичайний застосунок');
+  // Вимкнули — усе як раніше.
   n0 = tg.calls.length;
   adminCmd('/moved off');
   assert.ok(await waitFor(() => tg.calls.slice(n0).find(c => String(c.payload.chat_id) === ADMIN && /Переїзд вимкнено/.test(c.payload.text || ''))));
   n0 = tg.calls.length;
-  startAs(700, '/start');
+  say(700, '/start');
   assert.ok(await waitFor(() => tg.calls.slice(n0).some(c => String(c.payload.chat_id) === '700' && /^send/.test(c.method))), 'звичайний /start');
   await sleep(300);
-  assert.ok(!movedTo(n0, 700), 'після off — без переїзду');
+  assert.strictEqual(movedTo(n0, 700).length, 0, 'після off — без переїзду');
+  assert.strictEqual((await api('GET', '/me', null, '700')).status, 200);
+  assert.doesNotMatch(await (await fetch(base + '/')).text(), /Ми переїхали/);
 });
 
 test('/abuse: перегляд → «Покарати»: заявки без повернення, зірки й XP → 0, попередження; /unabuse повертає', async () => {
